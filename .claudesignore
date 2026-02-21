@@ -1,0 +1,16 @@
+# 1. Ignore Git & System History
+.git/
+.DS_Store
+
+# 2. Ignore Dependencies & Builds (Prevent Token Waste)
+node_modules/
+dist/
+build/
+package-lock.json
+
+# 3. Ignore Gemini's Specific Files (Prevent Hallucination)
+gemini.md
+.geminiignore
+
+# 4. Ignore Korean Rules (Claude prefers English Rules for accuracy)
+Rules_KO.md
