@@ -1,8 +1,8 @@
-🏫 Academy Integrated Management (AIM) Hybrid System
+🏫 Academy Integrated Management (impact7DB) Hybrid System
 Version 2.0 | A centralized, AI-driven management ecosystem powered by Google Workspace & Firebase.
 
 🌟 Overview
-The AIM Hybrid System is a modular suite of web applications designed to digitize academy operations. By leveraging the Google Ecosystem (Sheets, Workspace, Firebase) and AI-Native Development, this project ensures data integrity, minimalist UI, and high scalability.
+The impact7DB Hybrid System is a modular suite of web applications designed to digitize academy operations. By leveraging the Google Ecosystem (Sheets, Workspace, Firebase) and AI-Native Development, this project ensures data integrity, minimalist UI, and high scalability.
 
 🛠 Tech Stack
 Database: Google Cloud Firestore (NoSQL)
@@ -14,7 +14,7 @@ Frontend: Material Design 3 (Material Web Components)
 AI Orchestration: Antigravity (UI), Claude Code (Logic), Gemini CLI (Automation)
 
 🏗 System Architecture
-Instead of a monolithic app, AIM uses a Microservices-inspired Architecture:
+Instead of a monolithic app, impact7DB uses a Microservices-inspired Architecture:
 
 Central DB: A shared Firestore instance acting as the "Single Source of Truth."
 

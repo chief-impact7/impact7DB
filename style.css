@@ -1088,3 +1088,324 @@ summary.menu-l2 .material-symbols-outlined {
     border-radius: 4px;
     flex-shrink: 0;
 }
+
+/* ── Group View ─────────────────────────────────────────────────────────── */
+.group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px 4px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+.group-label {
+    font-family: var(--font-heading);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
+    letter-spacing: 0.3px;
+}
+
+.group-count {
+    font-size: 11px;
+    color: var(--text-sec);
+    background: var(--surface-hover);
+    padding: 1px 8px;
+    border-radius: 100px;
+}
+
+.icon-btn.active {
+    color: var(--primary);
+    background: var(--primary-light);
+}
+
+/* ── Enrollment Cards ───────────────────────────────────────────────────── */
+.enrollment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.enrollment-card {
+    background: var(--surface-container);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+
+.enrollment-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.enrollment-tag {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
+    background: var(--primary-light);
+    padding: 2px 10px;
+    border-radius: 100px;
+    font-family: var(--font-heading);
+    flex-shrink: 0;
+}
+
+.enrollment-type {
+    font-size: 12px;
+    color: var(--text-sec);
+    font-weight: 500;
+}
+
+.btn-end-class {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid #ea4335;
+    border-radius: 16px;
+    padding: 3px 12px;
+    font-size: 12px;
+    font-family: var(--font-heading);
+    font-weight: 500;
+    color: #ea4335;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.btn-end-class:hover {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+.enrollment-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.enrollment-field {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.enrollment-field .field-label {
+    font-size: 11px;
+    margin-bottom: 0;
+    flex-shrink: 0;
+    min-width: 40px;
+}
+
+/* ── Editable Enrollment Card (edit form) ──────────────────────────────── */
+.edit-enrollment-card {
+    background: var(--surface-container);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+}
+
+.edit-enrollment-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.edit-enrollment-header .btn-remove-pending {
+    margin-left: auto;
+}
+
+/* ── Multi-tag in list item ─────────────────────────────────────────────── */
+.item-tags {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 120px;
+}
+
+.item-tags .item-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+}
+
+/* ── End Class Confirm Modal ────────────────────────────────────────────── */
+.end-class-body {
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.end-class-summary {
+    font-size: 15px;
+    color: var(--text-main);
+    line-height: 1.6;
+    margin-bottom: 16px;
+}
+
+.end-class-group {
+    margin-bottom: 12px;
+}
+
+.end-class-group-label {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-heading);
+    color: var(--text-sec);
+    background: var(--surface-hover);
+    padding: 2px 10px;
+    border-radius: 100px;
+    margin-bottom: 6px;
+}
+
+.end-class-withdraw-label {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+.end-class-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.end-class-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-main);
+}
+
+.end-class-list li:last-child {
+    border-bottom: none;
+}
+
+.end-class-remaining {
+    font-size: 11px;
+    color: var(--primary);
+    background: var(--primary-light);
+    padding: 1px 8px;
+    border-radius: 100px;
+    font-family: var(--font-heading);
+    font-weight: 500;
+}
+
+.btn-end-class-confirm {
+    background: #ea4335;
+    color: #fff;
+    border: none;
+    border-radius: 20px;
+    padding: 7px 20px;
+    font-family: var(--font-heading);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: box-shadow 0.2s, background 0.15s;
+}
+
+.btn-end-class-confirm:hover {
+    background: #c5221f;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+}
+
+.btn-end-class-confirm:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+.btn-end-single {
+    background: #fff;
+    color: #ea4335;
+    border: 1px solid #ea4335;
+}
+
+.btn-end-single:hover {
+    background: #fce8e6;
+    box-shadow: none;
+}
+
+.end-class-actions {
+    gap: 8px;
+}
+
+.end-class-warn {
+    font-size: 13px;
+    color: #c5221f;
+    background: #fce8e6;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-top: 8px;
+}
+
+/* ── Form Add Enrollment Button ───────────────────────────────────────── */
+.btn-add-enrollment {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    background: var(--primary-light);
+    color: var(--primary);
+    border: 1px dashed var(--primary);
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-family: var(--font-heading);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+    width: 100%;
+    justify-content: center;
+}
+
+.btn-add-enrollment:hover {
+    background: #c2d8fc;
+}
+
+/* pending enrollment card in registration form */
+.pending-enrollment-card {
+    background: var(--surface-container);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pending-enrollment-card .enrollment-tag {
+    font-size: 11px;
+}
+
+.pending-enrollment-info {
+    flex: 1;
+    font-size: 13px;
+    color: var(--text-sec);
+}
+
+.btn-remove-pending {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    border-radius: 50%;
+    transition: background 0.15s, color 0.15s;
+}
+
+.btn-remove-pending:hover {
+    background: #fce8e6;
+    color: #c5221f;
+}

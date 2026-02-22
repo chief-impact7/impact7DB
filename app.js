@@ -9,6 +9,8 @@ let allStudents = [];
 // 타입별 독립 필터 — 다른 타입끼리 AND 복합 적용
 let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null };
 let isEditMode = false;
+let groupViewMode = 'none'; // 'none' | 'branch' | 'class'
+let _pendingEnrollments = []; // 신규등록 시 추가 수업 목록
 
 // HTML 이스케이프 — 사용자 입력을 innerHTML에 삽입할 때 XSS 방지
 const esc = (str) => {
@@ -17,16 +19,25 @@ const esc = (str) => {
     return d.innerHTML;
 };
 
-// 학부기호 + 레벨기호 → 반기호 (예: HA + 101 = HA101)
-const classCode = (s) => `${s.level_code || ''}${s.level_symbol || ''}`;
+// enrollment 코드 = level_symbol + class_number (예: HA + 101 = HA101)
+const enrollmentCode = (e) => `${e.level_symbol || ''}${e.class_number || ''}`;
 
-// 레벨기호 첫 번째 숫자로 단지 자동 파생: '1xx' → '2단지', '2xx' → '10단지'
-const branchFromSymbol = (sym) => {
-    const first = (sym || '').trim()[0];
+// 모든 enrollment의 코드 목록
+const allClassCodes = (s) => (s.enrollments || []).map(e => enrollmentCode(e)).filter(Boolean);
+
+// class_number 첫 번째 숫자로 단지 자동 파생: '1xx' → '2단지', '2xx' → '10단지'
+const branchFromClassNumber = (num) => {
+    const first = (num || '').trim()[0];
     if (first === '1') return '2단지';
     if (first === '2') return '10단지';
     return '';
 };
+
+// 학생의 소속: branch 필드 우선, 없으면 첫 번째 enrollment의 class_number에서 파생
+const branchFromStudent = (s) => s.branch || (s.enrollments?.[0] ? branchFromClassNumber(s.enrollments[0].class_number) : '');
+
+// 모든 enrollment의 요일 합집합
+const combinedDays = (s) => [...new Set((s.enrollments || []).flatMap(e => normalizeDays(e.day)))];
 
 // 학교명 축약 표시 (예: 진명여자고등학교 고등 2학년 → 진명여고2)
 const abbreviateSchool = (s) => {
@@ -43,6 +54,29 @@ const abbreviateSchool = (s) => {
     return `${school}${levelShort}${grade}`.trim() || '—';
 };
 
+// ---------------------------------------------------------------------------
+// 한글 초성 검색 헬퍼
+// ---------------------------------------------------------------------------
+const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+
+// 완성형 한글에서 초성 추출 (가=0xAC00, 각 초성 = 21*28 = 588 간격)
+const getChosung = (str) => {
+    return [...(str || '')].map(ch => {
+        const code = ch.charCodeAt(0);
+        if (code >= 0xAC00 && code <= 0xD7A3) return CHO[Math.floor((code - 0xAC00) / 588)];
+        return ch;
+    }).join('');
+};
+
+// 검색어가 초성으로만 구성되어 있는지 확인
+const isChosungOnly = (str) => str && [...str].every(ch => CHO.includes(ch));
+
+// 초성 패턴 매칭: 검색어 초성이 대상 문자열의 초성에 포함되는지
+const matchChosung = (target, term) => {
+    if (!target || !term) return false;
+    return getChosung(target).includes(term);
+};
+
 // day 필드 정규화 → 배열 (예: "월요일" → ["월"], ["월","수"] → ["월","수"])
 const normalizeDays = (day) => {
     if (!day) return [];
@@ -54,6 +88,50 @@ const normalizeDays = (day) => {
 const displayDays = (day) => {
     const days = normalizeDays(day);
     return days.length ? days.join(', ') : 'N/A';
+};
+
+// class_type 정규화 → 배열 (예: "정규" → ["정규"], ["정규","특강"] → ["정규","특강"])
+const normalizeClassTypes = (ct) => {
+    if (!ct) return ['정규'];
+    if (Array.isArray(ct)) return ct;
+    return ct.split(/[,·\s]+/).map(s => s.trim()).filter(Boolean);
+};
+
+// 기존 flat 필드 → enrollments 배열 자동 변환 (마이그레이션)
+const normalizeEnrollments = (s) => {
+    if (s.enrollments?.length) return s.enrollments;
+    const levelSymbol = s.level_code || '';
+    const classNumber = s.level_symbol || '';
+    const classTypes = normalizeClassTypes(s.class_type);
+    const day = normalizeDays(s.day);
+    if (classTypes.length <= 1) {
+        const ct = classTypes[0] || '정규';
+        const e = { class_type: ct, level_symbol: levelSymbol, class_number: classNumber, day, start_date: ct === '특강' ? (s.special_start_date || s.start_date || '') : (s.start_date || '') };
+        if (ct === '특강') e.end_date = s.special_end_date || '';
+        return [e];
+    }
+    return classTypes.map(ct => {
+        const e = { class_type: ct, level_symbol: levelSymbol, class_number: classNumber, day, start_date: ct === '특강' ? (s.special_start_date || '') : (s.start_date || '') };
+        if (ct === '특강') e.end_date = s.special_end_date || '';
+        return e;
+    });
+};
+
+// 폼 카드 타이틀 변경 헬퍼
+const setFormCardTitle = (el, icon, text) => {
+    if (!el) return;
+    // 아이콘 span 유지하고 텍스트만 교체
+    const iconSpan = el.querySelector('.material-symbols-outlined');
+    const btnHtml = el.querySelector('.memo-add-btn')?.outerHTML || '';
+    el.innerHTML = '';
+    if (iconSpan) el.appendChild(iconSpan);
+    el.appendChild(document.createTextNode(' ' + text + ' '));
+    if (btnHtml) el.insertAdjacentHTML('beforeend', btnHtml);
+};
+const setFormCardTitles = (basic, contact, classInfo) => {
+    setFormCardTitle(document.getElementById('form-card-title-basic'), 'person', basic);
+    setFormCardTitle(document.getElementById('form-card-title-contact'), 'contact_phone', contact);
+    setFormCardTitle(document.getElementById('form-card-title-class'), 'school', classInfo);
 };
 
 const formatDate = (dateStr) => {
@@ -128,7 +206,9 @@ async function loadStudentList() {
         const snapshot = await getDocs(collection(db, 'students'));
         allStudents = [];
         snapshot.forEach((docSnap) => {
-            allStudents.push({ id: docSnap.id, ...docSnap.data() });
+            const data = { id: docSnap.id, ...docSnap.data() };
+            data.enrollments = normalizeEnrollments(data);
+            allStudents.push(data);
         });
         allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
         applyFilterAndRender();
@@ -148,20 +228,27 @@ function applyFilterAndRender() {
 
     // 각 타입별로 AND 조건 적용
     if (activeFilters.level)      filtered = filtered.filter(s => s.level === activeFilters.level);
-    if (activeFilters.branch)     filtered = filtered.filter(s => (s.branch || branchFromSymbol(s.level_symbol)) === activeFilters.branch);
-    if (activeFilters.day)        filtered = filtered.filter(s => normalizeDays(s.day).includes(activeFilters.day));
+    if (activeFilters.branch)     filtered = filtered.filter(s => branchFromStudent(s) === activeFilters.branch);
+    if (activeFilters.day)        filtered = filtered.filter(s => combinedDays(s).includes(activeFilters.day));
     if (activeFilters.status)     filtered = filtered.filter(s => s.status === activeFilters.status);
-    if (activeFilters.class_type) filtered = filtered.filter(s => (s.class_type || '정규') === activeFilters.class_type);
+    if (activeFilters.class_type) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.class_type === activeFilters.class_type));
 
     const term = document.getElementById('studentSearchInput')?.value.trim().toLowerCase() || '';
     if (term) {
-        filtered = filtered.filter(s =>
-            (s.name && s.name.toLowerCase().includes(term)) ||
-            (s.school && s.school.toLowerCase().includes(term)) ||
-            (s.student_phone && s.student_phone.includes(term)) ||
-            (s.parent_phone_1 && s.parent_phone_1.includes(term)) ||
-            classCode(s).toLowerCase().includes(term)
-        );
+        const chosungMode = isChosungOnly(term);
+        filtered = filtered.filter(s => {
+            if (chosungMode) {
+                // 초성 검색: 이름, 학교에서 초성 매칭
+                return matchChosung(s.name, term) ||
+                       matchChosung(s.school, term);
+            }
+            // 일반 검색
+            return (s.name && s.name.toLowerCase().includes(term)) ||
+                   (s.school && s.school.toLowerCase().includes(term)) ||
+                   (s.student_phone && s.student_phone.includes(term)) ||
+                   (s.parent_phone_1 && s.parent_phone_1.includes(term)) ||
+                   allClassCodes(s).some(code => code.toLowerCase().includes(term));
+        });
     }
 
     updateFilterChips();
@@ -200,25 +287,74 @@ function renderStudentList(students) {
         return;
     }
 
+    if (groupViewMode !== 'none') {
+        renderGroupedList(students, listContainer);
+        return;
+    }
+
+    students.forEach(s => renderStudentItem(s, listContainer));
+}
+
+function renderStudentItem(s, container) {
+    const div = document.createElement('div');
+    div.className = 'list-item';
+    div.dataset.id = s.id;
+    const branch = branchFromStudent(s);
+    const schoolShort = abbreviateSchool(s);
+    const subLine = [branch, schoolShort !== '—' ? schoolShort : ''].filter(Boolean).join(' · ');
+    const tags = allClassCodes(s).map(c => `<span class="item-tag">${esc(c)}</span>`).join('') || '<span class="item-tag">—</span>';
+    div.innerHTML = `
+        <span class="material-symbols-outlined drag-icon">person</span>
+        <div class="item-main">
+            <span class="item-title">${s.name || '—'}</span>
+            <span class="item-desc">${subLine || '—'}</span>
+        </div>
+        <div class="item-tags">${tags}</div>
+    `;
+    div.addEventListener('click', (e) => selectStudent(s.id, s, e.currentTarget));
+    container.appendChild(div);
+}
+
+function renderGroupedList(students, container) {
+    const groups = {};
     students.forEach(s => {
-        const div = document.createElement('div');
-        div.className = 'list-item';
-        div.dataset.id = s.id;
-        const branch = s.branch || branchFromSymbol(s.level_symbol) || '';
-        const schoolShort = abbreviateSchool(s);
-        const subLine = [branch, schoolShort !== '—' ? schoolShort : ''].filter(Boolean).join(' · ');
-        div.innerHTML = `
-            <span class="material-symbols-outlined drag-icon">person</span>
-            <div class="item-main">
-                <span class="item-title">${s.name || '—'}</span>
-                <span class="item-desc">${subLine || '—'}</span>
-            </div>
-            <span class="item-tag">${classCode(s)}</span>
-        `;
-        div.addEventListener('click', (e) => selectStudent(s.id, s, e.currentTarget));
-        listContainer.appendChild(div);
+        let key;
+        if (groupViewMode === 'branch') {
+            key = branchFromStudent(s) || '미지정';
+        } else {
+            const codes = allClassCodes(s);
+            key = codes.length ? codes[0] : '미지정';
+        }
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(s);
+    });
+
+    // 그룹 키 정렬
+    const sortedKeys = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'ko'));
+
+    sortedKeys.forEach(key => {
+        const header = document.createElement('div');
+        header.className = 'group-header';
+        header.innerHTML = `<span class="group-label">${esc(key)}</span><span class="group-count">${groups[key].length}명</span>`;
+        container.appendChild(header);
+        groups[key].forEach(s => renderStudentItem(s, container));
     });
 }
+
+window.toggleGroupView = () => {
+    const modes = ['none', 'branch', 'class'];
+    const labels = { none: 'view_agenda', branch: 'location_city', class: 'school' };
+    const titles = { none: '그룹 뷰 (반별)', branch: '그룹 뷰: 소속별 → 반별로 전환', class: '그룹 뷰: 반별 → 해제' };
+    const idx = modes.indexOf(groupViewMode);
+    groupViewMode = modes[(idx + 1) % modes.length];
+    const btn = document.getElementById('group-view-btn');
+    if (btn) {
+        btn.textContent = labels[groupViewMode];
+        btn.title = titles[groupViewMode];
+        btn.classList.toggle('active', groupViewMode !== 'none');
+    }
+    applyFilterAndRender();
+};
 
 function updateCount(n) {
     const el = document.getElementById('student-count');
@@ -279,7 +415,7 @@ window.selectStudent = (studentId, studentData, targetElement) => {
 
     document.getElementById('profile-initial').textContent = studentData.name?.[0] || 'S';
     document.getElementById('profile-name').textContent = studentData.name || studentId;
-    const branch = studentData.branch || branchFromSymbol(studentData.level_symbol) || '';
+    const branch = branchFromStudent(studentData);
     const schoolShort = abbreviateSchool(studentData);
     document.getElementById('profile-school').textContent = branch && schoolShort !== '—'
         ? `${branch} · ${schoolShort}`
@@ -296,28 +432,10 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     document.getElementById('profile-parent-phone-1').textContent = studentData.parent_phone_1 || '—';
     document.getElementById('profile-parent-phone-2').textContent = studentData.parent_phone_2 || '—';
 
-    // 학습·등록 정보 카드
-    document.getElementById('profile-level').textContent = classCode(studentData) || '—';
-    document.getElementById('profile-branch').textContent = studentData.branch || branchFromSymbol(studentData.level_symbol) || '—';
-    document.getElementById('profile-day').textContent = displayDays(studentData.day);
-    document.getElementById('profile-class-type').textContent = studentData.class_type || '정규';
+    // 수업 정보 카드
+    document.getElementById('profile-branch').textContent = branch || '—';
     document.getElementById('detail-status').textContent = studentData.status || '—';
-
-    const specRow = document.getElementById('profile-special-class-row');
-    if (specRow) {
-        if (studentData.class_type === '특강') {
-            const sStart = studentData.special_start_date || '?';
-            const sEnd = studentData.special_end_date || '?';
-            document.getElementById('profile-special-period').textContent = `${formatDate(sStart)} ~ ${formatDate(sEnd)}`;
-            specRow.style.display = 'block';
-        } else {
-            specRow.style.display = 'none';
-        }
-    }
-
-    document.getElementById('profile-start-date').textContent = formatDate(studentData.start_date);
-    const startDateRow = document.getElementById('profile-start-date-row');
-    if (startDateRow) startDateRow.style.display = (studentData.class_type === '특강') ? 'none' : 'block';
+    document.getElementById('profile-day').textContent = displayDays(combinedDays(studentData));
 
     const pauseRow = document.getElementById('profile-pause-row');
     if (pauseRow) {
@@ -330,6 +448,9 @@ window.selectStudent = (studentId, studentData, targetElement) => {
             pauseRow.style.display = 'none';
         }
     }
+
+    // enrollment 카드 렌더링
+    renderEnrollmentCards(studentData);
 
     document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
     if (targetElement) targetElement.classList.add('active');
@@ -357,6 +478,7 @@ window.showNewStudentForm = () => {
     document.getElementById('form-header').style.display = 'flex';
     document.getElementById('detail-tab-bar').style.display = 'none';
     document.getElementById('form-title').textContent = '신규 등록';
+    setFormCardTitles('기본 정보', '연락처', '수업 정보');
     document.getElementById('detail-view').style.display = 'none';
     document.getElementById('history-view').style.display = 'none';
     document.getElementById('detail-form').style.display = 'block';
@@ -365,14 +487,33 @@ window.showNewStudentForm = () => {
     document.getElementById('form-memo-list').innerHTML =
         '<p style="color:var(--text-sec);font-size:0.85em;">저장 후 메모를 추가할 수 있습니다.</p>';
 
+    // static enrollment 필드 표시, 동적 목록 숨기기
+    const staticFields = document.getElementById('static-enrollment-fields');
+    if (staticFields) staticFields.style.display = 'block';
+    const editEnrollList = document.getElementById('edit-enrollment-list');
+    if (editEnrollList) { editEnrollList.style.display = 'none'; editEnrollList.innerHTML = ''; }
+
     // 오늘 날짜를 기본값으로
     const today = new Date().toISOString().slice(0, 10);
     document.querySelector('[name="start_date"]').value = today;
 
-    document.querySelector('[name="class_type"]').value = '정규';
-    if (window.handleClassTypeChange) window.handleClassTypeChange('정규');
+    // 수업종류: 정규 기본 → 등원일 라벨 + 날짜 제한
+    const classTypeSelect = document.querySelector('[name="class_type"]');
+    if (classTypeSelect) classTypeSelect.value = '정규';
+    if (window.handleFormClassTypeChange) window.handleFormClassTypeChange();
+    // 시작일 날짜 제한
+    applyDateConstraints(document.querySelector('[name="start_date"]'), document.querySelector('[name="special_end_date"]'));
 
     if (window.handleStatusChange) window.handleStatusChange('재원');
+
+    // 추가 수업 목록 초기화 + 버튼 표시
+    _pendingEnrollments = [];
+    renderPendingEnrollments();
+    const addEnrollBtn = document.getElementById('form-add-enrollment-btn');
+    if (addEnrollBtn) {
+        addEnrollBtn.style.display = 'flex';
+        addEnrollBtn.onclick = window.openFormEnrollmentModal;
+    }
 };
 
 window.handleStatusChange = (val) => {
@@ -403,15 +544,17 @@ window.showEditForm = () => {
     document.getElementById('form-header').style.display = 'flex';
     document.getElementById('detail-tab-bar').style.display = 'none';
     document.getElementById('form-title').textContent = '정보 수정';
+
+    // 카드 타이틀 변경
+    setFormCardTitles('기본정보 변경', '연락처 변경', '수업 정보 추가 및 변경');
     document.getElementById('detail-view').style.display = 'none';
     document.getElementById('history-view').style.display = 'none';
     document.getElementById('detail-form').style.display = 'block';
-    document.getElementById('opt-withdraw').style.display = 'block';
 
     const f = document.getElementById('new-student-form');
     f.reset();
 
-    // Pre-fill data
+    // Pre-fill 기본 정보 + 연락처
     f.name.value = student.name || '';
     f.level.value = student.level || '초등';
     f.school.value = student.school || '';
@@ -419,25 +562,27 @@ window.showEditForm = () => {
     f.student_phone.value = student.student_phone || '';
     f.parent_phone_1.value = student.parent_phone_1 || '';
     f.parent_phone_2.value = student.parent_phone_2 || '';
-    f.level_code.value = student.level_code || '';
-    f.level_symbol.value = student.level_symbol || '';
-    f.start_date.value = student.start_date || '';
 
-    f.class_type.value = student.class_type || '정규';
-    f.special_start_date.value = student.special_start_date || '';
-    f.special_end_date.value = student.special_end_date || '';
-    if (window.handleClassTypeChange) window.handleClassTypeChange(f.class_type.value);
+    // 신규등록 static 필드 숨기고 동적 enrollment 카드 표시
+    const staticFields = document.getElementById('static-enrollment-fields');
+    if (staticFields) staticFields.style.display = 'none';
+    renderEditableEnrollments(student.enrollments || []);
 
+    // 상태
+    document.getElementById('opt-withdraw').style.display = 'block';
     f.status.value = student.status || '재원';
     f.pause_start_date.value = student.pause_start_date || '';
     f.pause_end_date.value = student.pause_end_date || '';
     if (window.handleStatusChange) window.handleStatusChange(f.status.value);
 
-    // Pre-fill days
-    const days = normalizeDays(student.day);
-    f.querySelectorAll('[name="day"]').forEach(cb => {
-        cb.checked = days.includes(cb.value);
-    });
+    // 수정 모드: pending enrollments 숨김, 수업 추가 버튼은 addEditEnrollment로
+    const pendingContainer = document.getElementById('form-pending-enrollments');
+    if (pendingContainer) { pendingContainer.style.display = 'none'; pendingContainer.innerHTML = ''; }
+    const addEnrollBtn = document.getElementById('form-add-enrollment-btn');
+    if (addEnrollBtn) {
+        addEnrollBtn.style.display = 'flex';
+        addEnrollBtn.onclick = window.addEditEnrollment;
+    }
 
     loadFormMemos(currentStudentId);
 };
@@ -448,6 +593,15 @@ window.hideForm = () => {
     document.getElementById('detail-header').style.display = 'flex';
     document.getElementById('detail-tab-bar').style.display = 'flex';
     document.getElementById('detail-form').style.display = 'none';
+    // 동적 enrollment 목록 초기화
+    const editEnrollList = document.getElementById('edit-enrollment-list');
+    if (editEnrollList) { editEnrollList.style.display = 'none'; editEnrollList.innerHTML = ''; }
+    _editEnrollments = [];
+    // static 필드 복원
+    const staticFields = document.getElementById('static-enrollment-fields');
+    if (staticFields) staticFields.style.display = 'block';
+    // 카드 타이틀 초기화
+    setFormCardTitles('기본 정보', '연락처', '수업 정보');
     switchDetailTab('info');
 };
 
@@ -457,36 +611,74 @@ window.hideForm = () => {
 window.submitNewStudent = async () => {
     const f = document.getElementById('new-student-form');
     const name = f.name.value.trim();
-    const levelSymbol = f.level_symbol.value.trim();
-    const branch = branchFromSymbol(levelSymbol);
     const parentPhone1 = f.parent_phone_1.value.trim();
 
     if (!name) { alert('이름을 입력하세요.'); return; }
-    if (!branch) { alert('레벨기호를 입력하세요. (1xx: 2단지, 2xx: 10단지)'); return; }
     if (!parentPhone1) { alert('학부모 연락처를 입력하세요.'); return; }
 
-    const days = Array.from(f.querySelectorAll('[name="day"]:checked')).map(cb => cb.value);
+    let studentData;
 
-    const studentData = {
-        name,
-        level: f.level.value,
-        school: f.school.value.trim(),
-        grade: f.grade.value.trim(),
-        student_phone: f.student_phone.value.trim(),
-        parent_phone_1: parentPhone1,
-        parent_phone_2: f.parent_phone_2.value.trim(),
-        branch,
-        level_code: f.level_code.value.trim(),
-        level_symbol: levelSymbol,
-        class_type: f.class_type.value,
-        special_start_date: f.special_start_date.value,
-        special_end_date: f.special_end_date.value,
-        day: days,
-        start_date: f.start_date.value,
-        status: f.status.value,
-        pause_start_date: f.pause_start_date.value,
-        pause_end_date: f.pause_end_date.value,
-    };
+    if (isEditMode) {
+        // 수정 모드: 기본 정보 + 상태 + 동적 enrollment 카드에서 수집
+        const oldStudent = allStudents.find(s => s.id === currentStudentId) || {};
+        const updatedEnrollments = collectEditEnrollments();
+        const firstClassNumber = updatedEnrollments[0]?.class_number || '';
+        const branch = branchFromClassNumber(firstClassNumber) || oldStudent.branch || '';
+
+        studentData = {
+            name,
+            level: f.level.value,
+            school: f.school.value.trim(),
+            grade: f.grade.value.trim(),
+            student_phone: f.student_phone.value.trim(),
+            parent_phone_1: parentPhone1,
+            parent_phone_2: f.parent_phone_2.value.trim(),
+            branch,
+            status: f.status.value,
+            pause_start_date: f.pause_start_date.value,
+            pause_end_date: f.pause_end_date.value,
+            enrollments: updatedEnrollments,
+        };
+    } else {
+        // 신규 등록: 첫 enrollment 포함
+        const classNumber = f.class_number.value.trim();
+        const branch = branchFromClassNumber(classNumber);
+
+        if (!branch) { alert('반넘버를 입력하세요. (1xx: 2단지, 2xx: 10단지)'); return; }
+
+        const days = Array.from(f.querySelectorAll('[name="day"]:checked')).map(cb => cb.value);
+        const classType = f.class_type.value;
+        const levelSymbol = f.level_symbol.value.trim();
+
+        const initialEnrollment = {
+            class_type: classType,
+            level_symbol: levelSymbol,
+            class_number: classNumber,
+            day: days,
+            start_date: f.start_date.value,
+        };
+        if (classType !== '정규' && f.special_end_date.value) {
+            initialEnrollment.end_date = f.special_end_date.value;
+        }
+
+        // 폼 enrollment + 추가 수업 목록 합치기
+        const allEnrollments = [initialEnrollment, ..._pendingEnrollments];
+
+        studentData = {
+            name,
+            level: f.level.value,
+            school: f.school.value.trim(),
+            grade: f.grade.value.trim(),
+            student_phone: f.student_phone.value.trim(),
+            parent_phone_1: parentPhone1,
+            parent_phone_2: f.parent_phone_2.value.trim(),
+            branch,
+            status: f.status.value,
+            pause_start_date: f.pause_start_date.value,
+            pause_end_date: f.pause_end_date.value,
+            enrollments: allEnrollments,
+        };
+    }
 
     const saveBtn = document.getElementById('save-btn');
     saveBtn.disabled = true;
@@ -497,8 +689,10 @@ window.submitNewStudent = async () => {
             const docId = currentStudentId;
             const oldStudent = allStudents.find(s => s.id === docId) || {};
 
-            const beforeStr = `상태:${oldStudent.status || ''}, 분류:${oldStudent.class_type || '정규'}, 반:${classCode(oldStudent)}, 요일:${displayDays(oldStudent.day)}`;
-            const afterStr = `상태:${studentData.status}, 분류:${studentData.class_type}, 반:${classCode(studentData)}, 요일:${displayDays(studentData.day)}`;
+            const oldCodes = allClassCodes(oldStudent).join(', ') || '—';
+            const newCodes = (studentData.enrollments || []).map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '—';
+            const beforeStr = `상태:${oldStudent.status || ''}, 반:${oldCodes}, 요일:${displayDays(combinedDays(oldStudent))}`;
+            const afterStr = `상태:${studentData.status}, 반:${newCodes}, 요일:${displayDays(studentData.enrollments?.[0]?.day)}`;
 
             await setDoc(doc(db, 'students', docId), studentData, { merge: true });
             await addDoc(collection(db, 'history_logs'), {
@@ -510,19 +704,22 @@ window.submitNewStudent = async () => {
                 timestamp: serverTimestamp(),
             });
         } else {
+            const branch = studentData.branch;
             const docId = makeDocId(name, parentPhone1, branch);
             await setDoc(doc(db, 'students', docId), studentData);
+            const codes = allClassCodes(studentData).join(', ') || '—';
             await addDoc(collection(db, 'history_logs'), {
                 doc_id: docId,
                 change_type: 'ENROLL',
                 before: '—',
-                after: `신규 등록: ${name} (${studentData.level_code}${studentData.level_symbol})`,
+                after: `신규 등록: ${name} (${codes})`,
                 google_login_id: currentUser?.email || 'system',
                 timestamp: serverTimestamp(),
             });
             currentStudentId = docId;
         }
 
+        _pendingEnrollments = [];
         hideForm();
         await loadStudentList();
 
@@ -541,18 +738,583 @@ window.submitNewStudent = async () => {
     }
 };
 
-window.handleClassTypeChange = (val) => {
-    const specialEl = document.getElementById('special-period-container');
-    const startDateEl = document.getElementById('start-date-container');
-    if (specialEl) specialEl.style.display = (val === '특강') ? 'block' : 'none';
-    if (startDateEl) startDateEl.style.display = (val === '특강') ? 'none' : 'block';
+// 날짜 제한 공통: 시작일은 오늘-1개월~, 종료일은 시작일+3개월 이내
+const applyDateConstraints = (startInput, endInput) => {
+    if (!startInput) return;
+    const today = new Date();
+    const minStart = new Date(today);
+    minStart.setMonth(minStart.getMonth() - 1);
+    startInput.min = minStart.toISOString().split('T')[0];
+
+    if (endInput) {
+        const syncEnd = () => {
+            if (startInput.value) {
+                endInput.min = startInput.value;
+                const maxEnd = new Date(startInput.value);
+                maxEnd.setMonth(maxEnd.getMonth() + 3);
+                endInput.max = maxEnd.toISOString().split('T')[0];
+            }
+        };
+        startInput.addEventListener('change', syncEnd);
+        syncEnd();
+    }
 };
 
-window.handleLevelSymbolChange = (val) => {
-    // 레벨기호 첫 번째 숫자로 소속 자동 표시
-    const branch = branchFromSymbol(val);
+// 신규등록 폼: 수업종류 변경 시 날짜 필드 전환
+window.handleFormClassTypeChange = () => {
+    const val = document.querySelector('[name="class_type"]')?.value;
+    const isRegular = val === '정규';
+    const specialEl = document.getElementById('special-period-container');
+    const startDateEl = document.getElementById('start-date-container');
+    const startLabel = startDateEl?.querySelector('.field-label');
+    if (specialEl) specialEl.style.display = isRegular ? 'none' : 'block';
+    if (startDateEl) startDateEl.style.display = 'block';
+    if (startLabel) startLabel.textContent = isRegular ? '등원일' : '시작일';
+
+    // 날짜 제한 적용
+    const startInput = document.querySelector('[name="start_date"]');
+    const endInput = document.querySelector('[name="special_end_date"]');
+    applyDateConstraints(startInput, endInput);
+};
+
+// 신규등록 폼: 수업 추가 모달 열기 (enrollment-modal 재사용, 로컬 저장)
+window.openFormEnrollmentModal = () => {
+    const modal = document.getElementById('enrollment-modal');
+    if (!modal) return;
+    const form = document.getElementById('enrollment-form');
+    if (form) form.reset();
+    const today = new Date().toISOString().slice(0, 10);
+    const startInput = modal.querySelector('[name="enroll_start_date"]');
+    if (startInput) startInput.value = today;
+    const specContainer = document.getElementById('enroll-special-period');
+    if (specContainer) specContainer.style.display = 'none';
+    const startLabel = document.querySelector('#enroll-start-date-container .field-label');
+    if (startLabel) startLabel.textContent = '등원일';
+    const endInput = modal.querySelector('[name="enroll_end_date"]');
+    applyDateConstraints(startInput, endInput);
+    // 모달 데이터 속성으로 컨텍스트 표시 (form = 신규등록 폼에서 호출)
+    modal.dataset.context = 'form';
+    modal.style.display = 'flex';
+};
+
+// 추가 수업 목록 렌더링
+function renderPendingEnrollments() {
+    const container = document.getElementById('form-pending-enrollments');
+    if (!container) return;
+    if (_pendingEnrollments.length === 0) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    container.style.display = 'flex';
+    container.innerHTML = _pendingEnrollments.map((e, idx) => {
+        const code = enrollmentCode(e);
+        const days = displayDays(e.day);
+        return `<div class="pending-enrollment-card">
+            <span class="enrollment-tag">${esc(code)}</span>
+            <span class="pending-enrollment-info">${esc(e.class_type)} · ${esc(days)}</span>
+            <button type="button" class="btn-remove-pending" onclick="window.removePendingEnrollment(${idx})" title="삭제">
+                <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+            </button>
+        </div>`;
+    }).join('');
+}
+
+window.removePendingEnrollment = (idx) => {
+    _pendingEnrollments.splice(idx, 1);
+    renderPendingEnrollments();
+};
+
+// 반넘버 입력 시 소속 자동 표시
+window.handleClassNumberChange = (val) => {
+    const branch = branchFromClassNumber(val);
     const branchPreview = document.getElementById('branch-preview');
     if (branchPreview) branchPreview.textContent = branch ? `(${branch})` : '';
+};
+
+// ---------------------------------------------------------------------------
+// 수정 폼: 동적 enrollment 편집 카드 렌더링
+// ---------------------------------------------------------------------------
+let _editEnrollments = []; // 수정 중인 enrollment 배열
+
+function renderEditableEnrollments(enrollments) {
+    _editEnrollments = enrollments.map(e => ({ ...e })); // deep copy
+    const container = document.getElementById('edit-enrollment-list');
+    if (!container) return;
+    container.style.display = 'flex';
+    _rebuildEditEnrollmentCards();
+}
+
+function _rebuildEditEnrollmentCards() {
+    const container = document.getElementById('edit-enrollment-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    _editEnrollments.forEach((e, idx) => {
+        const code = enrollmentCode(e);
+        const ct = e.class_type || '정규';
+        const isRegular = ct === '정규';
+        const days = normalizeDays(e.day);
+        const dayCheckboxes = ['월','화','수','목','금','토','일'].map(d =>
+            `<label class="day-check"><input type="checkbox" name="edit_day_${idx}" value="${d}" ${days.includes(d) ? 'checked' : ''}>${d}</label>`
+        ).join('');
+
+        const card = document.createElement('div');
+        card.className = 'edit-enrollment-card';
+        card.innerHTML = `
+            <div class="edit-enrollment-header">
+                <span class="enrollment-tag">${esc(code || '새 수업')}</span>
+                <span class="enrollment-type">${esc(ct)}</span>
+                <button type="button" class="btn-remove-pending" onclick="window.removeEditEnrollment(${idx})" title="수업 삭제">
+                    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                </button>
+            </div>
+            <div class="form-fields" style="gap:12px;">
+                <div class="form-row">
+                    <div class="form-field">
+                        <label class="field-label">레벨기호</label>
+                        <input class="field-input" data-field="level_symbol" data-idx="${idx}" type="text" placeholder="HA" value="${esc(e.level_symbol || '')}">
+                    </div>
+                    <div class="form-field">
+                        <label class="field-label">반넘버</label>
+                        <input class="field-input" data-field="class_number" data-idx="${idx}" type="text" placeholder="101,201"
+                            inputmode="numeric" value="${esc(e.class_number || '')}"
+                            oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                    </div>
+                </div>
+                <div class="form-field">
+                    <label class="field-label">수업종류</label>
+                    <select class="field-select" data-field="class_type" data-idx="${idx}"
+                        onchange="window.handleEditEnrollClassType(${idx}, this.value)">
+                        <option value="정규" ${ct === '정규' ? 'selected' : ''}>정규</option>
+                        <option value="특강" ${ct === '특강' ? 'selected' : ''}>특강</option>
+                        <option value="내신" ${ct === '내신' ? 'selected' : ''}>내신</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label class="field-label">요일</label>
+                    <div class="day-checkboxes">${dayCheckboxes}</div>
+                </div>
+                <div class="form-field">
+                    <label class="field-label">${isRegular ? '등원일' : '시작일'}</label>
+                    <input class="field-input" data-field="start_date" data-idx="${idx}" type="date" value="${e.start_date || ''}">
+                </div>
+                <div class="form-field" style="display:${isRegular ? 'none' : 'block'}">
+                    <label class="field-label">종료일</label>
+                    <input class="field-input" data-field="end_date" data-idx="${idx}" type="date" value="${e.end_date || ''}">
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+
+        // 날짜 제한 적용
+        const startInput = card.querySelector('[data-field="start_date"]');
+        const endInput = card.querySelector('[data-field="end_date"]');
+        applyDateConstraints(startInput, endInput);
+    });
+
+    if (_editEnrollments.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.85em;">수업이 없습니다. 아래 버튼으로 추가하세요.</p>';
+    }
+}
+
+// 수정 폼: 수업종류 변경 시 날짜 라벨/표시 전환
+window.handleEditEnrollClassType = (idx, val) => {
+    const container = document.getElementById('edit-enrollment-list');
+    if (!container) return;
+    const cards = container.querySelectorAll('.edit-enrollment-card');
+    const card = cards[idx];
+    if (!card) return;
+    const isRegular = val === '정규';
+    const startLabel = card.querySelectorAll('.field-label')[4]; // 5번째 label = 시작일/등원일
+    if (startLabel) startLabel.textContent = isRegular ? '등원일' : '시작일';
+    const endField = card.querySelector('[data-field="end_date"]')?.closest('.form-field');
+    if (endField) endField.style.display = isRegular ? 'none' : 'block';
+};
+
+window.removeEditEnrollment = (idx) => {
+    _editEnrollments.splice(idx, 1);
+    _rebuildEditEnrollmentCards();
+};
+
+// 수정 폼에서 수업 추가 (enrollment modal 재사용)
+window.addEditEnrollment = () => {
+    const modal = document.getElementById('enrollment-modal');
+    if (!modal) return;
+    const form = document.getElementById('enrollment-form');
+    if (form) form.reset();
+    const today = new Date().toISOString().slice(0, 10);
+    const startInput = modal.querySelector('[name="enroll_start_date"]');
+    if (startInput) startInput.value = today;
+    const specContainer = document.getElementById('enroll-special-period');
+    if (specContainer) specContainer.style.display = 'none';
+    const startLabel = document.querySelector('#enroll-start-date-container .field-label');
+    if (startLabel) startLabel.textContent = '등원일';
+    const endInput = modal.querySelector('[name="enroll_end_date"]');
+    applyDateConstraints(startInput, endInput);
+    modal.dataset.context = 'edit';
+    modal.style.display = 'flex';
+};
+
+// 수정 폼에서 현재 편집 중인 enrollment 데이터 수집
+function collectEditEnrollments() {
+    const container = document.getElementById('edit-enrollment-list');
+    if (!container) return [];
+    const cards = container.querySelectorAll('.edit-enrollment-card');
+    return Array.from(cards).map((card, idx) => {
+        const get = (field) => card.querySelector(`[data-field="${field}"][data-idx="${idx}"]`)?.value?.trim() || '';
+        const days = Array.from(card.querySelectorAll(`[name="edit_day_${idx}"]:checked`)).map(cb => cb.value);
+        const classType = get('class_type');
+        const enrollment = {
+            class_type: classType,
+            level_symbol: get('level_symbol'),
+            class_number: get('class_number'),
+            day: days,
+            start_date: get('start_date'),
+        };
+        if (classType !== '정규') {
+            const endDate = get('end_date');
+            if (endDate) enrollment.end_date = endDate;
+        }
+        return enrollment;
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment 카드 렌더링 (상세 뷰)
+// ---------------------------------------------------------------------------
+function renderEnrollmentCards(studentData) {
+    const container = document.getElementById('enrollment-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const enrollments = studentData.enrollments || [];
+    if (enrollments.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.85em;">수업 정보가 없습니다.</p>';
+        return;
+    }
+
+    enrollments.forEach((e, idx) => {
+        const code = enrollmentCode(e);
+        const days = displayDays(e.day);
+        const ct = e.class_type || '정규';
+        const isRegular = ct === '정규';
+        const card = document.createElement('div');
+        card.className = 'enrollment-card';
+        card.innerHTML = `
+            <div class="enrollment-card-header">
+                <span class="enrollment-tag">${esc(code)}</span>
+                <span class="enrollment-type">${esc(ct)}</span>
+                ${!isRegular ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리">종강처리</button>` : ''}
+            </div>
+            <div class="enrollment-card-body">
+                <div class="enrollment-field"><span class="field-label">요일</span><span>${esc(days)}</span></div>
+                <div class="enrollment-field"><span class="field-label">${isRegular ? '등원일' : '시작일'}</span><span>${esc(formatDate(e.start_date))}</span></div>
+                ${e.end_date ? `<div class="enrollment-field"><span class="field-label">종료일</span><span>${esc(formatDate(e.end_date))}</span></div>` : ''}
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// 수업 추가 모달
+// ---------------------------------------------------------------------------
+window.openEnrollmentModal = () => {
+    if (!currentStudentId) return;
+    const modal = document.getElementById('enrollment-modal');
+    if (!modal) return;
+    // 폼 리셋
+    const form = document.getElementById('enrollment-form');
+    if (form) form.reset();
+    const today = new Date().toISOString().slice(0, 10);
+    const startInput = modal.querySelector('[name="enroll_start_date"]');
+    if (startInput) startInput.value = today;
+    // 기본 정규 → 등원일, 종료일 숨김
+    const specContainer = document.getElementById('enroll-special-period');
+    if (specContainer) specContainer.style.display = 'none';
+    const startLabel = document.querySelector('#enroll-start-date-container .field-label');
+    if (startLabel) startLabel.textContent = '등원일';
+    // 날짜 제한
+    const endInput = modal.querySelector('[name="enroll_end_date"]');
+    applyDateConstraints(startInput, endInput);
+    modal.style.display = 'flex';
+};
+
+window.closeEnrollmentModal = (e) => {
+    if (e && e.target !== document.getElementById('enrollment-modal')) return;
+    const modal = document.getElementById('enrollment-modal');
+    modal.style.display = 'none';
+    delete modal.dataset.context;
+};
+
+window.handleEnrollClassTypeChange = () => {
+    const val = document.querySelector('#enrollment-form [name="enroll_class_type"]')?.value;
+    const isRegular = val === '정규';
+    const specContainer = document.getElementById('enroll-special-period');
+    const startContainer = document.getElementById('enroll-start-date-container');
+    const startLabel = startContainer?.querySelector('.field-label');
+    if (specContainer) specContainer.style.display = isRegular ? 'none' : 'block';
+    if (startContainer) startContainer.style.display = 'block';
+    if (startLabel) startLabel.textContent = isRegular ? '등원일' : '시작일';
+
+    // 날짜 제한 적용
+    const startInput = document.querySelector('#enrollment-form [name="enroll_start_date"]');
+    const endInput = document.querySelector('#enrollment-form [name="enroll_end_date"]');
+    applyDateConstraints(startInput, endInput);
+};
+
+window.saveEnrollment = async () => {
+    const modal = document.getElementById('enrollment-modal');
+    const form = document.getElementById('enrollment-form');
+    const classType = form.enroll_class_type.value;
+    const levelSymbol = form.enroll_level_symbol.value.trim();
+    const classNumber = form.enroll_class_number.value.trim();
+    const days = Array.from(form.querySelectorAll('[name="enroll_day"]:checked')).map(cb => cb.value);
+    const startDate = form.enroll_start_date.value;
+    const endDate = form.enroll_end_date?.value || '';
+
+    if (!classNumber) { alert('반넘버를 입력하세요.'); return; }
+
+    const enrollment = { class_type: classType, level_symbol: levelSymbol, class_number: classNumber, day: days, start_date: startDate };
+    if (classType !== '정규' && endDate) enrollment.end_date = endDate;
+
+    // 신규등록 폼에서 호출된 경우 → 로컬 배열에 추가
+    if (modal?.dataset.context === 'form') {
+        _pendingEnrollments.push(enrollment);
+        renderPendingEnrollments();
+        modal.style.display = 'none';
+        delete modal.dataset.context;
+        return;
+    }
+
+    // 수정 폼에서 호출된 경우 → 편집 중 배열에 추가
+    if (modal?.dataset.context === 'edit') {
+        _editEnrollments.push(enrollment);
+        _rebuildEditEnrollmentCards();
+        modal.style.display = 'none';
+        delete modal.dataset.context;
+        return;
+    }
+
+    // 기존 학생 수업 추가 (Firestore 저장)
+    if (!currentStudentId) return;
+
+    try {
+        const student = allStudents.find(s => s.id === currentStudentId);
+        if (!student) return;
+        const updatedEnrollments = [...(student.enrollments || []), enrollment];
+
+        // branch 업데이트 (첫 번째 enrollment 기준)
+        const branch = branchFromClassNumber(updatedEnrollments[0].class_number);
+
+        await setDoc(doc(db, 'students', currentStudentId), { enrollments: updatedEnrollments, branch }, { merge: true });
+        await addDoc(collection(db, 'history_logs'), {
+            doc_id: currentStudentId,
+            change_type: 'UPDATE',
+            before: '—',
+            after: `수업 추가: ${enrollmentCode(enrollment)} (${classType})`,
+            google_login_id: currentUser?.email || 'system',
+            timestamp: serverTimestamp(),
+        });
+
+        modal.style.display = 'none';
+        await loadStudentList();
+        const savedStudent = allStudents.find(s => s.id === currentStudentId);
+        if (savedStudent) {
+            const targetEl = document.querySelector(`.list-item[data-id="${currentStudentId}"]`);
+            selectStudent(savedStudent.id, savedStudent, targetEl);
+        }
+    } catch (err) {
+        alert('수업 추가 실패: ' + err.message);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// 종강 처리 — 동일 수업을 듣는 모든 학생 일괄 종강
+// ---------------------------------------------------------------------------
+let _endClassTarget = null; // { code, classType, affectedStudents[] }
+
+window.endEnrollment = (idx) => {
+    if (!currentStudentId) return;
+    const student = allStudents.find(s => s.id === currentStudentId);
+    if (!student || !student.enrollments?.[idx]) return;
+
+    const e = student.enrollments[idx];
+    const code = enrollmentCode(e);
+    const classType = e.class_type;
+
+    // 이 수업(code + classType)을 듣는 모든 학생 찾기
+    const affected = allStudents.filter(s =>
+        (s.enrollments || []).some(en => enrollmentCode(en) === code && en.class_type === classType)
+    );
+
+    // 종강 후 다른 수업이 남는 학생 / 퇴원될 학생 분류
+    const willKeep = [];
+    const willWithdraw = [];
+    affected.forEach(s => {
+        const remaining = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
+        if (remaining.length > 0) willKeep.push(s);
+        else willWithdraw.push(s);
+    });
+
+    _endClassTarget = { code, classType, affected, willKeep, willWithdraw, currentStudentId: currentStudentId, enrollIdx: idx };
+
+    // 모달 내용 구성
+    const modal = document.getElementById('end-class-modal');
+    if (!modal) return;
+
+    document.getElementById('end-class-title').textContent = `${code} (${classType}) 종강처리`;
+    const bodyEl = document.getElementById('end-class-body');
+
+    // 현재 학생 정보
+    const currentS = student;
+    const currentRemaining = (currentS.enrollments || []).filter((_, i) => i !== idx);
+    const currentWillWithdraw = currentRemaining.length === 0;
+
+    let html = `<p class="end-class-summary"><strong>${esc(currentS.name)}</strong>의 <strong>${esc(code)}</strong> (${esc(classType)}) 수업을 종강 처리합니다.</p>`;
+
+    if (currentWillWithdraw) {
+        html += `<p class="end-class-warn">이 학생은 다른 수업이 없어 <strong>퇴원</strong> 처리됩니다.</p>`;
+    }
+
+    if (affected.length > 1) {
+        html += `<div class="end-class-group" style="margin-top:12px;">
+            <span class="end-class-group-label">전체 종강 시 영향받는 학생 (${affected.length}명)</span>
+            <ul class="end-class-list">${affected.map(s => {
+                const rem = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
+                const isW = rem.length === 0;
+                return `<li>${esc(s.name)}${isW ? '<span class="end-class-remaining" style="background:#fce8e6;color:#c5221f;">퇴원</span>' : `<span class="end-class-remaining">${rem.map(e => enrollmentCode(e)).filter(Boolean).join(', ')}</span>`}</li>`;
+            }).join('')}</ul>
+        </div>`;
+    }
+
+    bodyEl.innerHTML = html;
+    modal.style.display = 'flex';
+};
+
+window.closeEndClassModal = (e) => {
+    if (e && e.target !== document.getElementById('end-class-modal')) return;
+    document.getElementById('end-class-modal').style.display = 'none';
+    _endClassTarget = null;
+};
+
+window.confirmEndClassSingle = async () => {
+    if (!_endClassTarget) return;
+    const { code, classType, currentStudentId: studentId, enrollIdx } = _endClassTarget;
+    const modal = document.getElementById('end-class-modal');
+    const singleBtn = document.getElementById('end-class-single-btn');
+
+    singleBtn.disabled = true;
+    singleBtn.textContent = '처리 중...';
+
+    try {
+        const student = allStudents.find(s => s.id === studentId);
+        if (!student) return;
+
+        const remaining = (student.enrollments || []).filter((_, i) => i !== enrollIdx);
+        const isWithdraw = remaining.length === 0;
+        const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (student.branch || '');
+
+        const updateData = { enrollments: remaining, branch };
+        if (isWithdraw) updateData.status = '퇴원';
+
+        await setDoc(doc(db, 'students', studentId), updateData, { merge: true });
+        await addDoc(collection(db, 'history_logs'), {
+            doc_id: studentId,
+            change_type: isWithdraw ? 'WITHDRAW' : 'UPDATE',
+            before: `수업: ${code} (${classType})`,
+            after: isWithdraw
+                ? `종강 처리: ${code} (${classType}) → 퇴원 (다른 수업 없음)`
+                : `종강 처리: ${code} (${classType})`,
+            google_login_id: currentUser?.email || 'system',
+            timestamp: serverTimestamp(),
+        });
+
+        modal.style.display = 'none';
+        _endClassTarget = null;
+
+        await loadStudentList();
+        if (currentStudentId) {
+            const savedStudent = allStudents.find(s => s.id === currentStudentId);
+            if (savedStudent) {
+                const targetEl = document.querySelector(`.list-item[data-id="${currentStudentId}"]`);
+                selectStudent(savedStudent.id, savedStudent, targetEl);
+            }
+        }
+    } catch (err) {
+        alert('종강 처리 실패: ' + err.message);
+    } finally {
+        singleBtn.disabled = false;
+        singleBtn.textContent = '해당 학생만';
+    }
+};
+
+window.confirmEndClass = async () => {
+    if (!_endClassTarget) return;
+    const { code, classType, affected, willWithdraw } = _endClassTarget;
+    const modal = document.getElementById('end-class-modal');
+    const confirmBtn = document.getElementById('end-class-confirm-btn');
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '처리 중...';
+    const singleBtn = document.getElementById('end-class-single-btn');
+    if (singleBtn) singleBtn.disabled = true;
+
+    try {
+        const BATCH_SIZE = 200;
+        for (let i = 0; i < affected.length; i += BATCH_SIZE) {
+            const chunk = affected.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+
+            chunk.forEach(s => {
+                const remaining = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
+                const isWithdraw = remaining.length === 0;
+                const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (s.branch || '');
+
+                const updateData = { enrollments: remaining, branch };
+                if (isWithdraw) {
+                    updateData.status = '퇴원';
+                }
+
+                batch.set(doc(db, 'students', s.id), updateData, { merge: true });
+
+                const historyRef = doc(collection(db, 'history_logs'));
+                batch.set(historyRef, {
+                    doc_id: s.id,
+                    change_type: isWithdraw ? 'WITHDRAW' : 'UPDATE',
+                    before: `수업: ${code} (${classType})`,
+                    after: isWithdraw
+                        ? `종강 처리: ${code} (${classType}) → 퇴원 (다른 수업 없음)`
+                        : `종강 처리: ${code} (${classType})`,
+                    google_login_id: currentUser?.email || 'system',
+                    timestamp: serverTimestamp(),
+                });
+            });
+
+            await batch.commit();
+        }
+
+        modal.style.display = 'none';
+        _endClassTarget = null;
+
+        await loadStudentList();
+        // 현재 선택된 학생 다시 표시
+        if (currentStudentId) {
+            const savedStudent = allStudents.find(s => s.id === currentStudentId);
+            if (savedStudent) {
+                const targetEl = document.querySelector(`.list-item[data-id="${currentStudentId}"]`);
+                selectStudent(savedStudent.id, savedStudent, targetEl);
+            }
+        }
+    } catch (err) {
+        alert('종강 처리 실패: ' + err.message);
+    } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '전체 종강처리';
+        const sBtn = document.getElementById('end-class-single-btn');
+        if (sBtn) { sBtn.disabled = false; sBtn.textContent = '해당 학생만'; }
+    }
 };
 
 let pauseAlertTriggered = false;
@@ -589,193 +1351,26 @@ window.checkDurationLimit = () => {
 };
 
 // ---------------------------------------------------------------------------
-// CSV Export / Import
+// Google Sheets Export / Import (GAS Web App 연동)
 // ---------------------------------------------------------------------------
-window.handleCSVExport = () => {
+// GAS Web App 배포 후 아래 URL을 실제 URL로 교체하세요
+const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+
+window.handleSheetExport = () => {
     if (!allStudents || allStudents.length === 0) {
         alert('내보낼 데이터가 없습니다.');
         return;
     }
-    const headers = [
-        '이름', '학부', '학교', '학년', '학생연락처', 
-        '학부모연락처1', '학부모연락처2', 'branch', '학부기호', '레벨기호',
-        '수업종류', '시작일', '특강시작일', '특강종료일', '요일', 
-        '상태', '휴원시작일', '휴원종료일'
-    ];
-    
-    const rows = [headers.join(',')];
-    allStudents.forEach(s => {
-        const row = [
-            s.name || '',
-            s.level || '',
-            s.school || '',
-            s.grade || '',
-            s.student_phone || '',
-            s.parent_phone_1 || '',
-            s.parent_phone_2 || '',
-            s.branch || branchFromSymbol(s.level_symbol) || '',
-            s.level_code || '',
-            s.level_symbol || '',
-            s.class_type || '정규',
-            s.start_date || '',
-            s.special_start_date || '',
-            s.special_end_date || '',
-            Array.isArray(s.day) ? s.day.join(',') : s.day || '',
-            s.status || '재원',
-            s.pause_start_date || '',
-            s.pause_end_date || ''
-        ];
-        // CSV escape
-        rows.push(row.map(v => {
-            let str = String(v).replace(/"/g, '""');
-            if (str.includes(',') || str.includes('\"') || str.includes('\n')) {
-                str = `"${str}"`;
-            }
-            return str;
-        }).join(','));
-    });
-    
-    // add BOM for Excel
-    const csvContent = '\uFEFF' + rows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `AIM_Students_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    window.open(GAS_WEB_APP_URL + '?action=export', '_blank');
 };
 
-window.handleCSVImport = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    if (!confirm('CSV 파일의 데이터를 일괄 등록/업데이트 하시겠습니까?\n(docId가 같으면 덮어쓰기 됩니다.)')) {
-        e.target.value = '';
-        return;
-    }
-    
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-        try {
-            const text = evt.target.result;
-            const lines = text.split(/\r?\n/).filter(line => line.trim());
-            if (lines.length < 2) {
-                alert('유효한 데이터가 없습니다.');
-                e.target.value = '';
-                return;
-            }
-            
-            // 간단 파서 (Header)
-            const getCells = (line) => {
-                const cells = [];
-                let inQuote = false, val = '';
-                for (let j = 0; j < line.length; j++) {
-                    const char = line[j];
-                    if (char === '"' && line[j+1] === '"') { val += '"'; j++; continue; }
-                    if (char === '"') { inQuote = !inQuote; continue; }
-                    if (char === ',' && !inQuote) { cells.push(val.trim()); val = ''; continue; }
-                    val += char;
-                }
-                cells.push(val.trim());
-                return cells.map(v => v.replace(/^"|"$/g, '').trim());
-            };
-
-            const rawHeaders = getCells(lines[0]);
-            const studentsToImport = [];
-            
-            for (let i = 1; i < lines.length; i++) {
-                const row = getCells(lines[i]);
-                const data = {};
-                rawHeaders.forEach((h, idx) => { data[h] = row[idx] || ''; });
-                
-                const name = data['이름'];
-                const parentPhone = data['학부모연락처1'];
-                if (!name || !parentPhone) continue;
-                
-                const levelSym = data['레벨기호'] || '';
-                const branch = data['branch'] || branchFromSymbol(levelSym);
-                const docId = makeDocId(name, parentPhone, branch);
-                
-                const dayStr = data['요일'] || '';
-                const dayArr = normalizeDays(dayStr.includes(',') ? dayStr.split(',') : dayStr);
-                
-                const studentObj = {
-                    name,
-                    level: data['학부'] || '초등',
-                    school: data['학교'] || '',
-                    grade: data['학년'] || '',
-                    student_phone: data['학생연락처'] || '',
-                    parent_phone_1: parentPhone,
-                    parent_phone_2: data['학부모연락처2'] || '',
-                    branch: branch,
-                    level_code: data['학부기호'] || '',
-                    level_symbol: levelSym,
-                    class_type: data['수업종류'] || '정규',
-                    start_date: data['시작일'] || '',
-                    special_start_date: data['특강시작일'] || '',
-                    special_end_date: data['특강종료일'] || '',
-                    day: dayArr,
-                    status: data['상태'] || '재원',
-                    pause_start_date: data['휴원시작일'] || '',
-                    pause_end_date: data['휴원종료일'] || '',
-                };
-                studentsToImport.push({ docId, student: studentObj });
-            }
-            
-            if (studentsToImport.length === 0) {
-                alert('추가할 데이터가 없습니다. (이름/학부모연락처1 필수)');
-                e.target.value = '';
-                return;
-            }
-            
-            const btnImport = e.target.parentElement;
-            const originalBg = btnImport.style.background;
-            btnImport.style.background = '#e8f0fe';
-            
-            let count = 0;
-            const BATCH_SIZE = 200; // max 500 ops per commit. (2 ops per student = 400 < 500)
-            
-            for (let i = 0; i < studentsToImport.length; i += BATCH_SIZE) {
-                const chunk = studentsToImport.slice(i, i + BATCH_SIZE);
-                const batch = writeBatch(db);
-                
-                chunk.forEach(({ docId, student }) => {
-                    batch.set(doc(db, 'students', docId), student, { merge: true });
-                    const historyRef = doc(collection(db, 'history_logs'));
-                    batch.set(historyRef, {
-                        doc_id: docId,
-                        change_type: 'UPDATE',
-                        before: '—',
-                        after: `CSV 일괄 처리: ${student.name} (상태:${student.status}, 반:${student.level_code || ''}${student.level_symbol})`,
-                        google_login_id: currentUser?.email || 'system',
-                        timestamp: serverTimestamp(),
-                    });
-                    count++;
-                });
-                await batch.commit();
-            }
-            
-            alert(`총 ${count}명의 학생 정보를 성공적으로 처리했습니다.`);
-            btnImport.style.background = originalBg;
-            e.target.value = '';
-            
-            if (window.refreshStudents) window.refreshStudents();
-
-        } catch (err) {
-            console.error('[CSV IMPORT ERROR]', err);
-            alert('Import 실패: ' + err.message);
-            e.target.value = '';
-        }
-    };
-    reader.readAsText(file);
+window.handleSheetImport = () => {
+    window.open(GAS_WEB_APP_URL + '?action=template', '_blank');
 };
 
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('[AIM] Dashboard initialized.');
+    console.log('[impact7DB] Dashboard initialized.');
 });
 
 // 메모 모달 상태 — ESC 핸들러보다 먼저 선언
@@ -783,6 +1378,17 @@ let _memoModalContext = null; // 'view' | 'form'
 
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+        const endClassModal = document.getElementById('end-class-modal');
+        if (endClassModal?.style.display !== 'none') {
+            endClassModal.style.display = 'none';
+            _endClassTarget = null;
+            return;
+        }
+        const enrollModal = document.getElementById('enrollment-modal');
+        if (enrollModal?.style.display !== 'none') {
+            enrollModal.style.display = 'none';
+            return;
+        }
         const modal = document.getElementById('memo-modal');
         if (modal?.style.display !== 'none') {
             modal.style.display = 'none';

@@ -1,8 +1,8 @@
-# AIM Dashboard — AI 인수인계 문서 (최종 갱신: 2026-02-22)
+# impact7DB Dashboard — AI 인수인계 문서 (최종 갱신: 2026-02-22)
 
 ## 프로젝트 개요
 
-Impact7 학원 학생 관리 시스템 (Academy Integrated Management)
+Impact7 학원 학생 관리 시스템 (impact7DB)
 
 | 항목 | 내용 |
 |---|---|
@@ -238,19 +238,17 @@ const esc = (str) => {
 - [x] XSS 방지 (`esc()` 헬퍼)
 - [x] Firestore 보안 규칙 배포 완료 (email_verified + 도메인 regex)
 - [x] Firestore 복합 인덱스 배포 완료
+- [x] 브라우저 UI 기반 CSV 데이터 전체 대량 Import 및 Export 기능 완료 (batch write, history_logs 자동 기록)
 
 ---
 
 ## 다음 작업 권장 목록
 
-### 1순위: 대량 import/export
-- **Import**: CSV 파일 → Firestore 대량 등록 (UI 또는 Node 스크립트)
-- **Export**: Firestore → CSV/Google Sheets 내보내기
+### 1순위: 추가 개선 (검색 및 UI)
+- **학생 초성 검색 지원**: 학생 검색창에서 초성(ㄱㄴㄷ)만으로도 이름/학교 등을 검색할 수 있도록 로직 개선
+- **출결 관리 시스템 기반 작업**: 날짜별 출결을 저장할 수 있는 서브컬렉션 생성 및 뷰 디자인
+- **반별/소속별 학생 그룹 뷰 구현**
 
-### 2순위: 추가 개선 (선택)
-- 학생 검색 시 초성 검색 지원
-- 반별 그룹 뷰
-- 출결 관리 기능
 
 ---
 
