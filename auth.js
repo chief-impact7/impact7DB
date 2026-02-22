@@ -3,9 +3,10 @@ import { auth } from './firebase-config.js';
 
 const provider = new GoogleAuthProvider();
 
-// 도메인 제한: 학원 Google Workspace 계정만 허용
-// 개발/테스트 중 다른 계정으로 로그인하려면 아래 줄을 주석 처리하세요
-// provider.setCustomParameters({ hd: 'gw.impact7.kr' });
+// 도메인 제한: hd 파라미터는 단일 도메인만 지원하므로 사용하지 않음.
+// 실제 도메인 검증은 app.js onAuthStateChanged 내부(클라이언트)와
+// firestore.rules isAuthorized()(서버)에서 이중으로 처리함.
+// provider.setCustomParameters({ hd: 'gw.impact7.kr' }); // 단일 도메인만 가능
 
 /**
  * Google 팝업 로그인

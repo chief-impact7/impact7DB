@@ -203,6 +203,129 @@ body {
     color: var(--text-sec);
 }
 
+/* ── Sidebar 3-Level Menu ────────────────────────────────────────────────── */
+
+/* L1 group wrapper */
+.l1-group {
+    margin-top: 2px;
+}
+
+/* L2 group wrapper */
+.l2-group {
+    margin-top: 1px;
+}
+
+/* L1: main menu summary (All Students, School, Branch, Scheduled) */
+.menu-l1 {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px;
+    height: 36px;
+    font-family: var(--font-heading);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-main);
+    cursor: pointer;
+    user-select: none;
+    border-radius: 0 16px 16px 0;
+    width: calc(100% - 8px);
+    transition: background 0.15s;
+    margin-bottom: 1px;
+}
+
+.menu-l1::-webkit-details-marker { display: none; }
+
+.menu-l1::after {
+    content: 'expand_more';
+    font-family: 'Material Symbols Outlined';
+    font-size: 18px;
+    font-weight: 400;
+    margin-left: auto;
+    color: var(--outline);
+    transition: transform 0.2s;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+}
+
+.l1-group[open] > .menu-l1::after {
+    transform: rotate(180deg);
+}
+
+.menu-l1:hover { background: var(--active-bg); }
+
+.l1-group[open] > .menu-l1,
+.menu-l1.nav-item.active {
+    background: var(--active-bg);
+    color: var(--active-text);
+}
+
+/* L2: sub-menu — toggle header (상태, 수업종류) 또는 filter item (초등, 2단지, 월요일…) */
+.menu-l2 {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px 0 28px;
+    height: 30px;
+    font-family: var(--font-heading);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-sec);
+    cursor: pointer;
+    user-select: none;
+    border-radius: 0 16px 16px 0;
+    width: calc(100% - 8px);
+    transition: background 0.15s;
+    margin-bottom: 1px;
+}
+
+summary.menu-l2::-webkit-details-marker { display: none; }
+
+summary.menu-l2::after {
+    content: 'chevron_right';
+    font-family: 'Material Symbols Outlined';
+    font-size: 15px;
+    font-weight: 400;
+    margin-left: auto;
+    color: var(--outline);
+    transition: transform 0.2s;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+}
+
+.l2-group[open] > summary.menu-l2::after {
+    transform: rotate(90deg);
+}
+
+.menu-l2:hover { background: var(--hover-bg); }
+
+.menu-l2.nav-item.active,
+.l2-group[open] > summary.menu-l2 {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+/* L2 summary 안의 아이콘 크기 */
+summary.menu-l2 .material-symbols-outlined {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+/* L3: leaf filter items — 아이콘 없음, 들여쓰기로만 구분 */
+.menu-l3.nav-item {
+    padding: 0 12px 0 56px;
+    height: 28px;
+    font-size: 12px;
+    gap: 0;
+}
+
+.menu-l3.nav-item:hover { background: var(--hover-bg); }
+
+.menu-l3.nav-item.active {
+    background: #f3f6fe;
+    color: var(--primary);
+}
+
 .label-color {
     width: 10px;
     height: 10px;
@@ -220,6 +343,18 @@ body {
 
 .c-green {
     background: #34a853;
+}
+
+.c-orange {
+    background: #fa7b17;
+}
+
+.c-yellow {
+    background: #f9ab00;
+}
+
+.c-gray {
+    background: #9aa0a6;
 }
 
 /* ── Main Content ────────────────────────────────────────────────────────── */
@@ -262,6 +397,42 @@ body {
     background: var(--surface-hover);
     padding: 2px 10px;
     border-radius: 100px;
+    flex-shrink: 0;
+}
+
+.filter-chips {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--primary);
+    background: var(--primary-light);
+    padding: 2px 10px;
+    border-radius: 100px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+
+.filter-chips:empty {
+    display: none;
+}
+
+.filter-clear-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    color: var(--text-sec);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+}
+
+.filter-clear-btn:hover {
+    background: #fce8e6;
+    color: #c5221f;
 }
 
 .list-items {
@@ -401,20 +572,6 @@ body {
     color: #137333;
 }
 
-/* Info Cards Grid */
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 16px;
-}
-
-.info-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 20px;
-}
-
 .info-card-title {
     display: flex;
     align-items: center;
@@ -429,24 +586,6 @@ body {
 .info-card-title .material-symbols-outlined {
     font-size: 20px;
     color: var(--primary);
-}
-
-.info-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-
-.info-label {
-    font-size: 12px;
-    color: var(--text-sec);
-    margin-bottom: 2px;
-}
-
-.info-value {
-    font-size: 15px;
-    color: var(--text-main);
 }
 
 .mono {
@@ -521,12 +660,66 @@ body {
     gap: 20px;
 }
 
+.form-row {
+    display: flex;
+    gap: 16px;
+}
+
+.form-row .form-field {
+    flex: 1;
+    min-width: 0;
+}
+
+.form-memo-card {
+    /* 다른 카드와 동일한 그리드 셀 크기 */
+}
+
+.memo-form-item {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.memo-form-item:last-child {
+    border-bottom: none;
+}
+
+.memo-form-meta {
+    display: flex;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-sec);
+}
+
+.memo-form-meta .memo-delete-btn {
+    margin-left: auto;
+}
+
+.memo-form-text {
+    font-size: 14px;
+    color: var(--text-main);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 
 .field-label {
     display: block;
     font-size: 12px;
     color: var(--text-sec);
     margin-bottom: 4px;
+}
+
+.field-value {
+    width: 100%;
+    border-bottom: 1.5px solid var(--border);
+    font-size: 15px;
+    color: var(--text-main);
+    padding: 4px 0;
+    min-height: 28px;
 }
 
 .field-input,
@@ -621,18 +814,6 @@ body {
 }
 
 /* ── Memo Cards ──────────────────────────────────────────────────────────── */
-.memo-info-card {
-    grid-column: 1 / -1;
-    /* 가로 폭 전체 차지 */
-}
-
-.memo-info-card .info-card-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 12px;
-}
-
 .memo-add-btn {
     margin-left: auto;
     background: var(--primary-light);
@@ -722,4 +903,188 @@ body {
     line-height: 1.6;
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+/* ── Detail Tabs ─────────────────────────────────────────────────────────── */
+.tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    background: #fff;
+    flex-shrink: 0;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 10px 20px;
+    font-family: var(--font-heading);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-sec);
+    cursor: pointer;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover {
+    color: var(--primary);
+    background: var(--hover-bg);
+}
+
+.tab-btn.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+/* ── Memo Modal ──────────────────────────────────────────────────────────── */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-card {
+    background: #fff;
+    border-radius: 20px;
+    padding: 28px;
+    width: 480px;
+    max-width: calc(100vw - 48px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.modal-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-heading);
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-main);
+}
+
+.modal-title .material-symbols-outlined {
+    font-size: 20px;
+    color: var(--primary);
+}
+
+.modal-textarea {
+    width: 100%;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 14px;
+    font-family: var(--font-body);
+    color: var(--text-main);
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+    line-height: 1.6;
+}
+
+.modal-textarea:focus {
+    border-color: var(--primary);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* ── History Log ─────────────────────────────────────────────────────────── */
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.history-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+
+.history-item-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.history-badge {
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--font-heading);
+    padding: 2px 10px;
+    border-radius: 100px;
+    letter-spacing: 0.3px;
+    flex-shrink: 0;
+}
+
+.badge-enroll {
+    background: #e6f4ea;
+    color: #137333;
+}
+
+.badge-update {
+    background: var(--primary-light);
+    color: var(--primary);
+}
+
+.badge-withdraw {
+    background: #fce8e6;
+    color: #c5221f;
+}
+
+.history-date {
+    font-size: 13px;
+    color: var(--text-sec);
+}
+
+.history-author {
+    margin-left: auto;
+    font-size: 12px;
+    color: #999;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+}
+
+.history-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 13px;
+    padding: 3px 0;
+    line-height: 1.5;
+}
+
+.history-before {
+    color: #999;
+    text-decoration: line-through;
+}
+
+.history-after {
+    color: var(--text-main);
+}
+
+.history-field-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-sec);
+    background: var(--surface-hover);
+    padding: 1px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
 }

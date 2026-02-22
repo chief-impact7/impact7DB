@@ -8,7 +8,7 @@ Impact7 학원 학생 관리 시스템 (Academy Integrated Management)
 |---|---|
 | Firebase 프로젝트 ID | `impact7db` |
 | GitHub 저장소 | https://github.com/chief-impact7/impact7DB |
-| 개발 서버 실행 | `npm run dev` → http://localhost:5174 |
+| 개발 서버 실행 | `npm run dev` → http://localhost:5174 (WSL: `--host` 옵션으로 Network 주소 사용) |
 | 스택 | Vite + Firebase v9 모듈 SDK + Vanilla JS |
 | 메인 파일 | `index.html`, `app.js`, `style.css` |
 
@@ -18,19 +18,22 @@ Impact7 학원 학생 관리 시스템 (Academy Integrated Management)
 
 ```
 impact7DB2AIs/
-├── index.html           # 메인 UI (사이드바 + 목록 패널 + 상세/폼 패널)
-├── app.js               # 메인 로직 (인증, 목록, 필터, 등록/수정 폼, 메모)
-├── style.css            # 스타일 (Material Design 3 스타일 + 메모 카드 스타일)
+├── index.html           # 메인 UI (사이드바 + 목록 패널 + 상세/폼 패널 + 메모 모달)
+├── app.js               # 메인 로직 (인증, 목록, AND 복합필터, 등록/수정 폼, 메모 모달, 이력 탭)
+├── style.css            # 스타일 (MD3 + 필터 칩 + 메모 카드 + 모달 + 이력)
 ├── firebase-config.js   # Firebase 초기화 (import.meta.env.VITE_* 사용)
-├── auth.js              # Google 로그인/로그아웃
-├── vite.config.js       # Vite 번들러 설정
+├── auth.js              # Google 로그인/로그아웃 (다중 도메인 지원)
+├── vite.config.js       # Vite 번들러 설정 (host: true, usePolling: true for WSL)
 ├── .env                 # VITE_FIREBASE_* 환경변수 (git 제외됨)
 ├── .gitignore
+├── firestore.rules      # Firestore 보안 규칙 (email_verified + 도메인 regex 검증)
+├── firestore.indexes.json # 복합 인덱스 (history_logs: doc_id + timestamp)
 ├── import-students.js   # CSV → Firestore 대량 import (node로 실행)
 ├── students.csv         # 학생 명단 (399명)
-├── firestore.rules      # Firestore 보안 규칙
-├── PATCH_NOTES.js       # 변경 이력 (최신이 맨 위)
-└── user_log.js          # 작업 로그 (AI 작업 이력)
+├── PATCH_NOTES.js       # 변경 이력
+├── apps/                # 레거시 — Gemini 프로토타입 (미사용)
+├── core/                # 레거시 — apps/ 전용 Firebase 모듈 (미사용)
+└── userlog.js           # 레거시 — 구 student_id 기반 감사 로그 (미사용)
 ```
 
 ---
@@ -58,7 +61,6 @@ const makeDocId = (name, parentPhone, branch) => {
 ### 2. branch 자동 결정
 
 ```js
-// level_symbol 첫 자리 숫자로 소속 자동 파생
 const branchFromSymbol = (sym) => {
     const first = (sym || '').trim()[0];
     if (first === '1') return '2단지';
@@ -68,13 +70,11 @@ const branchFromSymbol = (sym) => {
 ```
 
 - 폼에 단지 드롭다운 없음. 레벨기호 입력 시 자동 결정됨.
-- 저장 시 `branchFromSymbol(levelSymbol)` 값을 branch 필드에 기록.
 
 ### 3. day 필드 — 배열로 저장
 
 ```js
 // Firestore 저장: ["월", "수", "일"]
-// 기존 문자열 → normalizeDays()로 파싱
 const normalizeDays = (day) => {
     if (!day) return [];
     if (Array.isArray(day)) return day.map(d => d.replace('요일', '').trim());
@@ -82,17 +82,14 @@ const normalizeDays = (day) => {
 };
 ```
 
-- 지원 요일: 월, 화, 수, 목, 금, 토, **일** (일요일 포함됨)
-
 ### 4. status 값
 
 ```
 등원예정 | 재원 | 실휴원 | 가휴원 | 퇴원
 ```
 
-- `실휴원` / `가휴원` 선택 시 `pause_start_date`, `pause_end_date` 입력창 표시
-- 휴원 기간: 시작일은 과거 최대 1개월, 종료일은 시작일 기준 최대 1년
-- 31일 초과 시 경고 알림: `window.checkDurationLimit()` 전역 함수로 처리
+- 휴원 선택 시 `pause_start_date`, `pause_end_date` 입력창 표시
+- 휴원 기간 31일 초과 시 경고: `window.checkDurationLimit()`
 
 ### 5. class_type (수업종류)
 
@@ -101,24 +98,27 @@ const normalizeDays = (day) => {
 ```
 
 - `특강` 선택 시 `special_start_date`, `special_end_date` 입력창 표시 (등원일 숨김)
-- `정규` / `내신` 선택 시 등원일만 표시
 
-### 6. 학교 + 학부 + 학년 축약 표시
+### 6. 인증 (이중 보안)
 
+**클라이언트 (app.js):**
 ```js
-const abbreviateSchool = (s) => {
-    const school = (s.school || '')
-        .replace(/고등학교$/, '')
-        .replace(/중학교$/, '')
-        .replace(/초등학교$/, '')
-        .replace(/학교$/, '')
-        .trim();
-    const levelShort = level === '초등' ? '초' : level === '중등' ? '중' : level === '고등' ? '고' : level;
-    return `${school}${levelShort}${grade}`.trim() || '—';
-};
+const allowedDomain = email.endsWith('@gw.impact7.kr') || email.endsWith('@impact7.kr');
+if (!user.emailVerified || !allowedDomain) { /* 로그아웃 처리 */ }
 ```
 
-- 프로필 상단 태그: `소속 · 학교축약형` 예: `2단지 · 진명여고2`
+**서버 (firestore.rules):**
+```
+function isAuthorized() {
+    return request.auth != null
+        && request.auth.token.email_verified == true
+        && (request.auth.token.email.matches('.*@gw\\.impact7\\.kr')
+            || request.auth.token.email.matches('.*@impact7\\.kr'));
+}
+```
+
+- `auth.js`의 `hd` 파라미터는 단일 도메인만 지원하므로 주석 처리됨
+- 실제 보안은 app.js + firestore.rules 이중 검증
 
 ### 7. history_logs 필수 기록
 
@@ -135,6 +135,29 @@ await addDoc(collection(db, 'history_logs'), {
 });
 ```
 
+### 8. AND 복합 필터 (사이드바)
+
+```js
+let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null };
+```
+
+- 각 카테고리(학부, 소속, 요일, 상태, 수업종류) 독립 선택
+- 같은 타입 재클릭 → 해제 (토글)
+- 다른 타입 조합 → AND 결합 (예: 2단지 + 정규 + 수요일)
+- 필터 칩(chips)으로 활성 필터 표시 + 전체 해제 버튼
+
+### 9. XSS 방지
+
+```js
+const esc = (str) => {
+    const d = document.createElement('div');
+    d.textContent = str ?? '';
+    return d.innerHTML;
+};
+```
+
+- 사용자 입력(메모, 이력)을 innerHTML에 삽입할 때 반드시 `esc()` 사용
+
 ---
 
 ## Firestore 컬렉션 스키마
@@ -143,49 +166,32 @@ await addDoc(collection(db, 'history_logs'), {
 
 ```
 {
-  name:                string,   // 이름
-  level:               string,   // 학부 (초등/중등/고등)
-  school:              string,   // 학교명
-  grade:               string,   // 학년
-  student_phone:       string,
-  parent_phone_1:      string,   // docId 생성에 사용
-  parent_phone_2:      string,
-  branch:              string,   // 2단지 | 10단지 (자동 파생)
-  level_code:          string,   // 학부기호 (예: HX)
-  level_symbol:        string,   // 레벨기호 (예: 102)
-  day:                 array,    // ["월", "수"] — 반드시 배열
-  class_type:          string,   // 정규 | 특강 | 내신
-  special_start_date:  string,   // 특강 시작일 YYYY-MM-DD (class_type=특강일 때만)
-  special_end_date:    string,   // 특강 종료일 YYYY-MM-DD (class_type=특강일 때만)
-  start_date:          string,   // 등원일 YYYY-MM-DD (class_type=정규/내신일 때)
-  status:              string,   // 등원예정 | 재원 | 실휴원 | 가휴원 | 퇴원
-  pause_start_date:    string,   // 휴원 시작일 (status=실/가휴원일 때만)
-  pause_end_date:      string,   // 휴원 종료일 (status=실/가휴원일 때만)
+  name, level, school, grade,
+  student_phone, parent_phone_1, parent_phone_2,
+  branch, level_code, level_symbol,
+  day: array,       // ["월", "수"]
+  class_type,       // 정규 | 특강 | 내신
+  special_start_date, special_end_date,  // 특강일 때만
+  start_date,       // 등원일 (정규/내신)
+  status,           // 등원예정 | 재원 | 실휴원 | 가휴원 | 퇴원
+  pause_start_date, pause_end_date,      // 휴원일 때만
 }
 ```
 
 ### students/{docId}/memos (서브컬렉션)
 
 ```
-{
-  text:       string,     // 메모 전문
-  created_at: Timestamp,  // 생성 시각
-  author:     string,     // 작성자 이메일
-}
+{ text: string, created_at: Timestamp, author: string }
 ```
 
 ### history_logs (컬렉션)
 
 ```
-{
-  doc_id:          string,
-  change_type:     string,    // ENROLL | UPDATE | WITHDRAW
-  before:          string,
-  after:           string,
-  google_login_id: string,
-  timestamp:       Timestamp,
-}
+{ doc_id, change_type, before, after, google_login_id, timestamp }
 ```
+
+**복합 인덱스** (firestore.indexes.json에 정의):
+- `doc_id ASC` + `timestamp DESC` → 학생별 이력 조회
 
 ---
 
@@ -194,65 +200,57 @@ await addDoc(collection(db, 'history_logs'), {
 | 함수 | 설명 |
 |---|---|
 | `window.handleLogin()` | Google 로그인/로그아웃 토글 |
-| `window.selectStudent(id, data, el)` | 학생 선택 → 프로필 + 메모 로드 |
+| `window.selectStudent(id, data, el)` | 학생 선택 → 프로필 + 메모 + 이력 로드 |
 | `window.showNewStudentForm()` | 신규 등록 폼 표시 |
-| `window.showEditForm()` | 정보 수정 폼 표시 (현재 선택 학생 pre-fill) |
+| `window.showEditForm()` | 정보 수정 폼 표시 (pre-fill) |
 | `window.hideForm()` | 폼 닫고 상세 뷰로 복귀 |
 | `window.submitNewStudent()` | 등록/수정 저장 → Firestore + history_logs |
 | `window.handleStatusChange(val)` | 상태 변경 시 휴원 기간 입력창 토글 |
 | `window.handleClassTypeChange(val)` | 수업종류 변경 시 날짜 입력창 토글 |
-| `window.handleLevelSymbolChange(val)` | 레벨기호 입력 시 소속(branch) 미리보기 |
-| `window.checkDurationLimit()` | 휴원 기간 31일 초과 확인 + 알림 |
-| `window.addMemo()` | 메모 추가 (prompt → Firestore) |
+| `window.handleLevelSymbolChange(val)` | 레벨기호 입력 시 소속 미리보기 |
+| `window.checkDurationLimit()` | 휴원 기간 31일 초과 확인 |
+| `window.openMemoModal(context)` | 메모 모달 열기 ('view' \| 'form') |
+| `window.closeMemoModal(e)` | 메모 모달 닫기 |
+| `window.saveMemoFromModal()` | 모달에서 메모 저장 → Firestore |
 | `window.deleteMemo(studentId, memoId)` | 메모 삭제 (확인 다이얼로그) |
 | `window.toggleMemo(memoId)` | 메모 카드 펼치기/접기 |
+| `window.clearFilters()` | 모든 필터 해제 |
 | `window.refreshStudents()` | 학생 목록 전체 재로드 |
 
 ---
 
 ## 완료된 기능 목록
 
-- [x] Firebase Auth (Google 로그인) / `.env` 환경변수 관리
-- [x] Firestore 연결 및 학생 목록 로드 + 검색 + 필터 (학부/소속/요일)
-- [x] 학생 상세 프로필 뷰
+- [x] Firebase Auth (Google 로그인) + email_verified 검증
+- [x] 이중 도메인 보안 (`gw.impact7.kr` + `impact7.kr`) — 클라이언트 + 서버 규칙
+- [x] Firestore 연결 및 학생 목록 로드 + 검색
+- [x] AND 복합 필터 (학부/소속/요일/상태/수업종류) + 필터 칩 + 전체 해제
+- [x] 학생 상세 프로필 뷰 + 탭 (기본정보 / 수업이력)
+- [x] 수업이력 탭 — history_logs 쿼리 + 복합 인덱스
 - [x] 신규 등록 폼 + 정보 수정 폼 (Firestore 저장, history_logs 기록)
 - [x] 실휴원 / 가휴원 상태 + 휴원 기간 날짜 입력 + 31일 초과 경고
 - [x] 수업종류(정규/특강/내신) + 특강 기간 날짜 입력
 - [x] 일요일 포함 월~일 요일 선택
 - [x] 학교+학부+학년 축약 표시 (`진명여고2`)
 - [x] 소속 자동 파생 (레벨기호 첫 자리 기반)
-- [x] 다중 도메인 로그인 지원 (`gw.impact7.kr` 및 `impact7.kr`)
 - [x] 날짜 포맷 통일 (YYYY-MM-DD)
-- [x] 메모 카드 (추가, 접기/펼치기, 삭제, Firestore 서브컬렉션)
+- [x] 메모 모달 (추가, 접기/펼치기, 삭제, Firestore 서브컬렉션)
+- [x] XSS 방지 (`esc()` 헬퍼)
+- [x] Firestore 보안 규칙 배포 완료 (email_verified + 도메인 regex)
+- [x] Firestore 복합 인덱스 배포 완료
 
 ---
 
-## 다음 작업 권장 목록 (우선순위 순)
+## 다음 작업 권장 목록
 
-### 1순위: Firestore 보안 강화
-- `firestore.rules` 현재 개발용 오픈 규칙 (2026-03-23 만료)
-- `auth.js`에서 `hd: 'gw.impact7.kr'` 도메인 제한 주석 해제 (현재 주석처리됨)
-- 데이터 읽기/쓰기를 인증된 사용자(gw.impact7.kr 도메인)로만 제한
+### 1순위: 대량 import/export
+- **Import**: CSV 파일 → Firestore 대량 등록 (UI 또는 Node 스크립트)
+- **Export**: Firestore → CSV/Google Sheets 내보내기
 
-### 2순위: 이력 조회 탭
-- 상세 패널에 탭 추가: [기본정보] [수업이력]
-- `history_logs`에서 `doc_id == currentStudentId`로 쿼리
-```js
-import { query, where, orderBy } from 'firebase/firestore';
-const q = query(
-    collection(db, 'history_logs'),
-    where('doc_id', '==', currentStudentId),
-    orderBy('timestamp', 'desc')
-);
-```
-
-### 3순위: 대량 export (Firestore → Google Sheets)
-- GAS에 `pullFromFirestore()` 함수 추가
-- Firestore REST API로 students 컬렉션 전체 조회 → 시트에 기록
-
-### 4순위: 사이드바 필터 확장
-- 현재: 학부(초/중/고), 소속(2단지/10단지), 요일(월~일)
-- 추가 필요: 상태(재원/휴원/퇴원), 수업종류(정규/특강/내신)
+### 2순위: 추가 개선 (선택)
+- 학생 검색 시 초성 검색 지원
+- 반별 그룹 뷰
+- 출결 관리 기능
 
 ---
 
@@ -263,3 +261,5 @@ const q = query(
 - 모든 쓰기 작업 후 `history_logs` 기록 필수
 - `branch` 필드는 `branchFromSymbol(level_symbol)`로 자동 생성, 폼에 선택 UI 없음
 - `.env` 파일은 git에 포함되지 않음. 새 환경 세팅 시 직접 생성 필요
+- 사용자 입력을 innerHTML에 넣을 때 반드시 `esc()` 함수 사용 (XSS 방지)
+- `apps/`, `core/`, `userlog.js` 등은 레거시 파일 — 현재 미사용이나 삭제는 보류

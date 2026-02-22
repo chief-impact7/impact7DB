@@ -38,70 +38,106 @@
         <!-- Sidebar -->
         <nav class="sidebar">
             <button class="compose-btn" onclick="showNewStudentForm()">
-                <span class="material-symbols-outlined">add</span>
-                신규 등록
+                <span class="material-symbols-outlined">person_add</span>
+                Registration
             </button>
 
-            <div class="sidebar-label">Students</div>
-            <ul class="nav-list">
-                <li class="nav-item active" data-filter-type="all">
+            <!-- L1: All Students (필터 + L2 토글) -->
+            <details class="l1-group" open>
+                <summary class="menu-l1 nav-item active" data-filter-type="all">
                     <span class="material-symbols-outlined">people</span>
-                    <span>All Students</span>
-                </li>
-            </ul>
+                    All Students
+                </summary>
 
-            <div class="sidebar-label">School Level</div>
-            <ul class="nav-list">
-                <li class="nav-item" data-filter-type="level" data-filter-value="초등">
-                    <span class="label-color c-green"></span>
-                    <span>Elementary (초등)</span>
-                </li>
-                <li class="nav-item" data-filter-type="level" data-filter-value="중등">
-                    <span class="label-color c-blue"></span>
-                    <span>Middle School (중등)</span>
-                </li>
-                <li class="nav-item" data-filter-type="level" data-filter-value="고등">
-                    <span class="label-color c-red"></span>
-                    <span>High School (고등)</span>
-                </li>
-            </ul>
+                <!-- L2: 상태 (L3 토글) -->
+                <details class="l2-group">
+                    <summary class="menu-l2">
+                        <span class="material-symbols-outlined">toggle_on</span>상태
+                    </summary>
+                    <ul class="nav-list">
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="등원예정">등원예정</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="재원">재원</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="실휴원">실휴원</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="가휴원">가휴원</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="퇴원">퇴원</li>
+                    </ul>
+                </details>
 
-            <div class="sidebar-label">단지</div>
-            <ul class="nav-list">
-                <li class="nav-item" data-filter-type="branch" data-filter-value="2단지">
-                    <span class="material-symbols-outlined">apartment</span>
-                    <span>2단지</span>
-                </li>
-                <li class="nav-item" data-filter-type="branch" data-filter-value="10단지">
-                    <span class="material-symbols-outlined">apartment</span>
-                    <span>10단지</span>
-                </li>
-            </ul>
+                <!-- L2: 수업종류 (L3 토글) -->
+                <details class="l2-group">
+                    <summary class="menu-l2">
+                        <span class="material-symbols-outlined">menu_book</span>수업종류
+                    </summary>
+                    <ul class="nav-list">
+                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="정규">정규</li>
+                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="내신">내신</li>
+                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="기타">기타</li>
+                    </ul>
+                </details>
+            </details>
 
-            <div class="sidebar-label">수업 요일</div>
-            <ul class="nav-list">
-                <li class="nav-item" data-filter-type="day" data-filter-value="월">
-                    <span class="day-dot">월</span><span>월요일</span>
-                </li>
-                <li class="nav-item" data-filter-type="day" data-filter-value="화">
-                    <span class="day-dot">화</span><span>화요일</span>
-                </li>
-                <li class="nav-item" data-filter-type="day" data-filter-value="수">
-                    <span class="day-dot">수</span><span>수요일</span>
-                </li>
-                <li class="nav-item" data-filter-type="day" data-filter-value="목">
-                    <span class="day-dot">목</span><span>목요일</span>
-                </li>
-                <li class="nav-item" data-filter-type="day" data-filter-value="금">
-                    <span class="day-dot">금</span><span>금요일</span>
-                </li>
-                <li class="nav-item" data-filter-type="day" data-filter-value="토">
-                    <span class="day-dot">토</span><span>토요일</span>
-                </li>
-                <li class="nav-item" data-filter-type="day" data-filter-value="일">
-                    <span class="day-dot">일</span><span>일요일</span>
-                </li>
-            </ul>
+            <!-- L1: School (L2 토글) -->
+            <details class="l1-group">
+                <summary class="menu-l1">
+                    <span class="material-symbols-outlined">school</span>School
+                </summary>
+                <ul class="nav-list">
+                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="초등">
+                        <span class="label-color c-green"></span>초등
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="중등">
+                        <span class="label-color c-blue"></span>중등
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="고등">
+                        <span class="label-color c-red"></span>고등
+                    </li>
+                </ul>
+            </details>
+
+            <!-- L1: Branch (L2 토글) -->
+            <details class="l1-group">
+                <summary class="menu-l1">
+                    <span class="material-symbols-outlined">location_city</span>Branch
+                </summary>
+                <ul class="nav-list">
+                    <li class="menu-l2 nav-item" data-filter-type="branch" data-filter-value="2단지">
+                        <span class="material-symbols-outlined">apartment</span>2단지
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="branch" data-filter-value="10단지">
+                        <span class="material-symbols-outlined">apartment</span>10단지
+                    </li>
+                </ul>
+            </details>
+
+            <!-- L1: Scheduled (L2 토글) -->
+            <details class="l1-group">
+                <summary class="menu-l1">
+                    <span class="material-symbols-outlined">calendar_month</span>Scheduled
+                </summary>
+                <ul class="nav-list">
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="월">
+                        <span class="day-dot">월</span>월요일
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="화">
+                        <span class="day-dot">화</span>화요일
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="수">
+                        <span class="day-dot">수</span>수요일
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="목">
+                        <span class="day-dot">목</span>목요일
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="금">
+                        <span class="day-dot">금</span>금요일
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="토">
+                        <span class="day-dot">토</span>토요일
+                    </li>
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="일">
+                        <span class="day-dot">일</span>일요일
+                    </li>
+                </ul>
+            </details>
         </nav>
 
         <!-- Main Content -->
@@ -110,7 +146,16 @@
             <div class="list-panel">
                 <div class="panel-header">
                     <span id="student-count" class="count-chip">—</span>
+                    <span id="filter-chips" class="filter-chips"></span>
+                    <span id="filter-clear-btn" class="filter-clear-btn" onclick="window.clearFilters()" title="필터 초기화" style="display:none;">
+                        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                    </span>
                     <div class="actions">
+                        <label class="icon-btn" title="CSV Import" style="cursor:pointer; display:flex; align-items:center;">
+                            <span class="material-symbols-outlined">upload_file</span>
+                            <input type="file" id="csv-import-file" accept=".csv" style="display:none;" onchange="window.handleCSVImport(event)">
+                        </label>
+                        <span class="material-symbols-outlined icon-btn" title="CSV Export" onclick="window.handleCSVExport()">download</span>
                         <span class="material-symbols-outlined icon-btn" title="Refresh"
                             onclick="window.refreshStudents && window.refreshStudents()">refresh</span>
                         <span class="material-symbols-outlined icon-btn">more_vert</span>
@@ -141,6 +186,12 @@
                     </div>
                 </div>
 
+                <!-- 탭 바 (조회 모드에서만 표시) -->
+                <div class="tab-bar" id="detail-tab-bar">
+                    <button class="tab-btn active" onclick="window.switchDetailTab('info')">기본정보</button>
+                    <button class="tab-btn" onclick="window.switchDetailTab('history')">수업이력</button>
+                </div>
+
                 <!-- 조회 모드 -->
                 <div class="detail-content" id="detail-view">
                     <div class="profile-header">
@@ -155,28 +206,96 @@
                             </div>
                         </div>
                     </div>
-                    <div class="info-grid">
-                        <div class="info-card">
+                    <div class="form-grid">
+                        <!-- 기본 정보 -->
+                        <div class="form-card">
+                            <h3 class="info-card-title">
+                                <span class="material-symbols-outlined">person</span>
+                                기본 정보
+                            </h3>
+                            <div class="form-fields">
+                                <div class="form-field">
+                                    <span class="field-label">학부</span>
+                                    <div class="field-value" id="detail-level-name">—</div>
+                                </div>
+                                <div class="form-field">
+                                    <span class="field-label">학교</span>
+                                    <div class="field-value" id="detail-school-name">—</div>
+                                </div>
+                                <div class="form-field">
+                                    <span class="field-label">학년</span>
+                                    <div class="field-value" id="detail-grade">—</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 연락처 -->
+                        <div class="form-card">
                             <h3 class="info-card-title">
                                 <span class="material-symbols-outlined">contact_phone</span>
                                 연락처
                             </h3>
-                            <div class="info-rows">
-                                <div class="info-row">
-                                    <div class="info-label">학생 연락처</div>
-                                    <div class="info-value" id="profile-student-phone">—</div>
+                            <div class="form-fields">
+                                <div class="form-field">
+                                    <span class="field-label">학생 연락처</span>
+                                    <div class="field-value" id="profile-student-phone">—</div>
                                 </div>
-                                <div class="info-row">
-                                    <div class="info-label">학부모 연락처 1</div>
-                                    <div class="info-value" id="profile-parent-phone-1">—</div>
+                                <div class="form-field">
+                                    <span class="field-label">학부모 연락처 1</span>
+                                    <div class="field-value" id="profile-parent-phone-1">—</div>
                                 </div>
-                                <div class="info-row">
-                                    <div class="info-label">학부모 연락처 2</div>
-                                    <div class="info-value" id="profile-parent-phone-2">—</div>
+                                <div class="form-field">
+                                    <span class="field-label">학부모 연락처 2</span>
+                                    <div class="field-value" id="profile-parent-phone-2">—</div>
                                 </div>
                             </div>
                         </div>
-                        <div class="info-card memo-info-card">
+                        <!-- 학습·등록 정보 -->
+                        <div class="form-card">
+                            <h3 class="info-card-title">
+                                <span class="material-symbols-outlined">school</span>
+                                학습 · 등록 정보
+                            </h3>
+                            <div class="form-fields">
+                                <div class="form-row">
+                                    <div class="form-field">
+                                        <span class="field-label">반</span>
+                                        <div class="field-value" id="profile-level">—</div>
+                                    </div>
+                                    <div class="form-field">
+                                        <span class="field-label">소속</span>
+                                        <div class="field-value" id="profile-branch">—</div>
+                                    </div>
+                                </div>
+                                <div class="form-field">
+                                    <span class="field-label">요일</span>
+                                    <div class="field-value" id="profile-day">—</div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-field">
+                                        <span class="field-label">수업종류</span>
+                                        <div class="field-value" id="profile-class-type">—</div>
+                                    </div>
+                                    <div class="form-field">
+                                        <span class="field-label">상태</span>
+                                        <div class="field-value" id="detail-status">—</div>
+                                    </div>
+                                </div>
+                                <div class="form-field" id="profile-special-class-row" style="display:none;">
+                                    <span class="field-label">특강 기간</span>
+                                    <div class="field-value" id="profile-special-period">—</div>
+                                </div>
+                                <div class="form-field" id="profile-start-date-row">
+                                    <span class="field-label">등원일</span>
+                                    <div class="field-value" id="profile-start-date">—</div>
+                                </div>
+                                <div class="form-field" id="profile-pause-row" style="display:none;">
+                                    <span class="field-label">휴원 기간</span>
+                                    <div class="field-value" id="profile-pause-period">—</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 메모 -->
+                        <div class="form-card">
                             <h3 class="info-card-title">
                                 <span class="material-symbols-outlined">sticky_note_2</span>
                                 메모
@@ -188,50 +307,13 @@
                                 <p style="color:var(--text-sec);font-size:0.85em;">학생을 선택하면 메모가 표시됩니다.</p>
                             </div>
                         </div>
-                        <div class="info-card">
-                            <h3 class="info-card-title">
-                                <span class="material-symbols-outlined">school</span>
-                                학습 정보
-                            </h3>
-                            <div class="info-rows">
-                                <div class="info-row">
-                                    <div class="info-label">반</div>
-                                    <div class="info-value" id="profile-level">—</div>
-                                </div>
-                                <div class="info-row">
-                                    <div class="info-label">소속</div>
-                                    <div class="info-value" id="profile-branch">—</div>
-                                </div>
-                                <div class="info-row">
-                                    <div class="info-label">요일</div>
-                                    <div class="info-value" id="profile-day">—</div>
-                                </div>
-                                <div class="info-row">
-                                    <div class="info-label">수업종류</div>
-                                    <div class="info-value" id="profile-class-type">—</div>
-                                </div>
-                                <div class="info-row" id="profile-special-class-row" style="display:none;">
-                                    <div class="info-label">특강 기간</div>
-                                    <div class="info-value" id="profile-special-period">—</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="info-card">
-                            <h3 class="info-card-title">
-                                <span class="material-symbols-outlined">event_note</span>
-                                등록 정보
-                            </h3>
-                            <div class="info-rows">
-                                <div class="info-row" id="profile-start-date-row">
-                                    <div class="info-label">등원일</div>
-                                    <div class="info-value" id="profile-start-date">—</div>
-                                </div>
-                                <div class="info-row" id="profile-pause-row" style="display:none;">
-                                    <div class="info-label">휴원 기간</div>
-                                    <div class="info-value" id="profile-pause-period">—</div>
-                                </div>
-                            </div>
-                        </div>
+                    </div>
+                </div>
+
+                <!-- 수업이력 탭 -->
+                <div class="detail-content" id="history-view" style="display:none">
+                    <div id="history-list" class="history-list">
+                        <p style="color:var(--text-sec);font-size:0.9em;">학생을 선택하면 이력이 표시됩니다.</p>
                     </div>
                 </div>
 
@@ -299,44 +381,54 @@
                                     학습 · 등록 정보
                                 </h3>
                                 <div class="form-fields">
-                                    <div class="form-field">
-                                        <label class="field-label">학부기호</label>
-                                        <input class="field-input" name="level_code" type="text" placeholder="HX">
-                                    </div>
-                                    <div class="form-field">
-                                        <label class="field-label">레벨기호 <span id="branch-preview"
-                                                style="color: var(--primary, #1a73e8); font-size: 0.85em; font-weight: 600;"></span></label>
-                                        <input class="field-input" name="level_symbol" type="text"
-                                            placeholder="102 → 2단지, 201 → 10단지"
-                                            oninput="window.handleLevelSymbolChange && window.handleLevelSymbolChange(this.value)">
+                                    <!-- 학부기호 + 레벨기호 한 줄 -->
+                                    <div class="form-row">
+                                        <div class="form-field">
+                                            <label class="field-label">학부기호</label>
+                                            <input class="field-input" name="level_code" type="text" placeholder="HX">
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="field-label">레벨기호 <span id="branch-preview"
+                                                    style="color: var(--primary, #1a73e8); font-size: 0.85em; font-weight: 600;"></span></label>
+                                            <input class="field-input" name="level_symbol" type="text"
+                                                placeholder="102 → 2단지"
+                                                oninput="window.handleLevelSymbolChange && window.handleLevelSymbolChange(this.value)">
+                                        </div>
                                     </div>
                                     <div class="form-field">
                                         <label class="field-label">요일</label>
                                         <div class="day-checkboxes">
-                                            <label class="day-check"><input type="checkbox" name="day"
-                                                    value="월">월</label>
-                                            <label class="day-check"><input type="checkbox" name="day"
-                                                    value="화">화</label>
-                                            <label class="day-check"><input type="checkbox" name="day"
-                                                    value="수">수</label>
-                                            <label class="day-check"><input type="checkbox" name="day"
-                                                    value="목">목</label>
-                                            <label class="day-check"><input type="checkbox" name="day"
-                                                    value="금">금</label>
-                                            <label class="day-check"><input type="checkbox" name="day"
-                                                    value="토">토</label>
-                                            <label class="day-check"><input type="checkbox" name="day"
-                                                    value="일">일</label>
+                                            <label class="day-check"><input type="checkbox" name="day" value="월">월</label>
+                                            <label class="day-check"><input type="checkbox" name="day" value="화">화</label>
+                                            <label class="day-check"><input type="checkbox" name="day" value="수">수</label>
+                                            <label class="day-check"><input type="checkbox" name="day" value="목">목</label>
+                                            <label class="day-check"><input type="checkbox" name="day" value="금">금</label>
+                                            <label class="day-check"><input type="checkbox" name="day" value="토">토</label>
+                                            <label class="day-check"><input type="checkbox" name="day" value="일">일</label>
                                         </div>
                                     </div>
-                                    <div class="form-field">
-                                        <label class="field-label">수업종류</label>
-                                        <select class="field-select" name="class_type"
-                                            onchange="window.handleClassTypeChange && window.handleClassTypeChange(this.value)">
-                                            <option value="정규" selected>정규</option>
-                                            <option value="특강">특강</option>
-                                            <option value="내신">내신</option>
-                                        </select>
+                                    <!-- 수업종류 + 상태 한 줄 -->
+                                    <div class="form-row">
+                                        <div class="form-field">
+                                            <label class="field-label">수업종류</label>
+                                            <select class="field-select" name="class_type"
+                                                onchange="window.handleClassTypeChange && window.handleClassTypeChange(this.value)">
+                                                <option value="정규" selected>정규</option>
+                                                <option value="특강">특강</option>
+                                                <option value="내신">내신</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-field">
+                                            <label class="field-label">상태</label>
+                                            <select class="field-select" name="status" id="status-select"
+                                                onchange="window.handleStatusChange && window.handleStatusChange(this.value)">
+                                                <option value="등원예정">등원예정</option>
+                                                <option value="재원" selected>재원</option>
+                                                <option value="실휴원" id="opt-pause-real">실휴원</option>
+                                                <option value="가휴원" id="opt-pause-virtual">가휴원</option>
+                                                <option value="퇴원" id="opt-withdraw" style="display:none;">퇴원</option>
+                                            </select>
+                                        </div>
                                     </div>
                                     <div class="form-field" id="special-period-container" style="display:none;">
                                         <label class="field-label">특강 기간</label>
@@ -349,17 +441,6 @@
                                     <div class="form-field" id="start-date-container">
                                         <label class="field-label">등원일</label>
                                         <input class="field-input" name="start_date" type="date">
-                                    </div>
-                                    <div class="form-field">
-                                        <label class="field-label">상태</label>
-                                        <select class="field-select" name="status" id="status-select"
-                                            onchange="window.handleStatusChange && window.handleStatusChange(this.value)">
-                                            <option value="등원예정">등원예정</option>
-                                            <option value="재원" selected>재원</option>
-                                            <option value="실휴원" id="opt-pause-real">실휴원</option>
-                                            <option value="가휴원" id="opt-pause-virtual">가휴원</option>
-                                            <option value="퇴원" id="opt-withdraw" style="display:none;">퇴원</option>
-                                        </select>
                                     </div>
                                     <div class="form-field" id="pause-period-container" style="display:none;">
                                         <label class="field-label">휴원 기간</label>
@@ -375,12 +456,40 @@
                                     </div>
                                 </div>
                             </div>
+                            <!-- 메모 -->
+                            <div class="form-card form-memo-card">
+                                <h3 class="info-card-title">
+                                    <span class="material-symbols-outlined">sticky_note_2</span>
+                                    메모
+                                    <button class="memo-add-btn" onclick="window.addFormMemo()" title="메모 추가">
+                                        <span class="material-symbols-outlined">add</span>
+                                    </button>
+                                </h3>
+                                <div id="form-memo-list" class="memo-list">
+                                    <p style="color:var(--text-sec);font-size:0.85em;">저장 후 메모를 추가할 수 있습니다.</p>
+                                </div>
+                            </div>
                         </div>
                     </form>
                 </div>
             </div>
         </main>
     </div>
+    <!-- 메모 입력 모달 -->
+    <div id="memo-modal" class="modal-overlay" style="display:none" onclick="window.closeMemoModal(event)">
+        <div class="modal-card">
+            <h3 class="modal-title">
+                <span class="material-symbols-outlined">sticky_note_2</span>
+                메모 추가
+            </h3>
+            <textarea id="memo-modal-input" class="modal-textarea" placeholder="메모 내용을 입력하세요..." rows="6"></textarea>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="window.closeMemoModal()">취소</button>
+                <button class="btn-save" onclick="window.saveMemoFromModal()">저장</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="app.js"></script>
 </body>
 

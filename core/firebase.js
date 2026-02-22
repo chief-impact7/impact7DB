@@ -1,5 +1,3 @@
-console.log("실제 앱에 들어간 키:", import.meta.env.VITE_FIREBASE_API_KEY);
-
 // core/firebase.js
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
