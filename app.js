@@ -57,7 +57,7 @@ const abbreviateSchool = (s) => {
 // ---------------------------------------------------------------------------
 // 한글 초성 검색 헬퍼
 // ---------------------------------------------------------------------------
-const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+const CHO = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
 
 // 완성형 한글에서 초성 추출 (가=0xAC00, 각 초성 = 21*28 = 588 간격)
 const getChosung = (str) => {
@@ -227,10 +227,10 @@ function applyFilterAndRender() {
     let filtered = allStudents;
 
     // 각 타입별로 AND 조건 적용
-    if (activeFilters.level)      filtered = filtered.filter(s => s.level === activeFilters.level);
-    if (activeFilters.branch)     filtered = filtered.filter(s => branchFromStudent(s) === activeFilters.branch);
-    if (activeFilters.day)        filtered = filtered.filter(s => combinedDays(s).includes(activeFilters.day));
-    if (activeFilters.status)     filtered = filtered.filter(s => s.status === activeFilters.status);
+    if (activeFilters.level) filtered = filtered.filter(s => s.level === activeFilters.level);
+    if (activeFilters.branch) filtered = filtered.filter(s => branchFromStudent(s) === activeFilters.branch);
+    if (activeFilters.day) filtered = filtered.filter(s => combinedDays(s).includes(activeFilters.day));
+    if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
     if (activeFilters.class_type) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.class_type === activeFilters.class_type));
 
     const term = document.getElementById('studentSearchInput')?.value.trim().toLowerCase() || '';
@@ -240,14 +240,14 @@ function applyFilterAndRender() {
             if (chosungMode) {
                 // 초성 검색: 이름, 학교에서 초성 매칭
                 return matchChosung(s.name, term) ||
-                       matchChosung(s.school, term);
+                    matchChosung(s.school, term);
             }
             // 일반 검색
             return (s.name && s.name.toLowerCase().includes(term)) ||
-                   (s.school && s.school.toLowerCase().includes(term)) ||
-                   (s.student_phone && s.student_phone.includes(term)) ||
-                   (s.parent_phone_1 && s.parent_phone_1.includes(term)) ||
-                   allClassCodes(s).some(code => code.toLowerCase().includes(term));
+                (s.school && s.school.toLowerCase().includes(term)) ||
+                (s.student_phone && s.student_phone.includes(term)) ||
+                (s.parent_phone_1 && s.parent_phone_1.includes(term)) ||
+                allClassCodes(s).some(code => code.toLowerCase().includes(term));
         });
     }
 
@@ -855,7 +855,7 @@ function _rebuildEditEnrollmentCards() {
         const ct = e.class_type || '정규';
         const isRegular = ct === '정규';
         const days = normalizeDays(e.day);
-        const dayCheckboxes = ['월','화','수','목','금','토','일'].map(d =>
+        const dayCheckboxes = ['월', '화', '수', '목', '금', '토', '일'].map(d =>
             `<label class="day-check"><input type="checkbox" name="edit_day_${idx}" value="${d}" ${days.includes(d) ? 'checked' : ''}>${d}</label>`
         ).join('');
 
@@ -1182,10 +1182,10 @@ window.endEnrollment = (idx) => {
         html += `<div class="end-class-group" style="margin-top:12px;">
             <span class="end-class-group-label">전체 종강 시 영향받는 학생 (${affected.length}명)</span>
             <ul class="end-class-list">${affected.map(s => {
-                const rem = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
-                const isW = rem.length === 0;
-                return `<li>${esc(s.name)}${isW ? '<span class="end-class-remaining" style="background:#fce8e6;color:#c5221f;">퇴원</span>' : `<span class="end-class-remaining">${rem.map(e => enrollmentCode(e)).filter(Boolean).join(', ')}</span>`}</li>`;
-            }).join('')}</ul>
+            const rem = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
+            const isW = rem.length === 0;
+            return `<li>${esc(s.name)}${isW ? '<span class="end-class-remaining" style="background:#fce8e6;color:#c5221f;">퇴원</span>' : `<span class="end-class-remaining">${rem.map(e => enrollmentCode(e)).filter(Boolean).join(', ')}</span>`}</li>`;
+        }).join('')}</ul>
         </div>`;
     }
 
@@ -1354,18 +1354,41 @@ window.checkDurationLimit = () => {
 // Google Sheets Export / Import (GAS Web App 연동)
 // ---------------------------------------------------------------------------
 // GAS Web App 배포 후 아래 URL을 실제 URL로 교체하세요
-const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+const GAS_WEB_APP_URL = 'https://script.google.com/a/macros/gw.impact7.kr/s/AKfycbxS51Bs0GJqaUk2hDZkh2RUHL7eyKRr8mjKCzOKAEW2OpNhZQuZH4BdS9Nu3JZmVGGrSA/exec';
 
-window.handleSheetExport = () => {
+window.handleSheetExport = async () => {
     if (!allStudents || allStudents.length === 0) {
         alert('내보낼 데이터가 없습니다.');
         return;
     }
-    window.open(GAS_WEB_APP_URL + '?action=export', '_blank');
+    try {
+        alert('구글시트를 생성 중입니다... 잠시 기다려주세요.');
+        const resp = await fetch(GAS_WEB_APP_URL + '?action=export&format=json');
+        const json = await resp.json();
+        if (json.url) {
+            window.open(json.url, '_blank');
+        } else {
+            alert('시트 생성 실패: ' + (json.error || '알 수 없는 오류'));
+        }
+    } catch (e) {
+        // fetch 실패 시 직접 열기 fallback
+        window.open(GAS_WEB_APP_URL + '?action=export', '_blank');
+    }
 };
 
-window.handleSheetImport = () => {
-    window.open(GAS_WEB_APP_URL + '?action=template', '_blank');
+window.handleSheetImport = async () => {
+    try {
+        alert('가져오기 템플릿을 생성 중입니다... 잠시 기다려주세요.');
+        const resp = await fetch(GAS_WEB_APP_URL + '?action=template&format=json');
+        const json = await resp.json();
+        if (json.url) {
+            window.open(json.url, '_blank');
+        } else {
+            alert('템플릿 생성 실패: ' + (json.error || '알 수 없는 오류'));
+        }
+    } catch (e) {
+        window.open(GAS_WEB_APP_URL + '?action=template', '_blank');
+    }
 };
 
 

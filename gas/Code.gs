@@ -335,7 +335,13 @@ function importFromSheet() {
     var row = data[i];
     var rowObj = {};
     for (var j = 0; j < headers.length; j++) {
-      rowObj[headers[j]] = row[j] != null ? String(row[j]).trim() : '';
+      var cell = row[j];
+      // Date 객체는 즉시 yyyy-MM-dd로 변환 (String() 거치면 파싱 실패)
+      if (cell instanceof Date) {
+        rowObj[headers[j]] = Utilities.formatDate(cell, 'Asia/Seoul', 'yyyy-MM-dd');
+      } else {
+        rowObj[headers[j]] = cell != null ? String(cell).trim() : '';
+      }
     }
 
     var name = rowObj['이름'];
@@ -378,7 +384,12 @@ function importFromSheet() {
         enrollments: []
       };
     }
-    studentMap[docId].enrollments.push(enrollment);
+    // 수업 관련 필드가 모두 비어있으면 enrollment 스킵
+    var hasEnrollData = enrollment.level_symbol || enrollment.class_number ||
+      enrollment.start_date || dayArr.length > 0;
+    if (hasEnrollData) {
+      studentMap[docId].enrollments.push(enrollment);
+    }
   }
 
   // Firestore에 저장
@@ -559,16 +570,39 @@ function onOpen() {
 // ---------------------------------------------------------------------------
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'export';
-  var url;
+  var format = (e && e.parameter && e.parameter.format) || 'html';
 
-  if (action === 'template') {
-    url = createImportTemplate();
-  } else {
-    url = exportToSheet();
+  try {
+    var url;
+    if (action === 'template') {
+      url = createImportTemplate();
+    } else {
+      url = exportToSheet();
+    }
+
+    // JSON 형식 요청 시 URL만 반환
+    if (format === 'json') {
+      return ContentService.createTextOutput(JSON.stringify({ url: url }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 기본: HTML 리다이렉트
+    return HtmlService.createHtmlOutput(
+      '<html><head><script>window.top.location.href="' + url + '";</script></head>' +
+      '<body>시트로 이동 중... <a href="' + url + '">여기를 클릭하세요</a></body></html>'
+    );
+  } catch (err) {
+    Logger.log('doGet 오류: ' + err.message);
+
+    if (format === 'json') {
+      return ContentService.createTextOutput(JSON.stringify({ error: err.message }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return HtmlService.createHtmlOutput(
+      '<html><body style="font-family:sans-serif;padding:40px;text-align:center;">' +
+      '<h2>오류가 발생했습니다</h2><p>' + err.message + '</p>' +
+      '<p>관리자에게 문의하세요.</p></body></html>'
+    );
   }
-
-  return HtmlService.createHtmlOutput(
-    '<html><head><script>window.top.location.href="' + url + '";</script></head>' +
-    '<body>시트로 이동 중... <a href="' + url + '">여기를 클릭하세요</a></body></html>'
-  );
 }
