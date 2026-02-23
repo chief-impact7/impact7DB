@@ -555,6 +555,256 @@ function setupDailyTrigger() {
   Logger.log('dailyBackup 트리거 등록 완료 (매일 오전 6시)');
 }
 
+// ===========================================================================
+// 데이터 정합성 점검 (auditData)
+// GAS 에디터에서 실행 → 실행 로그에 리포트 출력
+// ===========================================================================
+function auditData() {
+  var docs = getAllDocuments_('students');
+  var total = docs.length;
+
+  var report = [];
+  report.push('=== impact7DB 데이터 정합성 리포트 ===');
+  report.push('총 문서 수: ' + total);
+  report.push('점검 시각: ' + new Date().toLocaleString('ko-KR', {timeZone:'Asia/Seoul'}));
+  report.push('');
+
+  // --- 1. 통계 ---
+  var statusCount = {};
+  var branchCount = {};
+  var levelCount = {};
+  docs.forEach(function(d) {
+    statusCount[d.status || '(없음)'] = (statusCount[d.status || '(없음)'] || 0) + 1;
+    branchCount[d.branch || '(없음)'] = (branchCount[d.branch || '(없음)'] || 0) + 1;
+    levelCount[d.level || '(없음)'] = (levelCount[d.level || '(없음)'] || 0) + 1;
+  });
+  report.push('▶ 상태별: ' + JSON.stringify(statusCount));
+  report.push('▶ 소속별: ' + JSON.stringify(branchCount));
+  report.push('▶ 학부별: ' + JSON.stringify(levelCount));
+  report.push('');
+
+  // --- 2. 필수 필드 누락 ---
+  var requiredFields = ['name', 'parent_phone_1', 'branch', 'level', 'status'];
+  var missing = [];
+  docs.forEach(function(d) {
+    var m = requiredFields.filter(function(f) { return !d[f]; });
+    if (m.length > 0) missing.push(d._docId + ' → 누락: ' + m.join(', '));
+  });
+  report.push('▶ 필수 필드 누락: ' + missing.length + '건');
+  missing.slice(0, 10).forEach(function(s) { report.push('  ' + s); });
+  if (missing.length > 10) report.push('  ... 외 ' + (missing.length - 10) + '건');
+  report.push('');
+
+  // --- 3. status 유효성 ---
+  var validStatuses = ['등원예정', '재원', '실휴원', '가휴원', '퇴원'];
+  var badStatus = docs.filter(function(d) {
+    return d.status && validStatuses.indexOf(d.status) === -1;
+  });
+  report.push('▶ 잘못된 status 값: ' + badStatus.length + '건');
+  badStatus.forEach(function(d) { report.push('  ' + d._docId + ' → "' + d.status + '"'); });
+  report.push('');
+
+  // --- 4. enrollments 마이그레이션 상태 ---
+  var hasEnrollments = 0;
+  var flatOnly = 0;
+  var noEnrollments = 0;
+  docs.forEach(function(d) {
+    if (d.enrollments && Array.isArray(d.enrollments) && d.enrollments.length > 0) {
+      hasEnrollments++;
+    } else if (d.level_code || d.level_symbol || d.start_date) {
+      flatOnly++;
+    } else {
+      noEnrollments++;
+    }
+  });
+  report.push('▶ enrollments 마이그레이션:');
+  report.push('  enrollments[] 사용: ' + hasEnrollments + '명');
+  report.push('  flat 필드만 (마이그레이션 필요): ' + flatOnly + '명');
+  report.push('  수업 정보 없음: ' + noEnrollments + '명');
+  report.push('');
+
+  // --- 5. branch <-> class_number 일관성 ---
+  var branchMismatch = [];
+  docs.forEach(function(d) {
+    var enrollments = d.enrollments || [];
+    if (!Array.isArray(enrollments)) return;
+    enrollments.forEach(function(e) {
+      var cn = (e.class_number || '').toString().trim();
+      if (!cn) return;
+      var expected = branchFromClassNumber(cn);
+      if (expected && d.branch && expected !== d.branch) {
+        branchMismatch.push(d._docId + ' → branch:' + d.branch + ', class_number:' + cn + '(예상:' + expected + ')');
+      }
+    });
+  });
+  report.push('▶ branch-class_number 불일치: ' + branchMismatch.length + '건');
+  branchMismatch.slice(0, 10).forEach(function(s) { report.push('  ' + s); });
+  report.push('');
+
+  // --- 6. day 필드 타입 ---
+  var dayString = 0;
+  var dayArray = 0;
+  docs.forEach(function(d) {
+    // enrollments 내부의 day
+    var enrollments = d.enrollments || [];
+    if (Array.isArray(enrollments)) {
+      enrollments.forEach(function(e) {
+        if (Array.isArray(e.day)) dayArray++;
+        else if (e.day) dayString++;
+      });
+    }
+    // flat day 필드
+    if (d.day && !d.enrollments) {
+      if (Array.isArray(d.day)) dayArray++;
+      else dayString++;
+    }
+  });
+  report.push('▶ day 필드 타입:');
+  report.push('  배열 (정상): ' + dayArray + '건');
+  report.push('  문자열 (변환 필요): ' + dayString + '건');
+  report.push('');
+
+  // --- 7. 날짜 형식 ---
+  var dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  var badDates = [];
+  docs.forEach(function(d) {
+    var dates = [];
+    if (d.pause_start_date) dates.push({f:'pause_start_date', v:d.pause_start_date});
+    if (d.pause_end_date) dates.push({f:'pause_end_date', v:d.pause_end_date});
+    var enrollments = d.enrollments || [];
+    if (Array.isArray(enrollments)) {
+      enrollments.forEach(function(e, idx) {
+        if (e.start_date) dates.push({f:'enrollments['+idx+'].start_date', v:e.start_date});
+        if (e.end_date) dates.push({f:'enrollments['+idx+'].end_date', v:e.end_date});
+      });
+    }
+    if (d.start_date && !d.enrollments) dates.push({f:'start_date', v:d.start_date});
+    dates.forEach(function(item) {
+      if (!dateRegex.test(item.v)) {
+        badDates.push(d._docId + ' → ' + item.f + '="' + item.v + '"');
+      }
+    });
+  });
+  report.push('▶ 잘못된 날짜 형식 (YYYY-MM-DD 아님): ' + badDates.length + '건');
+  badDates.slice(0, 10).forEach(function(s) { report.push('  ' + s); });
+  report.push('');
+
+  // --- 8. 이름 중복 ---
+  var byName = {};
+  docs.forEach(function(d) {
+    var key = d.name || '(이름없음)';
+    if (!byName[key]) byName[key] = [];
+    byName[key].push(d._docId);
+  });
+  var nameDups = Object.keys(byName).filter(function(k) { return byName[k].length > 1; });
+  report.push('▶ 이름 중복: ' + nameDups.length + '건 (형제/동명이인 확인 필요)');
+  nameDups.slice(0, 10).forEach(function(k) {
+    report.push('  "' + k + '" → ' + byName[k].length + '개: ' + byName[k].join(', '));
+  });
+  report.push('');
+
+  // --- 9. docId 형식 점검 ---
+  var badDocId = [];
+  docs.forEach(function(d) {
+    var phone = (d.parent_phone_1 || '').replace(/\D/g, '');
+    var expected = (d.name || '') + '_' + phone + '_' + (d.branch || '');
+    expected = expected.replace(/\s+/g, '_');
+    if (d._docId !== expected) {
+      badDocId.push('실제: ' + d._docId + ' ≠ 예상: ' + expected);
+    }
+  });
+  report.push('▶ docId 형식 불일치: ' + badDocId.length + '건');
+  badDocId.slice(0, 10).forEach(function(s) { report.push('  ' + s); });
+
+  report.push('');
+  report.push('=== 점검 완료 ===');
+
+  var full = report.join('\n');
+  Logger.log(full);
+  return full;
+}
+
+// ===========================================================================
+// flat 필드 → enrollments[] 일괄 마이그레이션
+// 실행: GAS 에디터에서 migrateToEnrollments 선택 → ▶
+// ===========================================================================
+function migrateToEnrollments() {
+  var docs = getAllDocuments_('students');
+  var migrated = 0;
+  var skipped = 0;
+  var errors = [];
+
+  docs.forEach(function(d) {
+    // 이미 enrollments[]가 있으면 스킵
+    if (d.enrollments && Array.isArray(d.enrollments) && d.enrollments.length > 0) {
+      skipped++;
+      return;
+    }
+
+    // flat 필드에서 enrollment 구성
+    var levelSymbol = d.level_symbol || d.level_code || '';
+    var classNumber = d.class_number || '';
+    var classType = d.class_type || '정규';
+    var startDate = d.start_date || '';
+    var endDate = d.end_date || '';
+
+    // day 변환: 문자열 → 배열
+    var dayArr = [];
+    if (Array.isArray(d.day)) {
+      dayArr = d.day;
+    } else if (d.day) {
+      dayArr = String(d.day).split(/[,\s]+/).filter(function(x) { return x; });
+    }
+
+    // 수업 정보가 하나라도 있으면 enrollment 생성
+    var hasData = levelSymbol || classNumber || startDate || dayArr.length > 0;
+
+    var enrollment = {
+      class_type: classType,
+      level_symbol: levelSymbol,
+      class_number: classNumber,
+      day: dayArr,
+      start_date: startDate
+    };
+    if (endDate) enrollment.end_date = endDate;
+
+    // 업데이트할 문서 데이터 구성 (기존 필드 유지 + enrollments 추가 + flat 필드 제거)
+    var updated = {
+      name: d.name || '',
+      level: d.level || '',
+      school: d.school || '',
+      grade: d.grade || '',
+      student_phone: d.student_phone || '',
+      parent_phone_1: d.parent_phone_1 || '',
+      parent_phone_2: d.parent_phone_2 || '',
+      branch: d.branch || '',
+      status: d.status || '재원',
+      enrollments: hasData ? [enrollment] : []
+    };
+
+    // 휴원 날짜 보존
+    if (d.pause_start_date) updated.pause_start_date = d.pause_start_date;
+    if (d.pause_end_date) updated.pause_end_date = d.pause_end_date;
+
+    try {
+      upsertDocument_('students', d._docId, updated);
+      migrated++;
+    } catch (e) {
+      errors.push(d._docId + ': ' + e.message);
+    }
+  });
+
+  var summary = '=== enrollments 마이그레이션 완료 ===\n'
+    + '마이그레이션: ' + migrated + '명\n'
+    + '스킵 (이미 완료): ' + skipped + '명\n'
+    + '오류: ' + errors.length + '건';
+  if (errors.length > 0) {
+    summary += '\n' + errors.slice(0, 10).join('\n');
+  }
+  Logger.log(summary);
+  return summary;
+}
+
 // ---------------------------------------------------------------------------
 // 시트 열 때: 커스텀 메뉴 추가 (템플릿 시트용)
 // ---------------------------------------------------------------------------

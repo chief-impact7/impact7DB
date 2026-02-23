@@ -1,20 +1,20 @@
 /**
  * dedup-students.js
- * docId ≠ student_id인 중복 문서를 삭제합니다.
- * (올바른 문서: docId === student_id)
+ * docId 형식이 잘못된 문서(이름_전화번호_branch 아닌 것)를 찾아 삭제합니다.
  * 실행: node dedup-students.js
  */
 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, writeBatch, doc } from 'firebase/firestore';
 
+// 환경변수에서 읽기: node --env-file=.env dedup-students.js
 const firebaseConfig = {
-    apiKey:            "AIzaSyCb2DKuKVjYevqDlmeL3qa07jSE5azm8Nw",
-    authDomain:        "impact7db.firebaseapp.com",
-    projectId:         "impact7db",
-    storageBucket:     "impact7db.firebasestorage.app",
-    messagingSenderId: "485669859162",
-    appId:             "1:485669859162:web:2cfe866520c0b8f3f74d63"
+    apiKey:            process.env.VITE_FIREBASE_API_KEY,
+    authDomain:        process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId:         process.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket:     process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId:             process.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -26,16 +26,28 @@ const allDocs = snapshot.docs.map(d => ({ docId: d.id, ref: d.ref, ...d.data() }
 
 console.log(`총 문서 수: ${allDocs.length}`);
 
-// 삭제 대상: docId가 student_id와 일치하지 않는 문서 (auto-generated ID)
-const toDelete = allDocs.filter(d => d.student_id && d.docId !== d.student_id);
+// 삭제 대상: docId가 예상 형식(이름_전화번호_branch)과 다른 문서
+const toDelete = allDocs.filter(d => {
+    const phone = (d.parent_phone_1 || '').replace(/\D/g, '');
+    const expected = `${d.name || ''}_${phone}_${d.branch || ''}`.replace(/\s+/g, '_');
+    return d.docId !== expected;
+});
 
-console.log(`삭제 대상: ${toDelete.length}개 (auto-ID 중복 문서)`);
+console.log(`삭제 대상: ${toDelete.length}개 (잘못된 docId 문서)`);
 console.log(`유지 대상: ${allDocs.length - toDelete.length}개\n`);
 
 if (toDelete.length === 0) {
-    console.log('중복 없음 — 정리 불필요');
+    console.log('정리 불필요 — 모든 문서 정상');
     process.exit(0);
 }
+
+// 삭제 전 목록 출력
+toDelete.slice(0, 10).forEach(d => {
+    const phone = (d.parent_phone_1 || '').replace(/\D/g, '');
+    const expected = `${d.name}_${phone}_${d.branch}`.replace(/\s+/g, '_');
+    console.log(`  삭제: "${d.docId}" (예상: "${expected}")`);
+});
+if (toDelete.length > 10) console.log(`  ... 외 ${toDelete.length - 10}건`);
 
 // 배치 삭제 (최대 499개씩)
 const BATCH_SIZE = 499;
@@ -50,5 +62,5 @@ for (let i = 0; i < toDelete.length; i += BATCH_SIZE) {
     console.log(`  삭제 완료: ${deleted}/${toDelete.length}`);
 }
 
-console.log(`\n✅ 정리 완료. 남은 문서: ${allDocs.length - deleted}개`);
+console.log(`\n정리 완료. 남은 문서: ${allDocs.length - deleted}개`);
 process.exit(0);

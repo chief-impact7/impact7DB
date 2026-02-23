@@ -1,13 +1,9 @@
 /**
  * import-students.js
- * Upserts all rows from students.csv into the Firestore `students` collection.
- * Uses the client SDK (no service account needed while rules are open).
- * Uses batched writes (500 per batch) for performance.
+ * CSV → Firestore `students` 컬렉션 일괄 업로드 (enrollments[] 모델)
  *
- * docId strategy: 이름_부모연락처_branch
- *   - 재등록/반변경: 같은 docId → 필드만 업데이트 (중복 없음)
- *   - 형제: 이름이 달라 자동으로 구분
- *   - 다단지 동시 수강: branch가 달라 별도 문서
+ * docId: 이름_부모연락처숫자_branch
+ * 같은 학생의 여러 CSV 행 → enrollments[] 배열로 병합
  *
  * Run: node import-students.js
  */
@@ -21,54 +17,34 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// --- Firebase init ---
+// --- Firebase init (환경변수에서 읽기: node --env-file=.env import-students.js) ---
 const firebaseConfig = {
-    apiKey: "AIzaSyCb2DKuKVjYevqDlmeL3qa07jSE5azm8Nw",
-    authDomain: "impact7db.firebaseapp.com",
-    projectId: "impact7db",
-    storageBucket: "impact7db.firebasestorage.app",
-    messagingSenderId: "485669859162",
-    appId: "1:485669859162:web:2cfe866520c0b8f3f74d63"
+    apiKey:            process.env.VITE_FIREBASE_API_KEY,
+    authDomain:        process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId:         process.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket:     process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId:             process.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// --- docId generator: 이름_부모연락처_branch ---
-// 재등록/반변경 시 같은 docId → 필드 업데이트만 (중복 없음)
-// 형제: 이름이 달라 자동 구분
-// 다단지 동시 수강: branch가 달라 별도 문서
-function makeDocId(row) {
-    const name   = (row.name   || '').trim();
-    const phone  = (row.parent_phone_1 || row.student_phone || '').replace(/\D/g, '');
-    const branch = (row.branch || '').trim();
-    return `${name}_${phone}_${branch}`.replace(/\s+/g, '_');
+// --- class_number 첫 자리 → branch 파생 ---
+function branchFromClassNumber(num) {
+    const first = (num || '').toString().trim().charAt(0);
+    if (first === '1') return '2단지';
+    if (first === '2') return '10단지';
+    return '';
 }
 
-// --- Column mapping ---
-// Headers: ID,이름,학부,학교,학년,학생연락처,학부모연락처1,학부모연락처2,branch,학부기호,레벨기호,시작일,요일,상태
-function rowToDoc(headers, values) {
-    const raw = {};
-    headers.forEach((h, i) => { raw[h.trim()] = (values[i] || '').trim(); });
-
-    return {
-        name:           raw['이름'],
-        level:          raw['학부'],           // 초등 / 중등 / 고등
-        school:         raw['학교'],
-        grade:          raw['학년'],
-        student_phone:  raw['학생연락처'],
-        parent_phone_1: raw['학부모연락처1'],
-        parent_phone_2: raw['학부모연락처2'],
-        branch:         raw['branch'],
-        level_code:     raw['학부기호'],
-        level_symbol:   raw['레벨기호'],
-        start_date:     raw['시작일'],
-        day:            raw['요일'],
-        status:         raw['상태'] || 'active',   // 재원 = active
-    };
+// --- docId: 이름_부모연락처숫자_branch ---
+function makeDocId(name, phone, branch) {
+    const p = (phone || '').replace(/\D/g, '');
+    return `${name}_${p}_${branch}`.replace(/\s+/g, '_');
 }
 
-// --- Parse CSV ---
+// --- CSV 파싱 ---
 async function parseCSV(filePath) {
     const rows = [];
     const rl = createInterface({ input: createReadStream(filePath), crlfDelay: Infinity });
@@ -78,15 +54,17 @@ async function parseCSV(filePath) {
         if (!line.trim()) continue;
         const values = line.split(',');
         if (!headers) {
-            headers = values;
+            headers = values.map(h => h.trim());
         } else {
-            rows.push(rowToDoc(headers, values));
+            const raw = {};
+            headers.forEach((h, i) => { raw[h] = (values[i] || '').trim(); });
+            rows.push(raw);
         }
     }
     return rows;
 }
 
-// --- Delete all existing documents in a collection ---
+// --- 기존 문서 전체 삭제 ---
 async function clearCollection(colName) {
     const snap = await getDocs(collection(db, colName));
     if (snap.empty) return 0;
@@ -104,41 +82,85 @@ async function clearCollection(colName) {
 // --- Main ---
 async function importStudents() {
     const csvPath = resolve(__dirname, 'students.csv');
-    const students = await parseCSV(csvPath);
-    console.log(`Parsed ${students.length} student(s) from CSV.\n`);
+    const rows = await parseCSV(csvPath);
+    console.log(`CSV 행 수: ${rows.length}\n`);
 
-    // Clear existing documents (old docId scheme)
+    // 학생별 그룹핑 (같은 docId → enrollments[] 병합)
+    const studentMap = {};
+
+    for (const raw of rows) {
+        const name = raw['이름'];
+        const parentPhone = raw['학부모연락처1'] || raw['학생연락처'] || '';
+        if (!name) continue;
+
+        const classNumber = raw['레벨기호'] || '';   // CSV '레벨기호' = class_number
+        const branch = raw['branch'] || branchFromClassNumber(classNumber);
+        const docId = makeDocId(name, parentPhone, branch);
+
+        // 요일: "월요일" → ["월"], "월,수" → ["월","수"]
+        const dayRaw = raw['요일'] || '';
+        const dayArr = dayRaw.split(/[,\s]+/)
+            .map(d => d.replace(/요일$/, ''))
+            .filter(d => d);
+
+        const enrollment = {
+            class_type: '정규',
+            level_symbol: raw['학부기호'] || '',     // CSV '학부기호' = level_symbol
+            class_number: classNumber,
+            day: dayArr,
+            start_date: raw['시작일'] || ''
+        };
+
+        if (!studentMap[docId]) {
+            studentMap[docId] = {
+                name,
+                level: raw['학부'] || '',
+                school: raw['학교'] || '',
+                grade: raw['학년'] || '',
+                student_phone: raw['학생연락처'] || '',
+                parent_phone_1: parentPhone,
+                parent_phone_2: raw['학부모연락처2'] || '',
+                branch,
+                status: raw['상태'] || '재원',
+                enrollments: []
+            };
+        }
+
+        const hasData = enrollment.level_symbol || enrollment.class_number
+            || enrollment.start_date || dayArr.length > 0;
+        if (hasData) {
+            studentMap[docId].enrollments.push(enrollment);
+        }
+    }
+
+    const entries = Object.entries(studentMap);
+    console.log(`학생 수: ${entries.length}명\n`);
+
+    // 기존 문서 삭제
     console.log('기존 문서 삭제 중...');
     const deleted = await clearCollection('students');
     console.log(`  삭제 완료: ${deleted}개\n`);
 
-    let created = 0, skipped = 0;
+    // 배치 업로드
     const BATCH_SIZE = 499;
-    const entries = [];
+    let created = 0;
 
-    for (const student of students) {
-        if (!student.name) { skipped++; continue; }
-        const docId = makeDocId(student);
-        entries.push({ docId, student });
-    }
-
-    // Commit in batches of 499
     for (let i = 0; i < entries.length; i += BATCH_SIZE) {
         const chunk = entries.slice(i, i + BATCH_SIZE);
         const batch = writeBatch(db);
-        for (const { docId, student } of chunk) {
+        for (const [docId, student] of chunk) {
             batch.set(doc(db, 'students', docId), student);
             created++;
         }
         await batch.commit();
-        console.log(`  Batch committed: rows ${i + 1}–${Math.min(i + BATCH_SIZE, entries.length)}`);
+        console.log(`  Batch: ${i + 1}–${Math.min(i + BATCH_SIZE, entries.length)}`);
     }
 
-    console.log(`\nDone. Imported: ${created} | Skipped: ${skipped}`);
+    console.log(`\n완료. 업로드: ${created}명`);
     process.exit(0);
 }
 
 importStudents().catch(err => {
-    console.error('Import failed:', err.message);
+    console.error('Import 실패:', err.message);
     process.exit(1);
 });

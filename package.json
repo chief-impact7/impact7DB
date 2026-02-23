@@ -2,12 +2,14 @@
   "name": "impact7db2ais",
   "version": "1.0.0",
   "description": "",
-  "main": "PATCH_NOTES.js",
+  "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "import": "node --env-file=.env import-students.js",
+    "check": "node --env-file=.env check-duplicates.js",
+    "dedup": "node --env-file=.env dedup-students.js"
   },
   "keywords": [],
   "author": "",

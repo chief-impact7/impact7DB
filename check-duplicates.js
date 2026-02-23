@@ -1,19 +1,20 @@
 /**
  * check-duplicates.js
- * Firestore students 컬렉션에서 중복 데이터를 찾아 리포트합니다.
+ * Firestore students 컬렉션에서 중복 및 데이터 이상을 리포트합니다.
  * 실행: node check-duplicates.js
  */
 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 
+// 환경변수에서 읽기: node --env-file=.env check-duplicates.js
 const firebaseConfig = {
-    apiKey:            "AIzaSyCb2DKuKVjYevqDlmeL3qa07jSE5azm8Nw",
-    authDomain:        "impact7db.firebaseapp.com",
-    projectId:         "impact7db",
-    storageBucket:     "impact7db.firebasestorage.app",
-    messagingSenderId: "485669859162",
-    appId:             "1:485669859162:web:2cfe866520c0b8f3f74d63"
+    apiKey:            process.env.VITE_FIREBASE_API_KEY,
+    authDomain:        process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId:         process.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket:     process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId:             process.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -36,30 +37,30 @@ const nameDups = Object.entries(byName).filter(([, arr]) => arr.length > 1);
 console.log(`▶ 이름 중복: ${nameDups.length}건`);
 nameDups.forEach(([name, arr]) => {
     console.log(`  "${name}" → ${arr.length}개 문서`);
-    arr.forEach(d => console.log(`    docId: ${d.docId} | student_id: ${d.student_id} | 반: ${(d.level_code||'')+(d.level_symbol||'')} | branch: ${d.branch}`));
+    arr.forEach(d => console.log(`    docId: ${d.docId} | branch: ${d.branch} | enrollments: ${(d.enrollments || []).length}개`));
 });
 
-// 2) student_id 기준 중복 확인 (docId와 다른 경우)
-const byStudentId = {};
+// 2) docId 형식 점검 (이름_전화번호_branch)
+const badDocId = docs.filter(d => {
+    const phone = (d.parent_phone_1 || '').replace(/\D/g, '');
+    const expected = `${d.name || ''}_${phone}_${d.branch || ''}`.replace(/\s+/g, '_');
+    return d.docId !== expected;
+});
+
+console.log(`\n▶ docId 형식 불일치: ${badDocId.length}건`);
+badDocId.slice(0, 10).forEach(d => {
+    const phone = (d.parent_phone_1 || '').replace(/\D/g, '');
+    const expected = `${d.name}_${phone}_${d.branch}`.replace(/\s+/g, '_');
+    console.log(`  실제: "${d.docId}" ≠ 예상: "${expected}"`);
+});
+if (badDocId.length > 10) console.log(`  ... 외 ${badDocId.length - 10}건`);
+
+// 3) enrollments 상태 확인
+let withEnroll = 0, withoutEnroll = 0;
 docs.forEach(d => {
-    const key = d.student_id || '(없음)';
-    if (!byStudentId[key]) byStudentId[key] = [];
-    byStudentId[key].push(d);
+    if (d.enrollments && Array.isArray(d.enrollments) && d.enrollments.length > 0) withEnroll++;
+    else withoutEnroll++;
 });
-
-const idDups = Object.entries(byStudentId).filter(([, arr]) => arr.length > 1);
-console.log(`\n▶ student_id 중복: ${idDups.length}건`);
-idDups.forEach(([sid, arr]) => {
-    console.log(`  student_id: "${sid}" → ${arr.length}개 문서`);
-    arr.forEach(d => console.log(`    docId: ${d.docId} | 이름: ${d.name}`));
-});
-
-// 3) docId ≠ student_id 불일치 확인
-const mismatch = docs.filter(d => d.student_id && d.docId !== d.student_id);
-console.log(`\n▶ docId ≠ student_id 불일치: ${mismatch.length}건`);
-mismatch.slice(0, 10).forEach(d =>
-    console.log(`  docId: "${d.docId}" | student_id: "${d.student_id}" | 이름: ${d.name}`)
-);
-if (mismatch.length > 10) console.log(`  ... 외 ${mismatch.length - 10}건`);
+console.log(`\n▶ enrollments 현황: 있음 ${withEnroll}명 | 없음 ${withoutEnroll}명`);
 
 process.exit(0);
