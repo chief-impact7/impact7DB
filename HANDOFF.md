@@ -376,6 +376,42 @@ const esc = (str) => {
 
 ---
 
+## 새 컴퓨터 세팅 가이드
+
+```bash
+# 1. 저장소 클론
+git clone git@github.com:chief-impact7/impact7DSC2AIs.git
+cd impact7DSC2AIs
+
+# 2. 의존성 설치
+npm install
+
+# 3. 환경변수 세팅 (.env.example에 실제 값 포함)
+cp .env.example .env
+
+# 4. Firebase CLI 설치 및 로그인
+npm install -g firebase-tools
+firebase login              # 브라우저 인증
+firebase login:ci           # CI 토큰 생성 → .firebase-ci-token에 저장
+
+# 5. 개발 서버 실행
+npm run dev                 # → http://localhost:5173
+
+# 6. 빌드 & 배포
+npm run build
+firebase deploy --only hosting
+```
+
+**필수 재생성 파일 (gitignore됨):**
+
+| 파일 | 생성 방법 |
+|---|---|
+| `.env` | `cp .env.example .env` (값 이미 포함) |
+| `.firebase-ci-token` | `firebase login:ci` 출력 토큰 복사 |
+| `node_modules/` | `npm install` |
+
+---
+
 ## 다음 작업 권장 목록
 
 ### 1순위: 추가 개선 (검색 및 UI)
