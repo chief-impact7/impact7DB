@@ -26,8 +26,6 @@ if (import.meta.env.DEV) {
             apiKeyTail: '...' + firebaseConfig.apiKey?.slice(-6),
         });
     }
-    // 브라우저 콘솔에서 확인용: window.__firebaseConfig
-    window.__firebaseConfig = firebaseConfig;
 }
 
 const app = initializeApp(firebaseConfig);

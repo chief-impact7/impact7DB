@@ -2144,8 +2144,3 @@ summary.menu-l2 .material-symbols-outlined {
     display: inline-block;
 }
 
-.stats-bar-value {
-    width: auto;
-    min-width: 32px;
-    white-space: nowrap;
-}

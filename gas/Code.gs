@@ -950,7 +950,14 @@ function doGet(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 기본: HTML 리다이렉트
+    // 기본: HTML 리다이렉트 (URL 검증으로 XSS 방지)
+    if (typeof url !== 'string' || !url.match(/^https:\/\/docs\.google\.com\//)) {
+      return HtmlService.createHtmlOutput(
+        '<html><body style="font-family:sans-serif;padding:40px;text-align:center;">' +
+        '<h2>오류가 발생했습니다</h2><p>유효하지 않은 URL입니다.</p>' +
+        '<p>관리자에게 문의하세요.</p></body></html>'
+      );
+    }
     return HtmlService.createHtmlOutput(
       '<html><head><script>window.top.location.href="' + url + '";</script></head>' +
       '<body>시트로 이동 중... <a href="' + url + '">여기를 클릭하세요</a></body></html>'
@@ -963,9 +970,15 @@ function doGet(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    var safeMessage = String(err.message)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
     return HtmlService.createHtmlOutput(
       '<html><body style="font-family:sans-serif;padding:40px;text-align:center;">' +
-      '<h2>오류가 발생했습니다</h2><p>' + err.message + '</p>' +
+      '<h2>오류가 발생했습니다</h2><p>' + safeMessage + '</p>' +
       '<p>관리자에게 문의하세요.</p></body></html>'
     );
   }

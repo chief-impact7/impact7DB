@@ -11,7 +11,8 @@ provider.addScope('https://www.googleapis.com/auth/drive.readonly');
 // provider.setCustomParameters({ hd: 'gw.impact7.kr' }); // 단일 도메인만 가능
 
 /** Google OAuth access token (Drive Picker용) */
-export let googleAccessToken = null;
+let googleAccessToken = null;
+export function getGoogleAccessToken() { return googleAccessToken; }
 
 /**
  * Google 팝업 로그인

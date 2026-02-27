@@ -51,19 +51,19 @@ service cloud.firestore {
         return request.resource.data.keys().size() <= 20;
       }
 
-      allow read: if isLoggedIn();
+      allow read: if isAuthorized();
 
-      allow create: if isLoggedIn()
+      allow create: if isAuthorized()
         && hasRequiredStudentFields()
         && hasOnlyAllowedStudentFields()
         && withinSizeLimit();
 
-      allow update: if isLoggedIn()
+      allow update: if isAuthorized()
         && hasRequiredStudentFields()
         && hasOnlyAllowedStudentFields()
         && withinSizeLimit();
 
-      allow delete: if isLoggedIn();
+      allow delete: if isAuthorized();
 
       // 메모 서브컬렉션
       match /memos/{memoId} {
@@ -81,14 +81,14 @@ service cloud.firestore {
           return request.resource.data.keys().hasOnly(['text', 'author', 'created_at']);
         }
 
-        allow read: if isLoggedIn();
+        allow read: if isAuthorized();
 
-        allow create: if isLoggedIn()
+        allow create: if isAuthorized()
           && hasRequiredMemoFields()
           && hasOnlyAllowedMemoFields();
 
         allow update: if false;
-        allow delete: if isLoggedIn();
+        allow delete: if isAuthorized();
       }
     }
 
@@ -116,9 +116,9 @@ service cloud.firestore {
         ]);
       }
 
-      allow read: if isLoggedIn();
+      allow read: if isAuthorized();
 
-      allow create: if isLoggedIn()
+      allow create: if isAuthorized()
         && hasRequiredLogFields()
         && hasOnlyAllowedLogFields();
 
@@ -129,7 +129,7 @@ service cloud.firestore {
     // 사용자 역할: 자기 문서만 읽기, 생성/수정/삭제는 콘솔에서만
     // =========================================================================
     match /users/{userEmail} {
-      allow read: if isLoggedIn()
+      allow read: if isAuthorized()
         && request.auth.token.email == userEmail;
 
       allow create, update, delete: if false;
@@ -141,9 +141,9 @@ service cloud.firestore {
     // =========================================================================
     match /daily_stats/{dateId} {
 
-      allow read: if isLoggedIn();
+      allow read: if isAuthorized();
 
-      allow create: if isLoggedIn()
+      allow create: if isAuthorized()
         && request.resource.data.keys().hasAll(['date', 'generated_at', 'generated_by', 'total', 'active_total', 'by_status'])
         && request.resource.data.keys().hasOnly([
              'date', 'generated_at', 'generated_by', 'total', 'active_total',

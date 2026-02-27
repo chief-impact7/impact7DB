@@ -1,7 +1,7 @@
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, getDocs, getDoc, doc, setDoc, addDoc, deleteDoc, serverTimestamp, query, where, orderBy, writeBatch } from 'firebase/firestore';
 import { auth, db } from './firebase-config.js';
-import { signInWithGoogle, logout, googleAccessToken } from './auth.js';
+import { signInWithGoogle, logout, getGoogleAccessToken } from './auth.js';
 
 let currentUser = null;
 let currentUserRole = null; // 'admin' | 'teacher' | null
@@ -12,6 +12,7 @@ let activeFilters = { level: null, branch: null, day: null, status: null, class_
 let isEditMode = false;
 let groupViewMode = 'none'; // 'none' | 'branch' | 'class'
 let _pendingEnrollments = []; // 신규등록 시 추가 수업 목록
+let _editEnrollments = []; // 수정 중인 enrollment 배열
 let bulkMode = false;
 let selectedStudentIds = new Set();
 let siblingMap = {};    // studentId → [siblingId, ...]
@@ -123,7 +124,7 @@ const normalizeEnrollments = (s) => {
 };
 
 // 폼 카드 타이틀 변경 헬퍼
-const setFormCardTitle = (el, icon, text) => {
+const setFormCardTitle = (el, text) => {
     if (!el) return;
     // 아이콘 span 유지하고 텍스트만 교체
     const iconSpan = el.querySelector('.material-symbols-outlined');
@@ -134,9 +135,9 @@ const setFormCardTitle = (el, icon, text) => {
     if (btnHtml) el.insertAdjacentHTML('beforeend', btnHtml);
 };
 const setFormCardTitles = (basic, contact, classInfo) => {
-    setFormCardTitle(document.getElementById('form-card-title-basic'), 'person', basic);
-    setFormCardTitle(document.getElementById('form-card-title-contact'), 'contact_phone', contact);
-    setFormCardTitle(document.getElementById('form-card-title-class'), 'school', classInfo);
+    setFormCardTitle(document.getElementById('form-card-title-basic'), basic);
+    setFormCardTitle(document.getElementById('form-card-title-contact'), contact);
+    setFormCardTitle(document.getElementById('form-card-title-class'), classInfo);
 };
 
 const formatDate = (dateStr) => {
@@ -377,7 +378,7 @@ async function loadMemoCacheAndRender() {
 
 // 개별 리스트 아이템의 아이콘만 업데이트 (전체 리렌더 없이)
 function updateListItemIcons(studentId) {
-    const el = document.querySelector(`.list-item[data-id="${studentId}"]`);
+    const el = document.querySelector(`.list-item[data-id="${CSS.escape(studentId)}"]`);
     if (!el) return;
     const titleSpan = el.querySelector('.item-title');
     if (!titleSpan) return;
@@ -491,7 +492,7 @@ function applyFilterAndRender() {
     buildClassFilterSidebar();
     if (activeFilters.class_code) {
         const classListEl = document.getElementById('class-filter-list');
-        const stillExists = classListEl?.querySelector(`[data-filter-value="${activeFilters.class_code}"]`);
+        const stillExists = classListEl?.querySelector(`[data-filter-value="${CSS.escape(activeFilters.class_code)}"]`);
         if (!stillExists) activeFilters.class_code = null;
     }
 
@@ -646,8 +647,8 @@ function renderStudentItem(s, container) {
         <input type="checkbox" class="list-item-checkbox" ${selectedStudentIds.has(s.id) ? 'checked' : ''}>
         <span class="material-symbols-outlined drag-icon">person</span>
         <div class="item-main">
-            <span class="item-title">${s.name || '—'}${siblingIcon}${memoIcon}${statusBadge}</span>
-            <span class="item-desc">${subLine || '—'}</span>
+            <span class="item-title">${esc(s.name || '—')}${siblingIcon}${memoIcon}${statusBadge}</span>
+            <span class="item-desc">${esc(subLine || '—')}</span>
         </div>
         ${pauseDateHtml}
         <div class="item-days">${dayDots}</div>
@@ -744,7 +745,7 @@ document.querySelectorAll('.nav-item[data-filter-type]').forEach(item => {
                 item.classList.remove('active');
             } else {
                 // 같은 타입의 기존 선택 해제 후 새 값 선택
-                document.querySelector(`.nav-item[data-filter-type="${type}"].active`)?.classList.remove('active');
+                document.querySelector(`.nav-item[data-filter-type="${CSS.escape(type)}"].active`)?.classList.remove('active');
                 activeFilters[type] = value;
                 item.classList.add('active');
             }
@@ -875,6 +876,7 @@ const makeDocId = (name, parentPhone, branch) => {
 window.showNewStudentForm = () => {
     isEditMode = false;
     currentStudentId = null;
+    pauseAlertTriggered = false;
     document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
     document.getElementById('detail-header').style.display = 'none';
     document.getElementById('form-header').style.display = 'flex';
@@ -941,6 +943,7 @@ window.showEditForm = () => {
     const student = allStudents.find(s => s.id === currentStudentId);
     if (!student) return;
 
+    pauseAlertTriggered = false;
     isEditMode = true;
     document.getElementById('detail-header').style.display = 'none';
     document.getElementById('form-header').style.display = 'flex';
@@ -1128,7 +1131,7 @@ window.submitNewStudent = async () => {
         // 저장한 학생 자동 선택
         const savedStudent = allStudents.find(s => s.id === currentStudentId);
         if (savedStudent) {
-            const targetEl = document.querySelector(`.list-item[data-id="${currentStudentId}"]`);
+            const targetEl = document.querySelector(`.list-item[data-id="${CSS.escape(currentStudentId)}"]`);
             selectStudent(savedStudent.id, savedStudent, targetEl);
         }
     } catch (err) {
@@ -1237,7 +1240,6 @@ window.handleClassNumberChange = (val) => {
 // ---------------------------------------------------------------------------
 // 수정 폼: 동적 enrollment 편집 카드 렌더링
 // ---------------------------------------------------------------------------
-let _editEnrollments = []; // 수정 중인 enrollment 배열
 
 function renderEditableEnrollments(enrollments) {
     _editEnrollments = enrollments.map(e => ({ ...e })); // deep copy
@@ -1364,8 +1366,8 @@ function collectEditEnrollments() {
     if (!container) return [];
     const cards = container.querySelectorAll('.edit-enrollment-card');
     return Array.from(cards).map((card, idx) => {
-        const get = (field) => card.querySelector(`[data-field="${field}"][data-idx="${idx}"]`)?.value?.trim() || '';
-        const days = Array.from(card.querySelectorAll(`[name="edit_day_${idx}"]:checked`)).map(cb => cb.value);
+        const get = (field) => card.querySelector(`[data-field="${CSS.escape(field)}"][data-idx="${CSS.escape(String(idx))}"]`)?.value?.trim() || '';
+        const days = Array.from(card.querySelectorAll(`[name="edit_day_${CSS.escape(String(idx))}"]:checked`)).map(cb => cb.value);
         const classType = get('class_type');
         const enrollment = {
             class_type: classType,
@@ -1524,7 +1526,7 @@ window.saveEnrollment = async () => {
         await loadStudentList();
         const savedStudent = allStudents.find(s => s.id === currentStudentId);
         if (savedStudent) {
-            const targetEl = document.querySelector(`.list-item[data-id="${currentStudentId}"]`);
+            const targetEl = document.querySelector(`.list-item[data-id="${CSS.escape(currentStudentId)}"]`);
             selectStudent(savedStudent.id, savedStudent, targetEl);
         }
     } catch (err) {
@@ -1640,7 +1642,7 @@ window.confirmEndClassSingle = async () => {
         if (currentStudentId) {
             const savedStudent = allStudents.find(s => s.id === currentStudentId);
             if (savedStudent) {
-                const targetEl = document.querySelector(`.list-item[data-id="${currentStudentId}"]`);
+                const targetEl = document.querySelector(`.list-item[data-id="${CSS.escape(currentStudentId)}"]`);
                 selectStudent(savedStudent.id, savedStudent, targetEl);
             }
         }
@@ -1705,7 +1707,7 @@ window.confirmEndClass = async () => {
         if (currentStudentId) {
             const savedStudent = allStudents.find(s => s.id === currentStudentId);
             if (savedStudent) {
-                const targetEl = document.querySelector(`.list-item[data-id="${currentStudentId}"]`);
+                const targetEl = document.querySelector(`.list-item[data-id="${CSS.escape(currentStudentId)}"]`);
                 selectStudent(savedStudent.id, savedStudent, targetEl);
             }
         }
@@ -1811,7 +1813,7 @@ function loadPickerApi() {
 }
 
 window.handleSheetPicker = async () => {
-    if (!googleAccessToken) {
+    if (!getGoogleAccessToken()) {
         alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
         return;
     }
@@ -1824,7 +1826,7 @@ window.handleSheetPicker = async () => {
             new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
                 .setMode(google.picker.DocsViewMode.LIST)
         )
-        .setOAuthToken(googleAccessToken)
+        .setOAuthToken(getGoogleAccessToken())
         .setCallback(async (data) => {
             if (data.action !== google.picker.Action.PICKED) return;
             const sheetId = data.docs[0].id;
@@ -1843,7 +1845,7 @@ async function importFromSheetId(sheetId, sheetName) {
         // Google Sheets API로 시트 데이터 직접 읽기 (GAS 경유 없음)
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/A:Z`;
         const resp = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${googleAccessToken}` }
+            headers: { 'Authorization': `Bearer ${getGoogleAccessToken()}` }
         });
 
         if (!resp.ok) {
@@ -2186,7 +2188,7 @@ function renderMemos(memos, studentId) {
 }
 
 window.toggleMemo = (memoId) => {
-    const card = document.querySelector(`.memo-card[data-memo-id="${memoId}"]`);
+    const card = document.querySelector(`.memo-card[data-memo-id="${CSS.escape(memoId)}"]`);
     if (!card) return;
     const full = card.querySelector('.memo-full');
     const isOpen = full.style.display !== 'none';
@@ -2357,10 +2359,11 @@ async function loadHistory(studentId) {
         console.error('[HISTORY ERROR]', e);
         // Firestore 복합 인덱스 미생성 시 에러 메시지에 생성 링크가 포함됨
         const indexUrl = e.message?.match(/https:\/\/console\.firebase\.google\.com\/[^\s]+/)?.[0];
-        const indexHint = indexUrl
-            ? `<br><a href="${indexUrl}" target="_blank" rel="noopener" style="color:var(--primary);font-size:0.85em;">→ Firebase Console에서 인덱스 생성하기</a>`
+        const safeIndexUrl = indexUrl && /^https:\/\/console\.firebase\.google\.com\//.test(indexUrl) ? indexUrl : null;
+        const indexHint = safeIndexUrl
+            ? `<br><a href="${esc(safeIndexUrl)}" target="_blank" rel="noopener" style="color:var(--primary);font-size:0.85em;">→ Firebase Console에서 인덱스 생성하기</a>`
             : '';
-        container.innerHTML = `<p style="color:red;font-size:0.9em;">이력 로드 실패: ${e.message}${indexHint}</p>`;
+        container.innerHTML = `<p style="color:red;font-size:0.9em;">이력 로드 실패: ${esc(e.message)}${indexHint}</p>`;
     }
 }
 
@@ -2525,7 +2528,6 @@ window.applyBulkStatus = async () => {
 
     const ids = [...selectedStudentIds];
     try {
-        const batch = writeBatch(db);
         const changes = [];
 
         ids.forEach(id => {
@@ -2533,20 +2535,25 @@ window.applyBulkStatus = async () => {
             if (!student) return;
             const oldStatus = student.status || '—';
             if (oldStatus === newStatus) return;
-            batch.update(doc(db, 'students', id), { status: newStatus });
             changes.push({ id, name: student.name, from: oldStatus, to: newStatus });
         });
 
         if (changes.length === 0) { alert('변경할 학생이 없습니다. (이미 같은 상태)'); return; }
 
-        await batch.commit();
-
-        for (const c of changes) {
-            await addDoc(collection(db, 'history_logs'), {
-                doc_id: c.id, change_type: 'UPDATE',
-                before: `상태: ${c.from}`, after: `상태: ${c.to} (일괄변경)`,
-                google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+        const BATCH_SIZE = 200;
+        for (let i = 0; i < changes.length; i += BATCH_SIZE) {
+            const chunk = changes.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(c => {
+                batch.update(doc(db, 'students', c.id), { status: newStatus });
+                const historyRef = doc(collection(db, 'history_logs'));
+                batch.set(historyRef, {
+                    doc_id: c.id, change_type: 'UPDATE',
+                    before: `상태: ${c.from}`, after: `상태: ${c.to} (일괄변경)`,
+                    google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                });
             });
+            await batch.commit();
         }
 
         changes.forEach(c => { const s = allStudents.find(s => s.id === c.id); if (s) s.status = newStatus; });
@@ -2578,8 +2585,8 @@ window.applyBulkClass = async () => {
 
     const ids = [...selectedStudentIds];
     try {
-        const batch = writeBatch(db);
         const changes = [];
+        const updateMap = {}; // id → updateData for local sync
 
         ids.forEach(id => {
             const student = allStudents.find(s => s.id === id);
@@ -2592,20 +2599,26 @@ window.applyBulkClass = async () => {
             const updateData = { enrollments: updated };
             if (newBranch) updateData.branch = newBranch;
 
-            batch.update(doc(db, 'students', id), updateData);
+            updateMap[id] = updateData;
             changes.push({ id, name: student.name, from: oldCode, to: raw });
         });
 
         if (changes.length === 0) { alert('변경할 학생이 없습니다.'); return; }
 
-        await batch.commit();
-
-        for (const c of changes) {
-            await addDoc(collection(db, 'history_logs'), {
-                doc_id: c.id, change_type: 'UPDATE',
-                before: `반: ${c.from}`, after: `반: ${c.to} (일괄변경)`,
-                google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+        const BATCH_SIZE = 200;
+        for (let i = 0; i < changes.length; i += BATCH_SIZE) {
+            const chunk = changes.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(c => {
+                batch.update(doc(db, 'students', c.id), updateMap[c.id]);
+                const historyRef = doc(collection(db, 'history_logs'));
+                batch.set(historyRef, {
+                    doc_id: c.id, change_type: 'UPDATE',
+                    before: `반: ${c.from}`, after: `반: ${c.to} (일괄변경)`,
+                    google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                });
             });
+            await batch.commit();
         }
 
         ids.forEach(id => {
@@ -2641,8 +2654,8 @@ window.applyBulkDays = async () => {
 
     const ids = [...selectedStudentIds];
     try {
-        const batch = writeBatch(db);
         const changes = [];
+        const updateMap = {}; // id → updateData for batching
 
         ids.forEach(id => {
             const student = allStudents.find(s => s.id === id);
@@ -2650,20 +2663,26 @@ window.applyBulkDays = async () => {
             const oldDays = displayDays(student.enrollments[0].day);
             const updated = [...student.enrollments];
             updated[0] = { ...updated[0], day: [...checked] };
-            batch.update(doc(db, 'students', id), { enrollments: updated });
+            updateMap[id] = { enrollments: updated };
             changes.push({ id, name: student.name, from: oldDays, to: checked.join(', ') });
         });
 
         if (changes.length === 0) { alert('변경할 학생이 없습니다.'); return; }
 
-        await batch.commit();
-
-        for (const c of changes) {
-            await addDoc(collection(db, 'history_logs'), {
-                doc_id: c.id, change_type: 'UPDATE',
-                before: `요일: ${c.from}`, after: `요일: ${c.to} (일괄변경)`,
-                google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+        const BATCH_SIZE = 200;
+        for (let i = 0; i < changes.length; i += BATCH_SIZE) {
+            const chunk = changes.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(c => {
+                batch.update(doc(db, 'students', c.id), updateMap[c.id]);
+                const historyRef = doc(collection(db, 'history_logs'));
+                batch.set(historyRef, {
+                    doc_id: c.id, change_type: 'UPDATE',
+                    before: `요일: ${c.from}`, after: `요일: ${c.to} (일괄변경)`,
+                    google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                });
             });
+            await batch.commit();
         }
 
         // 로컬 데이터 업데이트
@@ -2714,19 +2733,27 @@ window.confirmBulkDelete = async () => {
     if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '삭제 중...'; }
 
     try {
-        const batch = writeBatch(db);
+        // 삭제 전에 학생 이름을 미리 수집 (삭제 후에는 접근 불가)
+        const idNameMap = {};
         ids.forEach(id => {
-            batch.delete(doc(db, 'students', id));
-        });
-        await batch.commit();
-
-        for (const id of ids) {
             const s = allStudents.find(s => s.id === id);
-            await addDoc(collection(db, 'history_logs'), {
-                doc_id: id, change_type: 'WITHDRAW',
-                before: `학생: ${s?.name || id}`, after: '일괄 삭제',
-                google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+            idNameMap[id] = s?.name || id;
+        });
+
+        const BATCH_SIZE = 200;
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+            const chunk = ids.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(id => {
+                batch.delete(doc(db, 'students', id));
+                const historyRef = doc(collection(db, 'history_logs'));
+                batch.set(historyRef, {
+                    doc_id: id, change_type: 'WITHDRAW',
+                    before: `학생: ${idNameMap[id]}`, after: '일괄 삭제',
+                    google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                });
             });
+            await batch.commit();
         }
 
         allStudents = allStudents.filter(s => !ids.includes(s.id));

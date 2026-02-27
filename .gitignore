@@ -25,3 +25,6 @@ build/
 Thumbs.db
 .aider*
 .firebase-ci-token
+
+# 5. Data Files with PII
+students.csv
