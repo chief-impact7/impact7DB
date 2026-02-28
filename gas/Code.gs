@@ -197,7 +197,7 @@ function studentsToRows(docs) {
         s.name || '', s.level || '', s.school || '', s.grade || '',
         s.student_phone || '', s.parent_phone_1 || '', s.parent_phone_2 || '',
         branch, '', '', '정규', '', '', '',
-        s.status || '재원', s.pause_start_date || '', s.pause_end_date || ''
+        s.status || '재원', s.pause_start_date || '', s.pause_end_date || '', ''
       ]);
     } else {
       enrollments.forEach(function(e) {
@@ -211,7 +211,7 @@ function studentsToRows(docs) {
           branch,
           e.level_symbol || '', e.class_number || '', e.class_type || '정규',
           e.start_date || '', e.end_date || '', dayStr,
-          s.status || '재원', s.pause_start_date || '', s.pause_end_date || ''
+          s.status || '재원', s.pause_start_date || '', s.pause_end_date || '', e.semester || ''
         ]);
       });
     }
@@ -308,6 +308,18 @@ function createImportTemplate() {
     sheet.getRange(2, col, lastRow, 1).setNumberFormat('yyyy-mm-dd');
   });
 
+  // 학기 (R열, 18번째): 드롭다운
+  var semesterRule = SpreadsheetApp.newDataValidation()
+    .requireValueInList([
+      '2026-Winter', '2026-Spring1', '2026-Spring2', '2026-Summer', '2026-Autumn',
+      '2026-Spring',
+      '2027-Winter', '2027-Spring1', '2027-Spring2', '2027-Summer', '2027-Autumn',
+      '2027-Spring'
+    ], true)
+    .setAllowInvalid(true)
+    .build();
+  sheet.getRange(2, 18, lastRow, 1).setDataValidation(semesterRule);
+
   sheet.setFrozenRows(1);
 
   return ss.getUrl();
@@ -367,7 +379,8 @@ function importFromSheet() {
       level_symbol: rowObj['레벨기호'] || '',
       class_number: classNumber,
       day: dayArr,
-      start_date: formatDateValue(rowObj['시작일'])
+      start_date: formatDateValue(rowObj['시작일']),
+      semester: rowObj['학기'] || ''
     };
     var endDate = formatDateValue(rowObj['종료일']);
     if (endDate) enrollment.end_date = endDate;
@@ -890,7 +903,8 @@ function importFromSheetById(sheetId) {
       level_symbol: rowObj['레벨기호'] || '',
       class_number: classNumber,
       day: dayArr,
-      start_date: formatDateValue(rowObj['시작일'])
+      start_date: formatDateValue(rowObj['시작일']),
+      semester: rowObj['학기'] || ''
     };
     var endDate = formatDateValue(rowObj['종료일']);
     if (endDate) enrollment.end_date = endDate;

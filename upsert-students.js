@@ -154,7 +154,7 @@ function diffBasicInfo(existing, incoming) {
  * Returns { merged: [...], added: [...], updated: [...] }
  */
 function mergeEnrollments(existingArr, incomingArr) {
-    const incomingSemesters = new Set(incomingArr.map(e => e.semester).filter(Boolean));
+    const incomingSemesters = new Set(incomingArr.map(e => e.semester ?? ''));
 
     // 다른 학기 enrollments는 무조건 보존
     const kept = existingArr.filter(e => !incomingSemesters.has(e.semester));
@@ -226,8 +226,8 @@ async function upsertStudents() {
         const parentPhone = raw['학부모연락처1'] || raw['학생연락처'] || '';
         if (!name) continue;
 
-        const classNumber = raw['레벨기호'] || '';
-        const branch = raw['branch'] || branchFromClassNumber(classNumber);
+        const classNumber = raw['반넘버'] || '';
+        const branch = raw['소속'] || branchFromClassNumber(classNumber);
         const docId = makeDocId(name, parentPhone);
 
         const dayRaw = raw['요일'] || '';
@@ -236,13 +236,14 @@ async function upsertStudents() {
             .filter(d => d);
 
         const enrollment = {
-            class_type: '정규',
-            level_symbol: raw['학부기호'] || '',
+            class_type: raw['수업종류'] || '정규',
+            level_symbol: raw['레벨기호'] || '',
             class_number: classNumber,
             day: dayArr,
             start_date: raw['시작일'] || '',
             semester: raw['학기'] || SEMESTER,
         };
+        if (raw['종료일']) enrollment.end_date = raw['종료일'];
 
         if (!studentMap[docId]) {
             studentMap[docId] = {
@@ -394,10 +395,13 @@ async function upsertStudents() {
 
     console.log(`\nFirestore 기록 중... (${writes.length} writes + ${logEntries.length} logs)`);
 
-    const BATCH_SIZE = 249; // each write = 1 student + 1 log = 2 ops, keep under 500
-    for (let i = 0; i < writes.length; i += BATCH_SIZE) {
-        const chunk = writes.slice(i, i + BATCH_SIZE);
-        const logChunk = logEntries.slice(i, i + BATCH_SIZE);
+    const BATCH_SIZE = 150; // keep well under 500 ops even with delete+set+log combos
+    let writeIdx = 0;
+    let logIdx = 0;
+    let batchNum = 0;
+    while (writeIdx < writes.length || logIdx < logEntries.length) {
+        const chunk = writes.slice(writeIdx, writeIdx + BATCH_SIZE);
+        const logChunk = logEntries.slice(logIdx, logIdx + BATCH_SIZE);
         const batch = db.batch();
 
         for (const w of chunk) {
@@ -421,7 +425,10 @@ async function upsertStudents() {
         }
 
         await batch.commit();
-        console.log(`  Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${chunk.length} students written`);
+        writeIdx += chunk.length;
+        logIdx += logChunk.length;
+        batchNum++;
+        console.log(`  Batch ${batchNum}: ${chunk.length} students written`);
     }
 
     console.log(`\n✅ 완료. INSERT: ${results.inserted.length}, UPDATE: ${results.updated.length}, SKIP: ${results.skipped.length}`);

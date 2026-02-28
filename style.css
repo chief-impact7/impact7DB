@@ -401,6 +401,22 @@ summary.menu-l2 .material-symbols-outlined {
     flex-shrink: 0;
 }
 
+.semester-filter {
+    font-size: 12px;
+    font-family: var(--font-body);
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text-main);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.semester-filter:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
 .filter-chips {
     font-size: 11px;
     font-weight: 500;
@@ -660,6 +676,40 @@ summary.menu-l2 .material-symbols-outlined {
 .btn-save:disabled {
     opacity: .6;
     cursor: not-allowed;
+}
+
+.upload-method-btn {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: var(--font-body);
+}
+.upload-method-btn:hover {
+    background: var(--surface-hover);
+    border-color: var(--primary);
+}
+.upload-method-btn .material-symbols-outlined {
+    font-size: 22px;
+    color: var(--primary);
+    flex-shrink: 0;
+}
+.upload-method-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 2px;
+}
+.upload-method-desc {
+    font-size: 12px;
+    color: var(--text-sec);
 }
 
 .btn-cancel {
@@ -1698,6 +1748,11 @@ summary.menu-l2 .material-symbols-outlined {
     padding: 6px 16px;
     font-size: 13px;
 }
+.bulk-reset-btn {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    font-size: 13px;
+}
 
 .bulk-edit-hint {
     font-size: 11px;
@@ -2075,6 +2130,14 @@ summary.menu-l2 .material-symbols-outlined {
     cursor: pointer;
 }
 
+.stats-nav-item .menu-l1::after {
+    display: none;
+}
+
+.detail-header .icon-btn:first-child {
+    visibility: hidden;
+}
+
 /* ── Stats Table ─────────────────────────────────────────────────────────── */
 .stats-table {
     width: 100%;
@@ -2203,6 +2266,9 @@ summary.menu-l2 .material-symbols-outlined {
         flex: 1;
         width: auto;
     }
+    .panel-resizer {
+        display: none;
+    }
 }
 
 /* Mobile: single column, detail as overlay */
@@ -2252,6 +2318,9 @@ summary.menu-l2 .material-symbols-outlined {
         max-width: none;
         flex: 1;
         margin-right: 8px;
+    }
+    .detail-header .icon-btn:first-child {
+        visibility: visible;
     }
 }
 

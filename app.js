@@ -49,7 +49,10 @@ let currentUserRole = null; // 'admin' | 'teacher' | null
 let currentStudentId = null;
 let allStudents = [];
 // 타입별 독립 필터 — 다른 타입끼리 AND 복합 적용
-let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null, class_code: null, leave: null };
+let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null, class_code: null, leave: null, semester: null };
+// 학기 필터는 localStorage에 저장하여 페이지 새로고침 후에도 유지
+const _savedSemester = localStorage.getItem('semesterFilter');
+if (_savedSemester) activeFilters.semester = _savedSemester;
 let isEditMode = false;
 let groupViewMode = 'none'; // 'none' | 'branch' | 'class'
 let _pendingEnrollments = []; // 신규등록 시 추가 수업 목록
@@ -301,6 +304,7 @@ async function loadStudentList() {
         allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
         buildSiblingMap();
         buildClassFilterSidebar();
+        buildSemesterFilter();
         updateLeaveCountBadges();
         loadMemoCacheAndRender();
         generateDailyStatsIfNeeded();
@@ -599,7 +603,10 @@ function applyFilterAndRender() {
     let filtered = allStudents;
 
     // 필터가 아무것도 활성화되지 않은 상태(All Students 기본) → 퇴원 제외
-    const hasAnyFilter = Object.values(activeFilters).some(v => v !== null);
+    // semester는 sticky 필터이므로 '퇴원 제외' 판단에서 제외
+    const hasAnyFilter = Object.entries(activeFilters)
+        .filter(([k]) => k !== 'semester')
+        .some(([, v]) => v !== null);
     if (!hasAnyFilter) {
         filtered = filtered.filter(s => s.status !== '퇴원');
     }
@@ -611,6 +618,7 @@ function applyFilterAndRender() {
     if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
     if (activeFilters.class_type) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.class_type === activeFilters.class_type));
     if (activeFilters.class_code) filtered = filtered.filter(s => allClassCodes(s).includes(activeFilters.class_code));
+    if (activeFilters.semester) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
     if (activeFilters.leave) {
         const lv = activeFilters.leave;
         const today = new Date(); today.setHours(0,0,0,0);
@@ -662,6 +670,7 @@ function applyFilterAndRender() {
 // 활성 필터 요약을 카운트 칩 옆에 표시
 function updateFilterChips() {
     const active = Object.entries(activeFilters).filter(([, v]) => v !== null);
+    const nonSemester = active.filter(([k]) => k !== 'semester');
     const chipsEl = document.getElementById('filter-chips');
     const clearBtn = document.getElementById('filter-clear-btn');
     if (!chipsEl) return;
@@ -671,17 +680,46 @@ function updateFilterChips() {
         return;
     }
     chipsEl.textContent = active.map(([, v]) => v).join(' · ');
-    if (clearBtn) clearBtn.style.display = 'flex';
+    // clear 버튼은 semester 외 필터가 있을 때만 표시 (semester는 드롭다운에서 직접 변경)
+    if (clearBtn) clearBtn.style.display = nonSemester.length > 0 ? 'flex' : 'none';
 }
 
 window.clearFilters = () => {
+    // semester는 sticky — 명시적으로 드롭다운에서 바꾸기 전까지 유지
+    const keepSemester = activeFilters.semester;
     Object.keys(activeFilters).forEach(k => activeFilters[k] = null);
+    activeFilters.semester = keepSemester;
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     document.querySelector('.menu-l1[data-filter-type="all"]')?.classList.add('active');
     // 반별 필터 active 해제
     document.querySelectorAll('#class-filter-list .nav-item').forEach(el => el.classList.remove('active'));
     applyFilterAndRender();
 };
+
+window.handleSemesterFilter = (val) => {
+    activeFilters.semester = val || null;
+    // localStorage에 저장 — 페이지 새로고침 후에도 유지
+    if (val) localStorage.setItem('semesterFilter', val);
+    else localStorage.removeItem('semesterFilter');
+    applyFilterAndRender();
+};
+
+function buildSemesterFilter() {
+    const sel = document.getElementById('semester-filter');
+    if (!sel) return;
+    const semesters = new Set();
+    allStudents.forEach(s => (s.enrollments || []).forEach(e => { if (e.semester) semesters.add(e.semester); }));
+    const sorted = [...semesters].sort().reverse();
+    // localStorage 저장값 또는 현재 드롭다운 값 복원
+    const current = activeFilters.semester || sel.value;
+    sel.innerHTML = '<option value="">전체 학기</option>' + sorted.map(s => `<option value="${s}"${s === current ? ' selected' : ''}>${s}</option>`).join('');
+    // localStorage에서 복원된 값이 유효한 학기인지 확인
+    if (activeFilters.semester && !semesters.has(activeFilters.semester)) {
+        activeFilters.semester = null;
+        localStorage.removeItem('semesterFilter');
+        sel.value = '';
+    }
+}
 
 function renderStudentList(students) {
     const listContainer = document.querySelector('.list-items');
@@ -838,8 +876,10 @@ document.querySelectorAll('.nav-item[data-filter-type]').forEach(item => {
         const value = item.dataset.filterValue || null;
 
         if (type === 'all') {
-            // 전체 초기화
+            // 전체 초기화 (semester는 sticky — 유지)
+            const keepSemester = activeFilters.semester;
             Object.keys(activeFilters).forEach(k => activeFilters[k] = null);
+            activeFilters.semester = keepSemester;
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             item.classList.add('active');
         } else {
@@ -909,6 +949,9 @@ document.getElementById('studentSearchInput')?.addEventListener('input', applyFi
 // ---------------------------------------------------------------------------
 window.selectStudent = (studentId, studentData, targetElement) => {
     currentStudentId = studentId;
+
+    // 모바일: 디테일 패널 오버레이 표시
+    document.querySelector('.detail-panel').classList.add('active');
 
     // 폼이 열려 있으면 조회 모드로 초기화
     isEditMode = false;
@@ -1589,9 +1632,11 @@ function renderStayStats(studentData) {
         const totalMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
         const years = Math.floor(totalMonths / 12);
         const months = totalMonths % 12;
-        const duration = years > 0
-            ? `${years}년${months > 0 ? ' ' + months + '개월' : ''}`
-            : `${Math.max(totalMonths, 1)}개월`;
+        const duration = totalMonths <= 0
+            ? '등원예정'
+            : years > 0
+                ? `${years}년${months > 0 ? ' ' + months + '개월' : ''}`
+                : `${totalMonths}개월`;
         periodHtml = `${formatDate(startDates[0])} 부터 &nbsp;·&nbsp; <strong>${duration}</strong>`;
     }
 
@@ -1975,7 +2020,7 @@ window.checkDurationLimit = () => {
 // Google Sheets Export / Import (GAS Web App 연동)
 // ---------------------------------------------------------------------------
 // GAS Web App 배포 후 아래 URL을 실제 URL로 교체하세요
-const GAS_WEB_APP_URL = 'https://script.google.com/a/macros/gw.impact7.kr/s/AKfycbxS51Bs0GJqaUk2hDZkh2RUHL7eyKRr8mjKCzOKAEW2OpNhZQuZH4BdS9Nu3JZmVGGrSA/exec';
+const GAS_WEB_APP_URL = 'https://script.google.com/a/macros/gw.impact7.kr/s/AKfycbwDHJopip-3zzwnVIrbvGaH-VohyA9DMoJPVfMj6QV92JvYUp7C_SLGUm-coKKOYEcn-w/exec';
 
 window.handleSheetExport = async () => {
     if (!allStudents || allStudents.length === 0) {
@@ -1998,10 +2043,20 @@ window.handleSheetExport = async () => {
 };
 
 window.handleUpload = () => {
-    const choice = prompt('업로드 방식을 선택하세요:\n\n1 — 구글시트에서 가져오기 (드라이브에서 선택)\n2 — CSV 파일 업로드\n3 — 빈 템플릿 시트 만들기', '1');
-    if (choice === '1') window.handleSheetPicker();
-    else if (choice === '2') window.handleCsvUpsert();
-    else if (choice === '3') window.handleSheetTemplate();
+    document.getElementById('upload-modal').style.display = 'flex';
+};
+
+window.closeUploadModal = (e) => {
+    if (e && e.target !== document.getElementById('upload-modal')) return;
+    document.getElementById('upload-modal').style.display = 'none';
+};
+
+window.handleSheetUrlUpload = () => {
+    const url = prompt('구글시트 URL을 붙여넣으세요:');
+    if (!url) return;
+    const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    if (!m) { alert('올바른 구글시트 URL이 아닙니다.'); return; }
+    importFromSheetId(m[1], '시트 업로드');
 };
 
 window.handleSheetTemplate = async () => {
@@ -2011,6 +2066,7 @@ window.handleSheetTemplate = async () => {
         const json = await resp.json();
         if (json.url) {
             window.open(json.url, '_blank');
+            alert('템플릿을 채운 뒤, 업로드 버튼 → "4번"을 선택하면 바로 업로드됩니다.');
         } else {
             alert('시트 생성 실패: ' + (json.error || '알 수 없는 오류'));
         }
@@ -2087,7 +2143,8 @@ async function importFromSheetId(sheetId, sheetName) {
             '레벨기호': 'level_symbol',
             '반넘버': 'class_number',
             '수업종류': 'class_type',
-            '시작일': '시작일', '요일': '요일', '상태': '상태',
+            '시작일': '시작일', '종료일': '종료일', '요일': '요일', '상태': '상태',
+            '휴원시작일': '휴원시작일', '휴원종료일': '휴원종료일', '학기': '학기',
         };
 
         const rows = sheetRows.slice(1).map(row => {
@@ -2139,7 +2196,7 @@ async function runCsvUpsert(csvText, fileName) {
         return obj;
     });
 
-    // CSV 컬럼명으로 통일: 학부기호→level_symbol, 레벨기호→class_number, branch→branch
+    // CSV 컬럼명으로 통일: 레벨기호→level_symbol, 반넘버→class_number, branch→branch
     const normalized = rows.map(raw => ({
         이름: raw['이름'] || '',
         학부: raw['학부'] || '',
@@ -2149,13 +2206,16 @@ async function runCsvUpsert(csvText, fileName) {
         학부모연락처1: raw['학부모연락처1'] || '',
         학부모연락처2: raw['학부모연락처2'] || '',
         branch: raw['branch'] || '',
-        level_symbol: raw['학부기호'] || '',
-        class_number: raw['레벨기호'] || '',
+        level_symbol: raw['레벨기호'] || '',
+        class_number: raw['반넘버'] || '',
         class_type: raw['수업종류'] || '정규',
         시작일: raw['시작일'] || '',
         요일: raw['요일'] || '',
         상태: raw['상태'] || '재원',
         학기: raw['학기'] || '',
+        종료일: raw['종료일'] || '',
+        휴원시작일: raw['휴원시작일'] || '',
+        휴원종료일: raw['휴원종료일'] || '',
     }));
 
     await runUpsertFromRows(normalized, fileName);
@@ -2191,13 +2251,17 @@ async function runUpsertFromRows(rows, sourceName) {
             start_date: raw['시작일'] || '',
             semester: raw['학기'] || '',
         };
+        if (raw['종료일']) enrollment.end_date = raw['종료일'];
 
         if (!studentMap[docId]) {
             studentMap[docId] = {
                 name, level: raw['학부'] || '', school: raw['학교'] || '',
                 grade: raw['학년'] || '', student_phone: raw['학생연락처'] || '',
                 parent_phone_1: parentPhone, parent_phone_2: raw['학부모연락처2'] || '',
-                branch, status: raw['상태'] || '재원', enrollments: []
+                branch, status: raw['상태'] || '재원',
+                pause_start_date: raw['휴원시작일'] || '',
+                pause_end_date: raw['휴원종료일'] || '',
+                enrollments: []
             };
         }
 
@@ -2300,7 +2364,7 @@ async function runUpsertFromRows(rows, sourceName) {
         for (const r of results.updated.slice(0, 20)) {
             const parts = [];
             for (const [f, v] of Object.entries(r.infoDiff)) parts.push(`${f}: ${v.old}→${v.new}`);
-            if (r.enrollChanged) parts.push(`수업: ${r.oldCodes || '—'}→${r.newCodes}`);
+            if (r.enrollChanged) parts.push(`수업: +${r.addedCodes || '없음'} (총 ${r.totalEnroll}개)`);
             msg += `  ~ ${r.name}: ${parts.join(', ')}\n`;
         }
         if (results.updated.length > 20) msg += `  ... 외 ${results.updated.length - 20}명\n`;
@@ -2931,6 +2995,21 @@ window.applyBulkDays = async () => {
         console.error('[BULK DAYS ERROR]', e);
         alert('일괄 요일 변경 실패: ' + e.message);
     }
+};
+
+// ---------------------------------------------------------------------------
+// 일괄 편집 초기화 버튼
+// ---------------------------------------------------------------------------
+window.resetBulkStatus = () => {
+    const sel = document.getElementById('bulk-status-select-panel');
+    if (sel) sel.value = '';
+};
+window.resetBulkClass = () => {
+    const el = document.getElementById('bulk-class-code');
+    if (el) el.value = '';
+};
+window.resetBulkDays = () => {
+    document.querySelectorAll('#bulk-day-checkboxes input').forEach(cb => cb.checked = false);
 };
 
 // ---------------------------------------------------------------------------

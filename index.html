@@ -28,9 +28,9 @@
                 <span class="material-symbols-outlined search-icon" role="button" tabindex="0" aria-label="검색">search</span>
                 <input type="text" id="studentSearchInput" placeholder="이름, 학교, 전화번호 또는 초성(ㄱㄴㄷ)으로 검색..." aria-label="학생 검색 (이름, 전화번호, 초성)" />
             </div>
-            <span class="material-symbols-outlined icon-btn" onclick="window.showGuide()" title="사용 가이드" role="button" tabindex="0" aria-label="도움말">help</span>
-            <span class="material-symbols-outlined icon-btn" role="button" tabindex="0" aria-label="설정">settings</span>
-            <span class="material-symbols-outlined icon-btn" role="button" tabindex="0" aria-label="앱 목록">apps</span>
+            <span class="material-symbols-outlined icon-btn" title="사용 가이드" aria-label="도움말">help</span>
+            <span class="material-symbols-outlined icon-btn" aria-label="설정">settings</span>
+            <span class="material-symbols-outlined icon-btn" aria-label="앱 목록">apps</span>
             <div class="avatar icon-btn" onclick="handleLogin()" role="button" tabindex="0" aria-label="로그인">G</div>
         </div>
     </header>
@@ -194,6 +194,9 @@
             <div class="list-panel">
                 <div class="panel-header">
                     <span id="student-count" class="count-chip">—</span>
+                    <select id="semester-filter" class="semester-filter" onchange="window.handleSemesterFilter(this.value)" aria-label="학기 필터">
+                        <option value="">전체 학기</option>
+                    </select>
                     <span id="filter-chips" class="filter-chips"></span>
                     <span id="filter-clear-btn" class="filter-clear-btn" onclick="window.clearFilters()" title="필터 초기화" style="display:none;" role="button" tabindex="0" aria-label="닫기">
                         <span class="material-symbols-outlined" style="font-size:16px;">close</span>
@@ -286,6 +289,7 @@
                                     <option value="퇴원">퇴원</option>
                                 </select>
                                 <button class="btn-save bulk-apply-btn" onclick="window.applyBulkStatus()">적용</button>
+                                <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkStatus()">초기화</button>
                             </div>
                         </div>
 
@@ -297,6 +301,7 @@
                             <div class="bulk-edit-row">
                                 <input class="field-input" id="bulk-class-code" type="text" placeholder="예: HS103" style="flex:1;">
                                 <button class="btn-save bulk-apply-btn" onclick="window.applyBulkClass()">적용</button>
+                                <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkClass()">초기화</button>
                             </div>
                         </div>
 
@@ -316,6 +321,7 @@
                             </div>
                             <div class="bulk-edit-row" style="margin-top:8px;">
                                 <button class="btn-save bulk-apply-btn" onclick="window.applyBulkDays()">적용</button>
+                                <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkDays()">초기화</button>
                             </div>
                         </div>
 
@@ -324,7 +330,7 @@
 
                 <!-- 조회 모드 헤더 -->
                 <div class="panel-header" id="detail-header">
-                    <span class="material-symbols-outlined icon-btn" style="visibility:hidden" role="button" tabindex="0" aria-label="뒤로가기">arrow_back</span>
+                    <span class="material-symbols-outlined icon-btn" role="button" tabindex="0" aria-label="뒤로가기" onclick="document.querySelector('.detail-panel').classList.remove('active')">arrow_back</span>
                     <div class="actions">
                         <span class="material-symbols-outlined icon-btn" title="Edit"
                             onclick="showEditForm()" role="button" tabindex="0" aria-label="수정">edit</span>
@@ -568,7 +574,7 @@
                                                         style="color: var(--primary, #1a73e8); font-size: 0.85em; font-weight: 600;"></span></label>
                                                 <input class="field-input" name="class_number" type="text"
                                                     placeholder="101,201" inputmode="numeric"
-                                                    oninput="this.value=this.value.replace(/[^0-9]/g,''); window.handleClassNumberChange && window.handleClassNumberChange(this.value)">
+                                                    oninput="this.value=this.value.replace(/[^0-9,]/g,''); window.handleClassNumberChange && window.handleClassNumberChange(this.value)">
                                             </div>
                                         </div>
                                         <div class="form-field">
@@ -667,7 +673,7 @@
                         <div class="form-field">
                             <label class="field-label">반넘버</label>
                             <input class="field-input" name="enroll_class_number" type="text" placeholder="101,201"
-                                inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                                inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9,]/g,'')">
                         </div>
                     </div>
                     <div class="form-field">
@@ -708,6 +714,50 @@
             <div class="modal-actions">
                 <button class="btn-cancel" onclick="window.closeEnrollmentModal()" aria-label="닫기">취소</button>
                 <button class="btn-save" onclick="window.saveEnrollment()">추가</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 업로드 방식 선택 모달 -->
+    <div id="upload-modal" class="modal-overlay" style="display:none" onclick="window.closeUploadModal(event)" role="dialog" aria-modal="true" aria-label="업로드 방식 선택">
+        <div class="modal-card" style="max-width:360px">
+            <h3 class="modal-title">
+                <span class="material-symbols-outlined">upload</span>
+                업로드 방식 선택
+            </h3>
+            <p style="font-size:13px;color:#666;margin:0 0 16px;">아래 4가지 방법 중 하나를 선택하세요.</p>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleSheetPicker();">
+                    <span class="material-symbols-outlined">folder_open</span>
+                    <div>
+                        <div class="upload-method-title">드라이브에서 선택</div>
+                        <div class="upload-method-desc">구글 드라이브에서 시트를 선택해 가져오기</div>
+                    </div>
+                </button>
+                <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleSheetUrlUpload();">
+                    <span class="material-symbols-outlined">link</span>
+                    <div>
+                        <div class="upload-method-title">시트 URL로 업로드</div>
+                        <div class="upload-method-desc">구글시트 URL을 붙여넣어 바로 업로드</div>
+                    </div>
+                </button>
+                <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleCsvUpsert();">
+                    <span class="material-symbols-outlined">description</span>
+                    <div>
+                        <div class="upload-method-title">CSV 파일 업로드</div>
+                        <div class="upload-method-desc">PC에 저장된 CSV 파일로 업로드</div>
+                    </div>
+                </button>
+                <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleSheetTemplate();">
+                    <span class="material-symbols-outlined">table</span>
+                    <div>
+                        <div class="upload-method-title">빈 템플릿 시트 만들기</div>
+                        <div class="upload-method-desc">양식이 준비된 구글시트를 새로 생성</div>
+                    </div>
+                </button>
+            </div>
+            <div class="modal-actions" style="margin-top:16px;">
+                <button class="btn-cancel" onclick="window.closeUploadModal()">닫기</button>
             </div>
         </div>
     </div>
