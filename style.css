@@ -1194,6 +1194,46 @@ summary.menu-l2 .material-symbols-outlined {
     flex-shrink: 0;
 }
 
+/* 재원 현황 — 레벨 이력 */
+.stay-level-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.stay-level-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stay-level-tag {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary);
+    background: var(--primary-light);
+    padding: 2px 10px;
+    border-radius: 100px;
+    font-family: var(--font-heading);
+    flex-shrink: 0;
+    min-width: 36px;
+    text-align: center;
+}
+
+.stay-level-sems {
+    font-size: 12px;
+    color: var(--text-sec);
+    flex: 1;
+}
+
+.stay-level-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-main);
+    flex-shrink: 0;
+}
+
 .enrollment-type {
     font-size: 12px;
     color: var(--text-sec);

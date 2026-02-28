@@ -957,6 +957,9 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     // enrollment 카드 렌더링
     renderEnrollmentCards(studentData);
 
+    // 재원 현황 렌더링
+    renderStayStats(studentData);
+
     document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
     if (targetElement) targetElement.classList.add('active');
 
@@ -1562,6 +1565,70 @@ function renderEnrollmentCards(studentData) {
         `;
         container.appendChild(card);
     });
+}
+
+// ---------------------------------------------------------------------------
+// 재원 현황 (재원기간 + 레벨 이력)
+// ---------------------------------------------------------------------------
+function renderStayStats(studentData) {
+    const container = document.getElementById('stay-stats');
+    if (!container) return;
+
+    const enrollments = (studentData.enrollments || []).filter(e => e.level_symbol || e.start_date);
+    if (!enrollments.length) {
+        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.85em;">수업 이력 없음</p>';
+        return;
+    }
+
+    // ── 재원기간 ──
+    const startDates = enrollments.map(e => e.start_date).filter(d => d && d !== '?').sort();
+    let periodHtml = '—';
+    if (startDates.length) {
+        const start = new Date(startDates[0]);
+        const now = new Date();
+        const totalMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+        const years = Math.floor(totalMonths / 12);
+        const months = totalMonths % 12;
+        const duration = years > 0
+            ? `${years}년${months > 0 ? ' ' + months + '개월' : ''}`
+            : `${Math.max(totalMonths, 1)}개월`;
+        periodHtml = `${formatDate(startDates[0])} 부터 &nbsp;·&nbsp; <strong>${duration}</strong>`;
+    }
+
+    // ── 레벨 이력 ──
+    const levelMap = {};
+    for (const e of enrollments) {
+        const sym = e.level_symbol;
+        if (!sym) continue;
+        if (!levelMap[sym]) levelMap[sym] = { semesters: new Set(), firstDate: '' };
+        if (e.semester) levelMap[sym].semesters.add(e.semester);
+        if (e.start_date && (!levelMap[sym].firstDate || e.start_date < levelMap[sym].firstDate))
+            levelMap[sym].firstDate = e.start_date;
+    }
+
+    const levelRows = Object.entries(levelMap)
+        .sort((a, b) => (a[1].firstDate || '').localeCompare(b[1].firstDate || ''))
+        .map(([sym, data]) => {
+            const sems = [...data.semesters].sort();
+            const semStr = sems.length ? sems.join(' · ') : '—';
+            const cnt = sems.length;
+            return `<div class="stay-level-row">
+                <span class="stay-level-tag">${esc(sym)}</span>
+                <span class="stay-level-sems">${esc(semStr)}</span>
+                <span class="stay-level-count">${cnt}학기</span>
+            </div>`;
+        }).join('');
+
+    container.innerHTML = `
+        <div class="form-field">
+            <span class="field-label">재원기간</span>
+            <div class="field-value">${periodHtml}</div>
+        </div>
+        ${levelRows ? `<div class="form-field">
+            <span class="field-label">레벨 이력</span>
+            <div class="stay-level-list">${levelRows}</div>
+        </div>` : ''}
+    `;
 }
 
 // ---------------------------------------------------------------------------
