@@ -147,35 +147,40 @@ function diffBasicInfo(existing, incoming) {
 }
 
 /**
- * Merge new enrollments into existing enrollments.
- * - Same key (class_type+level_symbol+class_number) → update if different
- * - New key → add
+ * 학기별 누적 merge:
+ * - 기존 enrollments 중 incoming에 없는 학기 → 그대로 보존
+ * - incoming 학기와 같은 기존 enrollment → key 매칭으로 UPDATE or 유지
+ * - 새 key → ADD
  * Returns { merged: [...], added: [...], updated: [...] }
  */
 function mergeEnrollments(existingArr, incomingArr) {
-    const merged = existingArr.map(e => ({ ...e })); // deep copy
+    const incomingSemesters = new Set(incomingArr.map(e => e.semester).filter(Boolean));
+
+    // 다른 학기 enrollments는 무조건 보존
+    const kept = existingArr.filter(e => !incomingSemesters.has(e.semester));
+    // 같은 학기의 기존 enrollments
+    const sameExisting = existingArr.filter(e => incomingSemesters.has(e.semester));
+
     const added = [];
     const updated = [];
+    const newBucket = [];
 
     for (const inc of incomingArr) {
         const key = enrollmentKey(inc);
-        const idx = merged.findIndex(e => enrollmentKey(e) === key);
+        const match = sameExisting.find(e => enrollmentKey(e) === key && e.semester === inc.semester);
 
-        if (idx === -1) {
-            // New enrollment — add it
-            merged.push({ ...inc });
+        if (!match) {
+            newBucket.push({ ...inc });
             added.push(inc);
+        } else if (!enrollmentsEqual(match, inc)) {
+            updated.push({ before: { ...match }, after: { ...inc } });
+            newBucket.push({ ...inc });
         } else {
-            // Existing enrollment — check if anything changed
-            if (!enrollmentsEqual(merged[idx], inc)) {
-                updated.push({ before: { ...merged[idx] }, after: { ...inc } });
-                merged[idx] = { ...inc };
-            }
-            // else: exact match, skip
+            newBucket.push({ ...match }); // 동일 → 유지
         }
     }
 
-    return { merged, added, updated };
+    return { merged: [...kept, ...newBucket], added, updated };
 }
 
 // --- CSV parsing ---
@@ -293,10 +298,9 @@ async function upsertStudents() {
             // ── Existing student: check for differences ──
             const infoDiff = diffBasicInfo(ex, incoming);
 
-            // REPLACE enrollments — 새 데이터가 현재 상태를 나타냄
-            const oldCodes = (ex.enrollments || []).map(enrollmentCode).sort().join(',');
-            const newCodes = (incoming.enrollments || []).map(enrollmentCode).sort().join(',');
-            const enrollChanged = oldCodes !== newCodes;
+            // ACCUMULATE enrollments by semester
+            const { merged, added, updated: enrollUpdated } = mergeEnrollments(ex.enrollments || [], incoming.enrollments || []);
+            const enrollChanged = added.length > 0 || enrollUpdated.length > 0;
 
             const hasInfoChange = Object.keys(infoDiff).length > 0;
 
@@ -310,7 +314,7 @@ async function upsertStudents() {
                 updateData[field] = val.new;
             }
             if (enrollChanged) {
-                updateData.enrollments = incoming.enrollments;
+                updateData.enrollments = merged;
             }
 
             // If found via old docId, delete old and create new
@@ -321,7 +325,9 @@ async function upsertStudents() {
                 writes.push({ docId, data: updateData, type: 'merge' });
             }
 
-            results.updated.push({ docId, infoDiff, oldCodes, newCodes, enrollChanged, foundViaOldId, oldDocId });
+            const addedCodes = added.map(enrollmentCode).join(', ');
+            const updatedCodes = enrollUpdated.map(u => `${enrollmentCode(u.before)}→${enrollmentCode(u.after)}`).join(', ');
+            results.updated.push({ docId, infoDiff, enrollChanged, addedCodes, updatedCodes, totalEnroll: merged.length, foundViaOldId, oldDocId });
 
             const beforeParts = [];
             const afterParts = [];
@@ -330,8 +336,9 @@ async function upsertStudents() {
                 afterParts.push(`${field}:${val.new}`);
             }
             if (enrollChanged) {
-                beforeParts.push(`수업: ${oldCodes || '—'}`);
-                afterParts.push(`수업: ${newCodes}`);
+                if (addedCodes) afterParts.push(`추가: ${addedCodes}`);
+                if (updatedCodes) afterParts.push(`변경: ${updatedCodes}`);
+                afterParts.push(`(총 ${merged.length}개 누적)`);
             }
 
             logEntries.push({
@@ -360,12 +367,16 @@ async function upsertStudents() {
 
     if (results.updated.length > 0) {
         console.log('\n✏️  변경 학생:');
-        for (const { docId, infoDiff, oldCodes, newCodes, enrollChanged } of results.updated) {
+        for (const { docId, infoDiff, enrollChanged, addedCodes, updatedCodes, totalEnroll } of results.updated) {
             const parts = [];
             for (const [field, val] of Object.entries(infoDiff)) {
                 parts.push(`${field}: "${val.old}" → "${val.new}"`);
             }
-            if (enrollChanged) parts.push(`수업: ${oldCodes || '—'} → ${newCodes}`);
+            if (enrollChanged) {
+                if (addedCodes) parts.push(`추가: ${addedCodes}`);
+                if (updatedCodes) parts.push(`변경: ${updatedCodes}`);
+                parts.push(`총 ${totalEnroll}개 누적`);
+            }
             console.log(`  ~ ${docId}: ${parts.join(', ')}`);
         }
     }

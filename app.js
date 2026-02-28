@@ -2170,10 +2170,21 @@ async function runUpsertFromRows(rows, sourceName) {
                 if (newVal && newVal !== oldVal) infoDiff[f] = { old: oldVal, new: newVal };
             }
 
-            // REPLACE enrollments — 새 데이터가 현재 상태를 나타냄
-            const oldCodes = (ex.enrollments || []).map(enrollmentCode).sort().join(',');
-            const newCodes = (incoming.enrollments || []).map(enrollmentCode).sort().join(',');
-            const enrollChanged = oldCodes !== newCodes;
+            // ACCUMULATE enrollments by semester
+            const incomingSemesters = new Set(incoming.enrollments.map(e => e.semester).filter(Boolean));
+            const keptEnrolls = (ex.enrollments || []).filter(e => !incomingSemesters.has(e.semester));
+            const sameExisting = (ex.enrollments || []).filter(e => incomingSemesters.has(e.semester));
+            const newBucket = [];
+            const enrollAdded = [], enrollChanged2 = [];
+            for (const inc of incoming.enrollments) {
+                const key = enrollmentCode(inc);
+                const match = sameExisting.find(e => enrollmentCode(e) === key && e.semester === inc.semester);
+                if (!match) { newBucket.push({ ...inc }); enrollAdded.push(inc); }
+                else if (JSON.stringify(match) !== JSON.stringify(inc)) { enrollChanged2.push(inc); newBucket.push({ ...inc }); }
+                else { newBucket.push({ ...match }); }
+            }
+            const mergedEnrollments = [...keptEnrolls, ...newBucket];
+            const enrollChanged = enrollAdded.length > 0 || enrollChanged2.length > 0;
 
             const hasInfoChange = Object.keys(infoDiff).length > 0;
 
@@ -2184,16 +2195,16 @@ async function runUpsertFromRows(rows, sourceName) {
 
             const updateData = {};
             for (const [f, v] of Object.entries(infoDiff)) updateData[f] = v.new;
-            if (enrollChanged) updateData.enrollments = incoming.enrollments;
+            if (enrollChanged) updateData.enrollments = mergedEnrollments;
 
-            results.updated.push({ docId, name: incoming.name, infoDiff, oldCodes, newCodes: (incoming.enrollments || []).map(enrollmentCode).join(', '), enrollChanged });
+            results.updated.push({ docId, name: incoming.name, infoDiff, enrollChanged, addedCodes: enrollAdded.map(enrollmentCode).join(', '), totalEnroll: mergedEnrollments.length });
             writes.push({ docId, data: updateData, type: 'merge' });
 
             const bParts = [], aParts = [];
             for (const [f, v] of Object.entries(infoDiff)) { bParts.push(`${f}:${v.old || '—'}`); aParts.push(`${f}:${v.new}`); }
             if (enrollChanged) {
-                bParts.push(`수업: ${oldCodes || '—'}`);
-                aParts.push(`수업: ${(incoming.enrollments || []).map(enrollmentCode).join(', ')}`);
+                if (enrollAdded.length) aParts.push(`추가: ${enrollAdded.map(enrollmentCode).join(', ')}`);
+                aParts.push(`총 ${mergedEnrollments.length}개 누적`);
             }
 
             logEntries.push({
