@@ -2155,6 +2155,7 @@ async function runCsvUpsert(csvText, fileName) {
         시작일: raw['시작일'] || '',
         요일: raw['요일'] || '',
         상태: raw['상태'] || '재원',
+        학기: raw['학기'] || '',
     }));
 
     await runUpsertFromRows(normalized, fileName);
@@ -2187,7 +2188,8 @@ async function runUpsertFromRows(rows, sourceName) {
             level_symbol: raw['level_symbol'] || '',
             class_number: classNumber,
             day: dayArr,
-            start_date: raw['시작일'] || ''
+            start_date: raw['시작일'] || '',
+            semester: raw['학기'] || '',
         };
 
         if (!studentMap[docId]) {
