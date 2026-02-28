@@ -1540,8 +1540,8 @@ function collectEditEnrollments() {
     if (!container) return [];
     const cards = container.querySelectorAll('.edit-enrollment-card');
     return Array.from(cards).map((card, idx) => {
-        const get = (field) => card.querySelector(`[data-field="${CSS.escape(field)}"][data-idx="${CSS.escape(String(idx))}"]`)?.value?.trim() || '';
-        const days = Array.from(card.querySelectorAll(`[name="edit_day_${CSS.escape(String(idx))}"]:checked`)).map(cb => cb.value);
+        const get = (field) => card.querySelector(`[data-field="${CSS.escape(field)}"]`)?.value?.trim() || '';
+        const days = Array.from(card.querySelectorAll(`input[type="checkbox"][name="edit_day_${idx}"]:checked`)).map(cb => cb.value);
         const classType = get('class_type');
         const enrollment = {
             class_type: classType,
@@ -3074,16 +3074,19 @@ window.applyBulkClass = async () => {
         ids.forEach(id => {
             const student = allStudents.find(s => s.id === id);
             if (!student || !student.enrollments?.length) return;
-            const oldCode = enrollmentCode(student.enrollments[0]);
+            const sem = activeFilters.semester;
+            const eIdx = sem ? student.enrollments.findIndex(e => e.semester === sem) : 0;
+            if (eIdx < 0) return; // 해당 학기 enrollment 없음
+            const oldCode = enrollmentCode(student.enrollments[eIdx]);
             const updated = [...student.enrollments];
-            updated[0] = { ...updated[0], level_symbol: levelSymbol, class_number: classNumber };
+            updated[eIdx] = { ...updated[eIdx], level_symbol: levelSymbol, class_number: classNumber };
 
             const newBranch = branchFromClassNumber(classNumber);
             const updateData = { enrollments: updated };
             if (newBranch) updateData.branch = newBranch;
 
             updateMap[id] = updateData;
-            changes.push({ id, name: student.name, from: oldCode, to: raw });
+            changes.push({ id, name: student.name, from: oldCode, to: raw, eIdx });
         });
 
         if (changes.length === 0) { alert('변경할 학생이 없습니다.'); return; }
@@ -3104,11 +3107,11 @@ window.applyBulkClass = async () => {
             await batch.commit();
         }
 
-        ids.forEach(id => {
-            const s = allStudents.find(s => s.id === id);
-            if (s && s.enrollments?.length) {
-                s.enrollments[0].level_symbol = levelSymbol;
-                s.enrollments[0].class_number = classNumber;
+        changes.forEach(c => {
+            const s = allStudents.find(s => s.id === c.id);
+            if (s && s.enrollments?.[c.eIdx]) {
+                s.enrollments[c.eIdx].level_symbol = levelSymbol;
+                s.enrollments[c.eIdx].class_number = classNumber;
                 const newBranch = branchFromClassNumber(classNumber);
                 if (newBranch) s.branch = newBranch;
             }
@@ -3118,7 +3121,8 @@ window.applyBulkClass = async () => {
         buildClassFilterSidebar();
         applyFilterAndRender();
         updateBulkEditSummary();
-        alert(`${changes.length}명의 반을 '${raw}'(으)로 변경했습니다.`);
+        const semLabel = activeFilters.semester || '첫 번째';
+        alert(`${changes.length}명의 반을 '${raw}'(으)로 변경했습니다. (${semLabel} 수업)`);
     } catch (e) {
         console.error('[BULK CLASS ERROR]', e);
         alert('일괄 반 변경 실패: ' + e.message);
@@ -3143,11 +3147,14 @@ window.applyBulkDays = async () => {
         ids.forEach(id => {
             const student = allStudents.find(s => s.id === id);
             if (!student || !student.enrollments?.length) return;
-            const oldDays = displayDays(student.enrollments[0].day);
+            const sem = activeFilters.semester;
+            const eIdx = sem ? student.enrollments.findIndex(e => e.semester === sem) : 0;
+            if (eIdx < 0) return;
+            const oldDays = displayDays(student.enrollments[eIdx].day);
             const updated = [...student.enrollments];
-            updated[0] = { ...updated[0], day: [...checked] };
+            updated[eIdx] = { ...updated[eIdx], day: [...checked] };
             updateMap[id] = { enrollments: updated };
-            changes.push({ id, name: student.name, from: oldDays, to: checked.join(', ') });
+            changes.push({ id, name: student.name, from: oldDays, to: checked.join(', '), eIdx });
         });
 
         if (changes.length === 0) { alert('변경할 학생이 없습니다.'); return; }
@@ -3169,17 +3176,18 @@ window.applyBulkDays = async () => {
         }
 
         // 로컬 데이터 업데이트
-        ids.forEach(id => {
-            const s = allStudents.find(s => s.id === id);
-            if (s && s.enrollments?.length) {
-                s.enrollments[0].day = [...checked];
+        changes.forEach(c => {
+            const s = allStudents.find(s => s.id === c.id);
+            if (s && s.enrollments?.[c.eIdx]) {
+                s.enrollments[c.eIdx].day = [...checked];
             }
         });
 
         document.querySelectorAll('#bulk-day-checkboxes input').forEach(cb => cb.checked = false);
         applyFilterAndRender();
         updateBulkEditSummary();
-        alert(`${changes.length}명의 등원요일을 변경했습니다.`);
+        const semLabel = activeFilters.semester || '첫 번째';
+        alert(`${changes.length}명의 등원요일을 변경했습니다. (${semLabel} 수업)`);
     } catch (e) {
         console.error('[BULK DAYS ERROR]', e);
         alert('일괄 요일 변경 실패: ' + e.message);
