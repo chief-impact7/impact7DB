@@ -137,6 +137,20 @@ const getActiveEnrollments = (s) => {
     return active;
 };
 
+const activeClassCodes = (s) => getActiveEnrollments(s).map(e => enrollmentCode(e)).filter(Boolean);
+
+const activeBranchesFromStudent = (s) => {
+    const set = new Set();
+    getActiveEnrollments(s).forEach(e => {
+        const b = branchFromClassNumber(e.class_number);
+        if (b) set.add(b);
+    });
+    if (set.size === 0 && s.branch) set.add(s.branch);
+    return [...set];
+};
+
+const activeDays = (s) => [...new Set(getActiveEnrollments(s).flatMap(e => normalizeDays(e.day)))];
+
 // 학교명 축약 표시 (예: 진명여자고등학교 고등 2학년 → 진명여고2)
 const abbreviateSchool = (s) => {
     // 더 긴 접미사를 먼저 체크해야 부분 일치 오류를 제거할 수 있음
