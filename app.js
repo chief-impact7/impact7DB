@@ -558,7 +558,7 @@ function buildClassFilterSidebar() {
     targetStudents.forEach(s => {
         const enrollments = semFilter
             ? (s.enrollments || []).filter(e => e.semester === semFilter)
-            : (s.enrollments || []);
+            : getActiveEnrollments(s);
         enrollments.forEach(e => {
             const code = enrollmentCode(e);
             if (code) codeCount[code] = (codeCount[code] || 0) + 1;
