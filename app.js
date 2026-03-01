@@ -110,7 +110,8 @@ const getActiveEnrollments = (s) => {
     const enrollments = s.enrollments || [];
     if (enrollments.length === 0) return [];
 
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const byType = {};
 
     for (const e of enrollments) {
@@ -1685,30 +1686,20 @@ function renderEnrollmentCards(studentData) {
         return;
     }
 
-    const activeSet = new Set(getActiveEnrollments(studentData));
+    // 학기 필터 있으면 해당 학기만, 없으면 활성 enrollment만
+    const visibleEnrollments = activeFilters.semester
+        ? enrollments.filter(e => e.semester === activeFilters.semester)
+        : getActiveEnrollments(studentData);
 
-    // 활성 enrollment 먼저
-    const activeList = enrollments.filter(e => activeSet.has(e));
-    const historyList = enrollments.filter(e => !activeSet.has(e));
-
-    if (activeList.length > 0) {
-        activeList.forEach((e) => {
-            const realIdx = enrollments.indexOf(e);
-            _renderEnrollmentCard(container, e, realIdx, false);
-        });
+    if (visibleEnrollments.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.85em;">해당 학기 수업 정보가 없습니다.</p>';
+        return;
     }
 
-    if (historyList.length > 0) {
-        const divider = document.createElement('div');
-        divider.className = 'enrollment-history-divider';
-        divider.innerHTML = '<span>이전 학기 이력</span>';
-        container.appendChild(divider);
-
-        historyList.forEach((e) => {
-            const realIdx = enrollments.indexOf(e);
-            _renderEnrollmentCard(container, e, realIdx, true);
-        });
-    }
+    visibleEnrollments.forEach((e) => {
+        const realIdx = enrollments.indexOf(e);
+        _renderEnrollmentCard(container, e, realIdx, false);
+    });
 }
 
 function _renderEnrollmentCard(container, e, idx, isHistory) {
