@@ -275,7 +275,7 @@ service cloud.firestore {
 
       function hasOnlyAllowedClassSettingsFields() {
         return request.resource.data.keys().hasOnly([
-          'domains', 'test_sections'
+          'domains', 'test_sections', 'teacher', 'sub_teacher'
         ]);
       }
 
@@ -396,6 +396,22 @@ service cloud.firestore {
         && withinFieldLimit(15);
 
       allow delete: if isAuthorized();
+    }
+
+    // =========================================================================
+    // [DSC] Teachers (선생님 목록 — 로그인 시 자동 등록)
+    // =========================================================================
+    match /teachers/{email} {
+      allow read: if isAuthorized();
+
+      allow create, update: if isAuthorized()
+        && request.resource.data.keys().hasOnly([
+          'email', 'display_name', 'photo_url', 'last_login'
+        ])
+        && request.resource.data.email is string
+        && withinFieldLimit(10);
+
+      allow delete: if false;
     }
 
     // =========================================================================
