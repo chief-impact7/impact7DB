@@ -1343,6 +1343,24 @@ summary.menu-l2 .material-symbols-outlined {
     padding: 12px 14px;
 }
 
+.enrollment-history-divider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 8px;
+    font-size: 0.8em;
+    color: var(--text-sec);
+}
+.enrollment-history-divider::before,
+.enrollment-history-divider::after {
+    content: '';
+    flex: 1;
+    border-top: 1px solid var(--border);
+}
+.enrollment-card.enrollment-history {
+    opacity: 0.55;
+}
+
 .enrollment-card-header {
     display: flex;
     align-items: center;

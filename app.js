@@ -1685,27 +1685,54 @@ function renderEnrollmentCards(studentData) {
         return;
     }
 
-    enrollments.forEach((e, idx) => {
-        const code = enrollmentCode(e);
-        const days = displayDays(e.day);
-        const ct = e.class_type || '정규';
-        const isRegular = ct === '정규';
-        const card = document.createElement('div');
-        card.className = 'enrollment-card';
-        card.innerHTML = `
-            <div class="enrollment-card-header">
-                <span class="enrollment-tag">${esc(code)}</span>
-                <span class="enrollment-type">${esc(ct)}</span>
-                ${!isRegular ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리">종강처리</button>` : ''}
-            </div>
-            <div class="enrollment-card-body">
-                <div class="enrollment-field"><span class="field-label">요일</span><span>${esc(days)}</span></div>
-                <div class="enrollment-field"><span class="field-label">${isRegular ? '등원일' : '시작일'}</span><span>${esc(formatDate(e.start_date))}</span></div>
-                ${e.end_date ? `<div class="enrollment-field"><span class="field-label">종료일</span><span>${esc(formatDate(e.end_date))}</span></div>` : ''}
-            </div>
-        `;
-        container.appendChild(card);
-    });
+    const activeSet = new Set(getActiveEnrollments(studentData));
+
+    // 활성 enrollment 먼저
+    const activeList = enrollments.filter(e => activeSet.has(e));
+    const historyList = enrollments.filter(e => !activeSet.has(e));
+
+    if (activeList.length > 0) {
+        activeList.forEach((e) => {
+            const realIdx = enrollments.indexOf(e);
+            _renderEnrollmentCard(container, e, realIdx, false);
+        });
+    }
+
+    if (historyList.length > 0) {
+        const divider = document.createElement('div');
+        divider.className = 'enrollment-history-divider';
+        divider.innerHTML = '<span>이전 학기 이력</span>';
+        container.appendChild(divider);
+
+        historyList.forEach((e) => {
+            const realIdx = enrollments.indexOf(e);
+            _renderEnrollmentCard(container, e, realIdx, true);
+        });
+    }
+}
+
+function _renderEnrollmentCard(container, e, idx, isHistory) {
+    const code = enrollmentCode(e);
+    const days = displayDays(e.day);
+    const ct = e.class_type || '정규';
+    const isRegular = ct === '정규';
+    const semLabel = e.semester || '';
+    const card = document.createElement('div');
+    card.className = `enrollment-card${isHistory ? ' enrollment-history' : ''}`;
+    card.innerHTML = `
+        <div class="enrollment-card-header">
+            <span class="enrollment-tag">${esc(code)}</span>
+            <span class="enrollment-type">${esc(ct)}</span>
+            ${semLabel ? `<span class="enrollment-semester">${esc(semLabel)}</span>` : ''}
+            ${!isRegular && !isHistory ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리">종강처리</button>` : ''}
+        </div>
+        <div class="enrollment-card-body">
+            <div class="enrollment-field"><span class="field-label">요일</span><span>${esc(days)}</span></div>
+            <div class="enrollment-field"><span class="field-label">${isRegular ? '등원일' : '시작일'}</span><span>${esc(formatDate(e.start_date))}</span></div>
+            ${e.end_date ? `<div class="enrollment-field"><span class="field-label">종료일</span><span>${esc(formatDate(e.end_date))}</span></div>` : ''}
+        </div>
+    `;
+    container.appendChild(card);
 }
 
 // ---------------------------------------------------------------------------
