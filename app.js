@@ -662,8 +662,12 @@ function syncSemesterDropdowns(val) {
 window.handleSemesterFilter = (val) => {
     activeFilters.semester = val || null;
     // localStorage에 저장 — 페이지 새로고침 후에도 유지
-    if (val) localStorage.setItem('semesterFilter', val);
-    else localStorage.removeItem('semesterFilter');
+    if (val) {
+        localStorage.setItem('semesterFilter', val);
+        localStorage.setItem('lastSelectedSemester', val);
+    } else {
+        localStorage.removeItem('semesterFilter');
+    }
     syncSemesterDropdowns(val || '');
     applyFilterAndRender();
 };
@@ -671,6 +675,11 @@ window.handleSemesterFilter = (val) => {
 function buildSemesterFilter() {
     const semesters = new Set();
     allStudents.forEach(s => (s.enrollments || []).forEach(e => { if (e.semester) semesters.add(e.semester); }));
+    // Spring1/Spring2는 Spring으로 통합되었으므로 필터에서 제외
+    semesters.delete('2026-Spring1');
+    semesters.delete('2026-Spring2');
+    semesters.delete('2027-Spring1');
+    semesters.delete('2027-Spring2');
     const sorted = [...semesters].sort().reverse();
     const current = activeFilters.semester || '';
     const optionsHtml = '<option value="">전체 학기</option>' + sorted.map(s => {
@@ -1034,9 +1043,10 @@ window.showNewStudentForm = () => {
 
     if (window.handleStatusChange) window.handleStatusChange('재원');
 
-    // 학기 드롭다운 초기화 (기본 학부: 초등)
+    // 학기 드롭다운 초기화 — 사이드바 필터 또는 마지막 선택한 학기를 기본값으로 사용
+    const _defaultSemester = activeFilters.semester || localStorage.getItem('lastSelectedSemester') || '';
     const initSemSelect = document.getElementById('initial-semester-select');
-    if (initSemSelect) initSemSelect.innerHTML = getSemesterOptions('초등', '');
+    if (initSemSelect) initSemSelect.innerHTML = getSemesterOptions('초등', _defaultSemester);
 
     // 추가 수업 목록 초기화 + 버튼 표시
     _pendingEnrollments = [];
@@ -1051,7 +1061,8 @@ window.showNewStudentForm = () => {
 // 학부 변경 시 학기 드롭다운 갱신
 window.handleLevelChange = (level) => {
     const initSemSelect = document.getElementById('initial-semester-select');
-    if (initSemSelect) initSemSelect.innerHTML = getSemesterOptions(level, '');
+    const _defSem = activeFilters.semester || localStorage.getItem('lastSelectedSemester') || '';
+    if (initSemSelect) initSemSelect.innerHTML = getSemesterOptions(level, _defSem);
 };
 
 window.handleStatusChange = (val) => {
@@ -1201,6 +1212,10 @@ window.submitNewStudent = async () => {
             start_date: f.start_date.value,
             semester: f.initial_semester?.value || '',
         };
+        // 선택한 학기를 기억하여 다음 등록 시 기본값으로 사용
+        if (initialEnrollment.semester) {
+            localStorage.setItem('lastSelectedSemester', initialEnrollment.semester);
+        }
         if (classType !== '정규' && f.special_end_date.value) {
             initialEnrollment.end_date = f.special_end_date.value;
         }
@@ -1364,7 +1379,8 @@ window.openFormEnrollmentModal = () => {
     // 학부에 맞는 학기 옵션 채우기
     const level = document.getElementById('new-student-form')?.level?.value || '';
     const semesterSelect = document.getElementById('enroll-semester-select');
-    if (semesterSelect) semesterSelect.innerHTML = getSemesterOptions(level, '');
+    const _defSem2 = activeFilters.semester || localStorage.getItem('lastSelectedSemester') || '';
+    if (semesterSelect) semesterSelect.innerHTML = getSemesterOptions(level, _defSem2);
     // 모달 데이터 속성으로 컨텍스트 표시 (form = 신규등록 폼에서 호출)
     modal.dataset.context = 'form';
     modal.style.display = 'flex';
@@ -1690,7 +1706,8 @@ window.openEnrollmentModal = () => {
     const student = allStudents.find(s => s.id === currentStudentId);
     const level = student?.level || '';
     const semesterSelect = document.getElementById('enroll-semester-select');
-    if (semesterSelect) semesterSelect.innerHTML = getSemesterOptions(level, '');
+    const _defSem3 = activeFilters.semester || localStorage.getItem('lastSelectedSemester') || '';
+    if (semesterSelect) semesterSelect.innerHTML = getSemesterOptions(level, _defSem3);
     modal.dataset.context = 'edit';
     modal.style.display = 'flex';
 };
