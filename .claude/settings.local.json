@@ -130,7 +130,31 @@
       "Bash(git add app.js firebase.json firestore.rules index.html style.css)",
       "Bash(git commit -m \"$\\(cat <<'EOF'\nfeat: 일별 통계, RBAC, 홈 화면, UI 일괄 개선\n\n- Daily Stats: 일별 스냅샷 자동 생성 및 날짜별 조회 기능\n- 인원 현황 표 \\(현인원/실인원/실휴원/가휴원/등원예정/퇴원 × 전체/2단지/10단지\\)\n- 인원 현황 + 레벨기호별 스택 바 그래프 \\(2단지+10단지 색상 구분\\)\n- RBAC: users 컬렉션 기반 역할 관리 \\(admin/teacher\\), Daily Stats admin 전용\n- 홈 화면: 모든 L1 메뉴 닫힌 상태에서 초기 화면 표시\n- Firestore rules: daily_stats, users 컬렉션 보안 규칙 추가\n- Firebase Hosting 배포 완료\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git remote set-url origin git@github.com:chief-impact7/impact7DSC2AIs.git && git push origin master)",
-      "Bash(git add .env.example HANDOFF.md .claude/settings.local.json)"
+      "Bash(git add .env.example HANDOFF.md .claude/settings.local.json)",
+      "Bash(gcloud:*)",
+      "Bash(pkill:*)",
+      "Bash(git:*)",
+      "Bash(firebase deploy:*)",
+      "Bash(firebase login:*)",
+      "Bash(npm run:*)",
+      "Bash(read v:*)",
+      "Bash(ls:*)",
+      "Bash(npx vite:*)",
+      "Bash(code:*)",
+      "Bash(source:*)",
+      "Bash(brew list --formula)",
+      "Bash(python3:*)",
+      "Bash(firebase hosting:channel:list:*)",
+      "WebFetch(domain:impact7db.web.app)",
+      "Bash(gzip:*)",
+      "Bash(npm audit:*)",
+      "Bash(node migrate-has-memo.js)",
+      "Bash(node:*)",
+      "Bash(open:*)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "context7"
+  ]
 }
