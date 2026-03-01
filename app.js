@@ -868,14 +868,14 @@ function renderGroupedList(students, container) {
     const groups = {};
     students.forEach(s => {
         if (groupViewMode === 'branch') {
-            const branches = branchesFromStudent(s);
+            const branches = activeFilters.semester ? branchesFromStudent(s) : activeBranchesFromStudent(s);
             const keys = branches.length > 0 ? branches : ['미지정'];
             keys.forEach(key => {
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(s);
             });
         } else {
-            const codes = allClassCodes(s);
+            const codes = activeFilters.semester ? allClassCodes(s) : activeClassCodes(s);
             const key = codes.length ? codes[0] : '미지정';
             if (!groups[key]) groups[key] = [];
             groups[key].push(s);
