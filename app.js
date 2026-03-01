@@ -771,16 +771,19 @@ function renderStudentItem(s, container) {
     const div = document.createElement('div');
     div.className = 'list-item' + (bulkMode ? ' bulk-mode' : '') + (selectedStudentIds.has(s.id) ? ' bulk-selected' : '');
     div.dataset.id = s.id;
-    const branch = branchesFromStudent(s).join(', ') || branchFromStudent(s);
+    const branch = activeFilters.semester
+        ? branchesFromStudent(s).join(', ') || branchFromStudent(s)
+        : activeBranchesFromStudent(s).join(', ') || branchFromStudent(s);
     const schoolShort = abbreviateSchool(s);
     const subLine = [branch, schoolShort !== '—' ? schoolShort : ''].filter(Boolean).join(' · ');
-    const tags = allClassCodes(s).map(c => `<span class="item-tag">${esc(c)}</span>`).join('') || '<span class="item-tag">—</span>';
+    const codes = activeFilters.semester ? allClassCodes(s) : activeClassCodes(s);
+    const tags = codes.map(c => `<span class="item-tag">${esc(c)}</span>`).join('') || '<span class="item-tag">—</span>';
 
     // 등원요일 표시
     const dayOrder = ['월','화','수','목','금','토','일'];
     const todayIdx = new Date().getDay(); // 0=일,1=월...
     const todayKr = ['일','월','화','수','목','금','토'][todayIdx];
-    const days = combinedDays(s);
+    const days = activeFilters.semester ? combinedDays(s) : activeDays(s);
     const dayDots = dayOrder.filter(d => days.includes(d))
         .map(d => `<span class="item-day-dot${d === todayKr ? ' today' : ''}">${d}</span>`).join('');
 
