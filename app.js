@@ -1741,9 +1741,11 @@ function renderStayStats(studentData) {
         periodHtml = `${formatDate(startDates[0])} 부터 &nbsp;·&nbsp; <strong>${duration}</strong>`;
     }
 
-    // ── 레벨 이력 ──
+    // ── 레벨 이력 (현재 활성 enrollment 제외, 과거 학기만) ──
+    const activeSet = new Set(getActiveEnrollments(studentData));
     const levelMap = {};
     for (const e of enrollments) {
+        if (activeSet.has(e)) continue; // 현재 학기 제외
         const sym = e.level_symbol;
         if (!sym) continue;
         if (!levelMap[sym]) levelMap[sym] = { semesters: new Set(), firstDate: '' };
