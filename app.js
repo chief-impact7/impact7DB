@@ -1039,7 +1039,7 @@ window.selectStudent = (studentId, studentData, targetElement) => {
 
     document.getElementById('profile-initial').textContent = studentData.name?.[0] || 'S';
     document.getElementById('profile-name').textContent = studentData.name || studentId;
-    const branch = branchesFromStudent(studentData).join(', ') || branchFromStudent(studentData);
+    const branch = activeBranchesFromStudent(studentData).join(', ') || branchFromStudent(studentData);
     const schoolShort = abbreviateSchool(studentData);
     document.getElementById('profile-school').textContent = branch && schoolShort !== '—'
         ? `${branch} · ${schoolShort}`
@@ -1059,7 +1059,7 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     // 수업 정보 카드
     document.getElementById('profile-branch').textContent = branch || '—';
     document.getElementById('detail-status').textContent = studentData.status || '—';
-    document.getElementById('profile-day').textContent = displayDays(combinedDays(studentData));
+    document.getElementById('profile-day').textContent = displayDays(activeDays(studentData));
 
     const pauseRow = document.getElementById('profile-pause-row');
     if (pauseRow) {
