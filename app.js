@@ -620,11 +620,28 @@ function applyFilterAndRender() {
 
     // 각 타입별로 AND 조건 적용
     if (activeFilters.level) filtered = filtered.filter(s => s.level === activeFilters.level);
-    if (activeFilters.branch) filtered = filtered.filter(s => branchesFromStudent(s).includes(activeFilters.branch));
-    if (activeFilters.day) filtered = filtered.filter(s => combinedDays(s).includes(activeFilters.day));
+    if (activeFilters.branch) {
+        filtered = activeFilters.semester
+            ? filtered.filter(s => branchesFromStudent(s).includes(activeFilters.branch))
+            : filtered.filter(s => activeBranchesFromStudent(s).includes(activeFilters.branch));
+    }
+    if (activeFilters.day) {
+        filtered = activeFilters.semester
+            ? filtered.filter(s => combinedDays(s).includes(activeFilters.day))
+            : filtered.filter(s => activeDays(s).includes(activeFilters.day));
+    }
     if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
-    if (activeFilters.class_type) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.class_type === activeFilters.class_type));
-    if (activeFilters.class_code) filtered = filtered.filter(s => allClassCodes(s).includes(activeFilters.class_code));
+    if (activeFilters.class_type) {
+        const enrollFn = activeFilters.semester
+            ? (s) => (s.enrollments || [])
+            : (s) => getActiveEnrollments(s);
+        filtered = filtered.filter(s => enrollFn(s).some(e => e.class_type === activeFilters.class_type));
+    }
+    if (activeFilters.class_code) {
+        filtered = activeFilters.semester
+            ? filtered.filter(s => allClassCodes(s).includes(activeFilters.class_code))
+            : filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
+    }
     if (activeFilters.semester) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
     if (activeFilters.leave) {
         const lv = activeFilters.leave;
