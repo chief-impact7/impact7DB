@@ -123,8 +123,9 @@ const getActiveEnrollments = (s) => {
     const active = [];
     for (const [ct, list] of Object.entries(byType)) {
         // start_date <= 오늘인 것 중 가장 최근
+        const validDate = (d) => d && /^\d{4}-/.test(d);
         const started = list
-            .filter(e => !e.start_date || e.start_date <= today)
+            .filter(e => !validDate(e.start_date) || e.start_date <= today)
             .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
 
         if (started.length > 0) {
@@ -1725,7 +1726,7 @@ function renderStayStats(studentData) {
     }
 
     // ── 재원기간 ──
-    const startDates = enrollments.map(e => e.start_date).filter(d => d && d !== '?').sort();
+    const startDates = enrollments.map(e => e.start_date).filter(d => d && d !== '?' && /^\d{4}-/.test(d)).sort();
     let periodHtml = '—';
     if (startDates.length) {
         const start = new Date(startDates[0]);
