@@ -32,3 +32,6 @@ students.csv
 # 6. Migration / utility scripts (may contain credential paths)
 _migrate.cjs
 _check_dups.cjs
+
+# 7. Git Worktrees
+.worktrees/
