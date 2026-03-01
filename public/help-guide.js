@@ -174,11 +174,11 @@
         </h3>
         <p class="help-guide-desc">All Students 아래의 <strong>상태</strong> 메뉴를 펼쳐 학생 상태별로 필터링합니다.</p>
         <ul class="help-guide-list">
-          <li><strong>등원예정</strong> &mdash; 아직 등원하지 않은 신규 등록 학생</li>
-          <li><strong>재원</strong> &mdash; 현재 수업 중인 학생</li>
-          <li><strong>실휴원</strong> &mdash; 정식 휴원 처리된 학생</li>
-          <li><strong>가휴원</strong> &mdash; 임시 휴원 상태 학생</li>
-          <li><strong>퇴원</strong> &mdash; 퇴원 처리된 학생</li>
+          <li><strong>등원예정</strong> &mdash; 등원확정의사를 밝혔으나 등록을 하지 않은 학생</li>
+          <li><strong>재원</strong> &mdash; 등록을 하고 수업에 참여하는 학생</li>
+          <li><strong>실휴원</strong> &mdash; 잔존수업료가 있는 상태에서 휴원한 학생 (공식휴원)</li>
+          <li><strong>가휴원</strong> &mdash; 잔존수업료가 없는 상태에서 휴원한 학생 (비공식조치)</li>
+          <li><strong>퇴원</strong> &mdash; 등록을 하지 않고 수업에 참여하지도 않는 학생</li>
         </ul>
       </section>
 
