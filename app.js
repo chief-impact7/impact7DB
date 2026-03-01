@@ -138,11 +138,16 @@ const getActiveEnrollments = (s) => {
     return active;
 };
 
-const activeClassCodes = (s) => getActiveEnrollments(s).map(e => enrollmentCode(e)).filter(Boolean);
+// 현재 맥락에 맞는 enrollment 반환: 학기 필터 있으면 해당 학기, 없으면 활성
+const relevantEnrollments = (s) => activeFilters.semester
+    ? (s.enrollments || []).filter(e => e.semester === activeFilters.semester)
+    : getActiveEnrollments(s);
+
+const activeClassCodes = (s) => relevantEnrollments(s).map(e => enrollmentCode(e)).filter(Boolean);
 
 const activeBranchesFromStudent = (s) => {
     const set = new Set();
-    getActiveEnrollments(s).forEach(e => {
+    relevantEnrollments(s).forEach(e => {
         const b = branchFromClassNumber(e.class_number);
         if (b) set.add(b);
     });
@@ -150,7 +155,7 @@ const activeBranchesFromStudent = (s) => {
     return [...set];
 };
 
-const activeDays = (s) => [...new Set(getActiveEnrollments(s).flatMap(e => normalizeDays(e.day)))];
+const activeDays = (s) => [...new Set(relevantEnrollments(s).flatMap(e => normalizeDays(e.day)))];
 
 // 학교명 축약 표시 (예: 진명여자고등학교 고등 2학년 → 진명여고2)
 const abbreviateSchool = (s) => {
@@ -621,28 +626,11 @@ function applyFilterAndRender() {
 
     // 각 타입별로 AND 조건 적용
     if (activeFilters.level) filtered = filtered.filter(s => s.level === activeFilters.level);
-    if (activeFilters.branch) {
-        filtered = activeFilters.semester
-            ? filtered.filter(s => branchesFromStudent(s).includes(activeFilters.branch))
-            : filtered.filter(s => activeBranchesFromStudent(s).includes(activeFilters.branch));
-    }
-    if (activeFilters.day) {
-        filtered = activeFilters.semester
-            ? filtered.filter(s => combinedDays(s).includes(activeFilters.day))
-            : filtered.filter(s => activeDays(s).includes(activeFilters.day));
-    }
+    if (activeFilters.branch) filtered = filtered.filter(s => activeBranchesFromStudent(s).includes(activeFilters.branch));
+    if (activeFilters.day) filtered = filtered.filter(s => activeDays(s).includes(activeFilters.day));
     if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
-    if (activeFilters.class_type) {
-        const enrollFn = activeFilters.semester
-            ? (s) => (s.enrollments || [])
-            : (s) => getActiveEnrollments(s);
-        filtered = filtered.filter(s => enrollFn(s).some(e => e.class_type === activeFilters.class_type));
-    }
-    if (activeFilters.class_code) {
-        filtered = activeFilters.semester
-            ? filtered.filter(s => allClassCodes(s).includes(activeFilters.class_code))
-            : filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
-    }
+    if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
+    if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
     if (activeFilters.semester) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
     if (activeFilters.leave) {
         const lv = activeFilters.leave;
@@ -789,19 +777,16 @@ function renderStudentItem(s, container) {
     const div = document.createElement('div');
     div.className = 'list-item' + (bulkMode ? ' bulk-mode' : '') + (selectedStudentIds.has(s.id) ? ' bulk-selected' : '');
     div.dataset.id = s.id;
-    const branch = activeFilters.semester
-        ? branchesFromStudent(s).join(', ') || branchFromStudent(s)
-        : activeBranchesFromStudent(s).join(', ') || branchFromStudent(s);
+    const branch = activeBranchesFromStudent(s).join(', ') || branchFromStudent(s);
     const schoolShort = abbreviateSchool(s);
     const subLine = [branch, schoolShort !== '—' ? schoolShort : ''].filter(Boolean).join(' · ');
-    const codes = activeFilters.semester ? allClassCodes(s) : activeClassCodes(s);
-    const tags = codes.map(c => `<span class="item-tag">${esc(c)}</span>`).join('') || '<span class="item-tag">—</span>';
+    const tags = activeClassCodes(s).map(c => `<span class="item-tag">${esc(c)}</span>`).join('') || '<span class="item-tag">—</span>';
 
     // 등원요일 표시
     const dayOrder = ['월','화','수','목','금','토','일'];
     const todayIdx = new Date().getDay(); // 0=일,1=월...
     const todayKr = ['일','월','화','수','목','금','토'][todayIdx];
-    const days = activeFilters.semester ? combinedDays(s) : activeDays(s);
+    const days = activeDays(s);
     const dayDots = dayOrder.filter(d => days.includes(d))
         .map(d => `<span class="item-day-dot${d === todayKr ? ' today' : ''}">${d}</span>`).join('');
 
@@ -869,14 +854,14 @@ function renderGroupedList(students, container) {
     const groups = {};
     students.forEach(s => {
         if (groupViewMode === 'branch') {
-            const branches = activeFilters.semester ? branchesFromStudent(s) : activeBranchesFromStudent(s);
+            const branches = activeBranchesFromStudent(s);
             const keys = branches.length > 0 ? branches : ['미지정'];
             keys.forEach(key => {
                 if (!groups[key]) groups[key] = [];
                 groups[key].push(s);
             });
         } else {
-            const codes = activeFilters.semester ? allClassCodes(s) : activeClassCodes(s);
+            const codes = activeClassCodes(s);
             const key = codes.length ? codes[0] : '미지정';
             if (!groups[key]) groups[key] = [];
             groups[key].push(s);
