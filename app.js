@@ -100,6 +100,43 @@ const branchesFromStudent = (s) => {
 // 모든 enrollment의 요일 합집합
 const combinedDays = (s) => [...new Set((s.enrollments || []).flatMap(e => normalizeDays(e.day)))];
 
+/**
+ * 활성 enrollment만 반환.
+ * 같은 class_type 내에서 start_date <= 오늘인 것 중 가장 최근 것만 활성.
+ * start_date > 오늘이면 "예정" (비활성).
+ * 같은 class_type의 새 enrollment이 없으면 이전 것이 계속 활성.
+ */
+const getActiveEnrollments = (s) => {
+    const enrollments = s.enrollments || [];
+    if (enrollments.length === 0) return [];
+
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const byType = {};
+
+    for (const e of enrollments) {
+        const ct = e.class_type || '정규';
+        if (!byType[ct]) byType[ct] = [];
+        byType[ct].push(e);
+    }
+
+    const active = [];
+    for (const [ct, list] of Object.entries(byType)) {
+        // start_date <= 오늘인 것 중 가장 최근
+        const started = list
+            .filter(e => !e.start_date || e.start_date <= today)
+            .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
+
+        if (started.length > 0) {
+            active.push(started[0]);
+        } else {
+            // 모두 미래이면 → 가장 이른 것 (예정)
+            const sorted = [...list].sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
+            active.push(sorted[0]);
+        }
+    }
+    return active;
+};
+
 // 학교명 축약 표시 (예: 진명여자고등학교 고등 2학년 → 진명여고2)
 const abbreviateSchool = (s) => {
     // 더 긴 접미사를 먼저 체크해야 부분 일치 오류를 제거할 수 있음
