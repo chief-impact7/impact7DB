@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, getDocs, getDoc, doc, setDoc, addDoc, deleteDoc, serverTimestamp, query, where, orderBy, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, setDoc, addDoc, deleteDoc, deleteField, serverTimestamp, query, where, orderBy, writeBatch } from 'firebase/firestore';
 import { auth, db } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken } from './auth.js';
 
@@ -61,6 +61,8 @@ let bulkMode = false;
 let selectedStudentIds = new Set();
 let siblingMap = {};    // studentId → [siblingId, ...]
 let memoCache = {};     // studentId → true/false (메모 존재 여부)
+let semesterSettings = {};   // semester → { start_date }
+let currentSemester = null;  // 오늘 기준 현재 학기
 
 // HTML 이스케이프 — 사용자 입력을 innerHTML에 삽입할 때 XSS 방지
 const esc = (str) => {
@@ -309,6 +311,8 @@ onAuthStateChanged(auth, async (user) => {
         avatarBtn.textContent = user.email[0].toUpperCase();
         avatarBtn.title = `Logged in as ${user.email} (click to logout)`;
         await loadUserRole(email);
+        await loadSemesterSettings();
+        getCurrentSemester();
         loadStudentList();
     } else {
         currentUser = null;
@@ -362,6 +366,7 @@ async function loadStudentList() {
         buildSiblingMap();
         buildClassFilterSidebar();
         buildSemesterFilter();
+        updateReadonlyBanner();
         updateLeaveCountBadges();
         loadMemoCacheAndRender();
         generateDailyStatsIfNeeded();
@@ -727,7 +732,94 @@ window.handleSemesterFilter = (val) => {
         localStorage.removeItem('semesterFilter');
     }
     syncSemesterDropdowns(val || '');
+    updateReadonlyBanner();
     applyFilterAndRender();
+};
+
+// ─── 학기 설정 (시작일) ──────────────────────────────────────────────────
+async function loadSemesterSettings() {
+    const snap = await getDocs(collection(db, 'semester_settings'));
+    semesterSettings = {};
+    snap.forEach(d => { semesterSettings[d.id] = d.data(); });
+}
+
+function getCurrentSemester() {
+    const today = new Date().toISOString().slice(0, 10);
+    const entries = Object.entries(semesterSettings)
+        .filter(([, v]) => v.start_date)
+        .sort((a, b) => a[1].start_date.localeCompare(b[1].start_date));
+    let result = null;
+    for (const [semester, { start_date }] of entries) {
+        if (start_date <= today) result = semester;
+    }
+    currentSemester = result;
+    return result;
+}
+
+function isPastSemester() {
+    if (!currentSemester) return false;
+    if (activeFilters.semester && activeFilters.semester !== currentSemester) return true;
+    return false;
+}
+
+function updateReadonlyBanner() {
+    const banner = document.getElementById('semester-readonly-banner');
+    if (banner) banner.style.display = isPastSemester() ? '' : 'none';
+}
+
+// ─── 학기 시작일 설정 모달 ──────────────────────────────────────────────────
+window.openSemesterSettingsModal = () => {
+    const modal = document.getElementById('semester-settings-modal');
+    const body = document.getElementById('semester-settings-body');
+    if (!modal || !body) return;
+
+    const semesters = new Set();
+    allStudents.forEach(s =>
+        (s.enrollments || []).forEach(e => { if (e.semester) semesters.add(e.semester); })
+    );
+    semesters.delete('2026-Spring1');
+    semesters.delete('2026-Spring2');
+    semesters.delete('2027-Spring1');
+    semesters.delete('2027-Spring2');
+    const sorted = [...semesters].sort();
+
+    if (sorted.length === 0) {
+        body.innerHTML = '<p style="color:var(--text-sec);font-size:13px;">등록된 학기가 없습니다.</p>';
+    } else {
+        body.innerHTML = sorted.map(sem => {
+            const setting = semesterSettings[sem] || {};
+            const isCurrent = sem === currentSemester;
+            return `<div class="semester-setting-row">
+                <span class="semester-setting-label">${esc(sem)}${isCurrent ? '<span class="current-badge">현재</span>' : ''}</span>
+                <input type="date" class="semester-setting-date" value="${setting.start_date || ''}"
+                    onchange="window.saveSemesterStartDate('${esc(sem)}', this.value)">
+            </div>`;
+        }).join('');
+    }
+    modal.style.display = 'flex';
+};
+
+window.closeSemesterSettingsModal = (e) => {
+    if (e && e.target !== document.getElementById('semester-settings-modal')) return;
+    document.getElementById('semester-settings-modal').style.display = 'none';
+};
+
+window.saveSemesterStartDate = async (semester, startDate) => {
+    try {
+        if (startDate) {
+            await setDoc(doc(db, 'semester_settings', semester), { start_date: startDate });
+            semesterSettings[semester] = { start_date: startDate };
+        } else {
+            await deleteDoc(doc(db, 'semester_settings', semester));
+            delete semesterSettings[semester];
+        }
+        getCurrentSemester();
+        updateReadonlyBanner();
+        window.openSemesterSettingsModal();
+    } catch (err) {
+        console.error('학기 시작일 저장 실패:', err);
+        alert('저장 실패: ' + err.message);
+    }
 };
 
 function buildSemesterFilter() {
@@ -1239,6 +1331,7 @@ window.hideForm = () => {
 // 신규 등록 / 정보 수정 저장
 // ---------------------------------------------------------------------------
 window.submitNewStudent = async () => {
+    if (isEditMode && isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     const f = document.getElementById('new-student-form');
     const name = f.name.value.trim();
     const parentPhone1 = f.parent_phone_1.value.trim();
@@ -1266,6 +1359,15 @@ window.submitNewStudent = async () => {
             branch,
             status: f.status.value,
             enrollments: updatedEnrollments,
+            // 레거시 flat 필드 정리 (enrollments 배열로 이관 완료)
+            day: deleteField(),
+            class_type: deleteField(),
+            level_code: deleteField(),
+            level_symbol: deleteField(),
+            class_number: deleteField(),
+            start_date: deleteField(),
+            special_start_date: deleteField(),
+            special_end_date: deleteField(),
         };
         // 휴원 상태일 때만 휴원 날짜 저장, 아니면 기존 값 유지
         const statusVal = f.status.value;
@@ -1835,6 +1937,7 @@ window.handleEnrollClassTypeChange = () => {
 };
 
 window.saveEnrollment = async () => {
+    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     const modal = document.getElementById('enrollment-modal');
     const form = document.getElementById('enrollment-form');
     const classType = form.enroll_class_type.value;
@@ -1971,6 +2074,7 @@ window.closeEndClassModal = (e) => {
 };
 
 window.confirmEndClassSingle = async () => {
+    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     if (!_endClassTarget) return;
     const { code, classType, currentStudentId: studentId, enrollIdx } = _endClassTarget;
     const modal = document.getElementById('end-class-modal');
@@ -2022,6 +2126,7 @@ window.confirmEndClassSingle = async () => {
 };
 
 window.confirmEndClass = async () => {
+    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     if (!_endClassTarget) return;
     const { code, classType, affected, willWithdraw } = _endClassTarget;
     const modal = document.getElementById('end-class-modal');
@@ -3144,6 +3249,7 @@ window.exitBulkMode = () => {
 // 일괄 상태 변경 (우측 패널)
 // ---------------------------------------------------------------------------
 window.applyBulkStatus = async () => {
+    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     const newStatus = document.getElementById('bulk-status-select-panel').value;
     if (!newStatus) { alert('변경할 상태를 선택해주세요.'); return; }
     if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
@@ -3195,6 +3301,7 @@ window.applyBulkStatus = async () => {
 // 일괄 반 변경 (우측 패널)
 // ---------------------------------------------------------------------------
 window.applyBulkClass = async () => {
+    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     const raw = document.getElementById('bulk-class-code').value.trim().toUpperCase();
     if (!raw) { alert('반코드를 입력해주세요. (예: HX103)'); return; }
     if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
@@ -3274,6 +3381,7 @@ window.applyBulkClass = async () => {
 // 일괄 등원요일 변경 (우측 패널)
 // ---------------------------------------------------------------------------
 window.applyBulkDays = async () => {
+    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     const checked = [...document.querySelectorAll('#bulk-day-checkboxes input:checked')].map(cb => cb.value);
     if (checked.length === 0) { alert('변경할 요일을 선택해주세요.'); return; }
     if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
@@ -3375,6 +3483,7 @@ window.closeBulkDeleteModal = (e) => {
 };
 
 window.confirmBulkDelete = async () => {
+    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     const ids = [...selectedStudentIds];
     const confirmBtn = document.querySelector('#bulk-delete-modal .btn-end-class-confirm');
     if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '삭제 중...'; }

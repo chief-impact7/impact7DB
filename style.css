@@ -485,6 +485,71 @@ summary.menu-l2 .material-symbols-outlined {
     outline-offset: -2px;
 }
 
+.semester-settings-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 2px;
+    cursor: pointer;
+    color: #137333;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+}
+
+.semester-settings-btn:hover {
+    background: rgba(0,0,0,0.08);
+}
+
+.semester-readonly-banner {
+    background: #fff3e0;
+    color: #e65100;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 12px;
+    text-align: center;
+    margin: 0 8px 4px;
+    border-radius: 8px;
+}
+
+.semester-setting-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.semester-setting-row:last-child {
+    border-bottom: none;
+}
+
+.semester-setting-label {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-main);
+}
+
+.semester-setting-label .current-badge {
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--primary);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.semester-setting-date {
+    font-size: 12px;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-body);
+}
+
 .filter-chips {
     font-size: 11px;
     font-weight: 500;

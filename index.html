@@ -46,6 +46,13 @@
                         aria-label="학기 필터">
                     <option value="">전체 학기</option>
                 </select>
+                <button class="semester-settings-btn" onclick="window.openSemesterSettingsModal()" title="학기 시작일 설정">
+                    <span class="material-symbols-outlined" style="font-size:16px;">settings</span>
+                </button>
+            </div>
+            <div class="semester-readonly-banner" id="semester-readonly-banner" style="display:none;">
+                <span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;">lock</span>
+                과거 학기 (읽기 전용)
             </div>
 
             <button class="compose-btn" onclick="window.showNewStudentForm()">
@@ -803,6 +810,19 @@
                 <button class="btn-end-class-confirm btn-end-single" id="end-class-single-btn" onclick="window.confirmEndClassSingle()">해당 학생만</button>
                 <button class="btn-end-class-confirm" id="end-class-confirm-btn" onclick="window.confirmEndClass()">전체 종강처리</button>
             </div>
+        </div>
+    </div>
+
+    <!-- 학기 시작일 설정 모달 -->
+    <div id="semester-settings-modal" class="modal-overlay" onclick="window.closeSemesterSettingsModal(event)" style="display:none;">
+        <div class="modal-card" style="max-width:400px;">
+            <div class="modal-header">
+                <h3 style="margin:0;font-size:16px;">학기 시작일 설정</h3>
+                <button class="btn-icon" onclick="window.closeSemesterSettingsModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body" id="semester-settings-body"></div>
         </div>
     </div>
 

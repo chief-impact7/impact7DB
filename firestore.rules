@@ -57,12 +57,12 @@ service cloud.firestore {
       allow create: if isAuthorized()
         && hasRequiredStudentFields()
         && hasOnlyAllowedStudentFields()
-        && withinFieldLimit(20);
+        && withinFieldLimit(30);
 
       allow update: if isAuthorized()
         && hasRequiredStudentFields()
         && hasOnlyAllowedStudentFields()
-        && withinFieldLimit(20);
+        && withinFieldLimit(30);
 
       allow delete: if isAuthorized();
 
@@ -412,6 +412,19 @@ service cloud.firestore {
         && withinFieldLimit(10);
 
       allow delete: if false;
+    }
+
+    // =========================================================================
+    // [DSC] Semester Settings (학기 시작일 설정)
+    // =========================================================================
+    match /semester_settings/{semester} {
+      allow read: if isAuthorized();
+
+      allow create, update: if isAuthorized()
+        && request.resource.data.keys().hasOnly(['start_date'])
+        && withinFieldLimit(5);
+
+      allow delete: if isAuthorized();
     }
 
     // =========================================================================
