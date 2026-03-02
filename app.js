@@ -1289,7 +1289,11 @@ window.showEditForm = () => {
     // 신규등록 static 필드 숨기고 동적 enrollment 카드 표시
     const staticFields = document.getElementById('static-enrollment-fields');
     if (staticFields) staticFields.style.display = 'none';
-    renderEditableEnrollments(student.enrollments || []);
+    // 학기 필터가 있으면 해당 학기 enrollment만 표시, 없으면 활성 enrollment만
+    const editEnrolls = activeFilters.semester
+        ? (student.enrollments || []).filter(e => e.semester === activeFilters.semester)
+        : getActiveEnrollments(student);
+    renderEditableEnrollments(editEnrolls);
 
     // 상태
     document.getElementById('opt-withdraw').style.display = 'block';
@@ -1345,7 +1349,17 @@ window.submitNewStudent = async () => {
     if (isEditMode) {
         // 수정 모드: 기본 정보 + 상태 + 동적 enrollment 카드에서 수집
         const oldStudent = allStudents.find(s => s.id === currentStudentId) || {};
-        const updatedEnrollments = collectEditEnrollments();
+        const editedEnrollments = collectEditEnrollments();
+        // 편집에서 제외된 다른 학기 enrollment 보존
+        const editedSemesters = new Set(editedEnrollments.map(e => e.semester).filter(Boolean));
+        const otherEnrollments = (oldStudent.enrollments || []).filter(e => {
+            if (!e.semester) return false;
+            // 현재 편집 대상이었던 학기의 enrollment은 제외 (편집 결과로 대체)
+            if (activeFilters.semester) return e.semester !== activeFilters.semester;
+            // 학기 필터 없이 활성 enrollment만 편집한 경우: 편집된 학기와 겹치지 않는 것만 보존
+            return !editedSemesters.has(e.semester);
+        });
+        const updatedEnrollments = [...editedEnrollments, ...otherEnrollments];
         const firstClassNumber = updatedEnrollments[0]?.class_number || '';
         const branch = branchFromClassNumber(firstClassNumber) || oldStudent.branch || '';
 
