@@ -637,7 +637,8 @@ function applyFilterAndRender() {
     if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
     if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
     if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
-    if (activeFilters.semester) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
+    // 휴원 필터 활성 시에는 학기 필터를 건너뜀 (휴원생은 현재 학기 enrollment이 없을 수 있음)
+    if (activeFilters.semester && !activeFilters.leave) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
     if (activeFilters.leave) {
         const lv = activeFilters.leave;
         const today = new Date(); today.setHours(0,0,0,0);
