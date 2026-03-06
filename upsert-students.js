@@ -245,6 +245,8 @@ async function upsertStudents() {
         };
         const endDate = raw['end_date'] || raw['종료일'] || '';
         if (endDate) enrollment.end_date = endDate;
+        const startTime = raw['start_time'] || raw['등원시간'] || raw['수업시간'] || '';
+        if (startTime) enrollment.start_time = startTime;
 
         if (!studentMap[docId]) {
             studentMap[docId] = {

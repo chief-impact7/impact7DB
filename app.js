@@ -3854,18 +3854,18 @@ window.confirmBulkDelete = async () => {
             const chunk = ids.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(id => {
-                batch.delete(doc(db, 'students', id));
+                batch.set(doc(db, 'students', id), { status: '퇴원' }, { merge: true });
                 const historyRef = doc(collection(db, 'history_logs'));
                 batch.set(historyRef, {
                     doc_id: id, change_type: 'WITHDRAW',
-                    before: `학생: ${idNameMap[id]}`, after: '일괄 삭제',
+                    before: `학생: ${idNameMap[id]}`, after: '일괄 퇴원 처리',
                     google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
                 });
             });
             await batch.commit();
         }
 
-        allStudents = allStudents.filter(s => !ids.includes(s.id));
+        allStudents.forEach(s => { if (ids.includes(s.id)) s.status = '퇴원'; });
         window.closeBulkDeleteModal();
         window.exitBulkMode();
         buildClassFilterSidebar();

@@ -1,12 +1,12 @@
 /**
- * import-students.js
- * CSV → Firestore `students` 컬렉션 일괄 업로드 (enrollments[] 모델)
+ * ⛔ DEPRECATED — 이 스크립트는 사용 금지.
+ * clearCollection()이 students 전체를 삭제하므로 데이터 유실 위험.
+ * 대신 upsert-students.js를 사용하세요.
  *
- * docId: 이름_부모연락처숫자
- * 같은 학생의 여러 CSV 행 → enrollments[] 배열로 병합
- *
- * Run: node import-students.js
+ * 이 파일은 2026-03-07 students 유실 사고의 원인으로 확인됨.
  */
+console.error('⛔ DEPRECATED: 이 스크립트는 사용 금지입니다. upsert-students.js를 사용하세요.');
+process.exit(1);
 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, writeBatch, collection, getDocs } from 'firebase/firestore';
