@@ -706,21 +706,32 @@ function buildClassFilterSidebar() {
     });
 }
 
+const GRADE_ORDER = ['초4','초5','초6','중1','중2','중3','고1','고2','고3','기타'];
+const LEVEL_SHORT = { '초등': '초', '중등': '중', '고등': '고' };
+
+function studentGradeKey(s) {
+    const prefix = LEVEL_SHORT[s.level];
+    const g = Number(s.grade);
+    if (prefix && g) {
+        const key = prefix + g;
+        if (GRADE_ORDER.includes(key)) return key;
+    }
+    return '기타';
+}
+
 function buildGradeFilterSidebar() {
     const semFilter = activeFilters.semester;
-    const levelFilter = activeFilters.level;
     buildDynamicFilterSidebar({
         listId: 'grade-filter-list',
         filterKey: 'grade',
         emptyMsg: '학년 정보가 없습니다',
         preFilter: s => {
-            if (levelFilter && s.level !== levelFilter) return false;
             if (semFilter) return s.enrollments ? s.enrollments.some(e => e.semester === semFilter) : false;
             return true;
         },
-        getItems: s => s.grade ? [String(s.grade)] : [],
-        sortFn: (a, b) => Number(a) - Number(b),
-        labelFn: grade => `${esc(grade)}학년`,
+        getItems: s => [studentGradeKey(s)],
+        sortFn: (a, b) => GRADE_ORDER.indexOf(a) - GRADE_ORDER.indexOf(b),
+        labelFn: key => esc(key),
     });
 }
 
@@ -756,7 +767,7 @@ function applyFilterAndRender() {
     if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
     if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
     if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
-    if (activeFilters.grade) filtered = filtered.filter(s => String(s.grade) === String(activeFilters.grade));
+    if (activeFilters.grade) filtered = filtered.filter(s => studentGradeKey(s) === activeFilters.grade);
     // 휴원 필터 활성 시에는 학기 필터를 건너뜀 (휴원생은 현재 학기 enrollment이 없을 수 있음)
     if (activeFilters.semester && !activeFilters.leave) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
     if (activeFilters.leave) {
