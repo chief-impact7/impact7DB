@@ -730,6 +730,7 @@ function buildGradeFilterSidebar() {
         filterKey: 'grade',
         emptyMsg: '학년 정보가 없습니다',
         preFilter: s => {
+            if (activeFilters.level && s.level !== activeFilters.level) return false;
             if (semFilter) return s.enrollments ? s.enrollments.some(e => e.semester === semFilter) : false;
             return true;
         },
