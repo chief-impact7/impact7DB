@@ -345,6 +345,11 @@ onAuthStateChanged(auth, async (user) => {
         await loadUserRole(email);
         await loadSemesterSettings();
         getCurrentSemester();
+        // 저장된 학기 필터가 없으면 현재 학기를 기본값으로 설정
+        if (!activeFilters.semester && currentSemester) {
+            activeFilters.semester = currentSemester;
+            localStorage.setItem('semesterFilter', currentSemester);
+        }
         loadStudentList();
         loadContacts();
     } else {
