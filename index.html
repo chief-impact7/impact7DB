@@ -493,6 +493,9 @@
                                 <p style="color:var(--text-sec);font-size:0.85em;">—</p>
                             </div>
                         </div>
+                        <!-- 휴퇴원요청서 (동적 렌더링) -->
+                        <div id="leave-request-card-container"></div>
+
                         <!-- 메모 -->
                         <div class="form-card">
                             <h3 class="info-card-title">
@@ -851,6 +854,43 @@
                 </button>
             </div>
             <div class="modal-body" id="semester-settings-body"></div>
+        </div>
+    </div>
+
+    <!-- 복귀/재등원 요청 모달 -->
+    <div id="return-from-leave-modal" class="modal-overlay" style="display:none" onclick="window.closeReturnFromLeaveModal(event)" role="dialog" aria-modal="true" aria-label="복귀요청">
+        <div class="modal-card" style="max-width:420px;">
+            <div class="modal-header">
+                <h3 style="margin:0;font-size:16px;">복귀 요청</h3>
+                <button class="btn-icon" onclick="window.closeReturnFromLeaveModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;padding:16px;">
+                <!-- 학생 정보 -->
+                <div style="background:var(--bg-secondary);border-radius:8px;padding:10px;">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                        <span id="rfl-student-name" style="font-weight:600;font-size:14px;"></span>
+                        <span id="rfl-student-class" style="font-size:12px;color:var(--text-sec);"></span>
+                        <span id="rfl-student-status" style="font-size:11px;"></span>
+                    </div>
+                    <div id="rfl-leave-period" style="font-size:12px;color:var(--text-sec);"></div>
+                </div>
+                <!-- 날짜 -->
+                <div>
+                    <label id="rfl-date-label" style="font-size:12px;font-weight:600;margin-bottom:4px;display:block;">복귀일</label>
+                    <input type="date" id="rfl-return-date" class="field-input" style="width:100%;box-sizing:border-box;">
+                </div>
+                <!-- 상담내용 -->
+                <div>
+                    <label style="font-size:12px;font-weight:600;margin-bottom:4px;display:block;">상담내용</label>
+                    <textarea id="rfl-consultation-note" class="field-input" style="width:100%;min-height:60px;resize:vertical;box-sizing:border-box;" placeholder="상담 내용을 입력하세요..."></textarea>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="window.closeReturnFromLeaveModal()">취소</button>
+                <button class="btn-save" onclick="window.submitReturnFromLeave()">요청</button>
+            </div>
         </div>
     </div>
 
