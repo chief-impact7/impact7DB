@@ -1663,6 +1663,29 @@ window.submitNewStudent = async () => {
     if (!name) { alert('이름을 입력하세요.'); return; }
     if (!parentPhone1) { alert('학부모 연락처를 입력하세요.'); return; }
 
+    // 신규 등록 시 이름 중복 체크 (수정 모드에서는 건너뜀)
+    if (!isEditMode) {
+        const activeStatuses = new Set(['재원', '등원예정', '실휴원', '가휴원']);
+        const isActive = s => activeStatuses.has(s.status || '재원');
+        const baseName = name.replace(/\d+$/, '');  // 숫자 접미사 제거하여 원래 이름 추출
+        const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const variantRe = new RegExp(`^${escapedBase}\\d*$`);  // baseName 및 baseName+숫자 매칭
+        // baseName과 숫자 변형 중 재원/휴원인 학생 한 번에 수집
+        const activeVariants = allStudents.filter(s => variantRe.test(s.name) && isActive(s));
+
+        if (activeVariants.length > 0) {
+            // 입력한 이름 자체가 이미 활성 학생이거나, baseName이 활성이면 차단
+            const usedNumbers = activeVariants
+                .map(s => { const m = s.name.match(/(\d+)$/); return m ? parseInt(m[1], 10) : 1; });
+            const nextNum = Math.max(...usedNumbers) + 1;
+            const suggested = `${baseName}${nextNum}`;
+            alert(`동일한 이름의 재원/휴원 학생이 있습니다.\n[${activeVariants.map(s => `${s.name} (${s.status})`).join(', ')}]\n\n이름 뒤에 숫자를 붙여 주세요. (예: ${suggested})`);
+            f.name.focus();
+            return;
+        }
+        // 퇴원/비재원에만 동일 이름 존재 → 허용
+    }
+
     let studentData;
 
     if (isEditMode) {
