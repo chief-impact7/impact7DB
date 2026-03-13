@@ -4998,3 +4998,389 @@ window.saveNaesinSchedule = async () => {
     }
 };
 
+// ===========================================================================
+// 비내신 문법 특강 관리
+// ===========================================================================
+let _gsState = { startDate: '', endDate: '', weekCount: 3, entries: [] };
+
+window.openGrammarSpecial = () => {
+    _gsState = { startDate: '', endDate: '', weekCount: 3, entries: [] };
+    const modal = document.getElementById('grammar-special-modal');
+    modal.style.display = 'flex';
+    document.getElementById('gs-start-date').value = '';
+    document.getElementById('gs-end-date').value = '';
+    document.getElementById('gs-week-count').value = '3';
+    document.getElementById('gs-summary').textContent = '';
+    document.getElementById('gs-dashboard').innerHTML =
+        '<p style="color:var(--text-sec);font-size:13px;text-align:center;padding:20px 0;">기간을 설정하고 CSV를 불러오면 등록 현황이 표시됩니다.</p>';
+
+    // Also show existing grammar special enrollments
+    gsShowExisting();
+};
+
+window.closeGrammarSpecial = () => {
+    document.getElementById('grammar-special-modal').style.display = 'none';
+};
+
+// Show already-enrolled grammar special students
+function gsShowExisting() {
+    const startDate = document.getElementById('gs-start-date').value;
+    const endDate = document.getElementById('gs-end-date').value;
+    if (!startDate || !endDate) return;
+
+    const existing = [];
+    for (const s of allStudents) {
+        for (const e of (s.enrollments || [])) {
+            if (e.class_type === '특강' && e.level_symbol === 'GR' &&
+                e.start_date === startDate && e.end_date === endDate) {
+                existing.push({ student: s, enrollment: e });
+            }
+        }
+    }
+
+    if (existing.length > 0 && _gsState.entries.length === 0) {
+        _gsState.startDate = startDate;
+        _gsState.endDate = endDate;
+        _gsState.weekCount = parseInt(document.getElementById('gs-week-count').value) || 3;
+
+        const dashEntries = existing.map(({ student, enrollment }) => ({
+            name: student.name,
+            docId: student.id,
+            isExisting: student.status === '재원' || student.status === '등원예정',
+            weeklySchedule: enrollment.weekly_schedule || [],
+            isAlreadySaved: true,
+        }));
+        _gsState.entries = dashEntries;
+
+        const activeIds = new Set(allStudents.filter(s => s.status === '재원').map(s => s.id));
+        const existCount = dashEntries.filter(e => activeIds.has(e.docId)).length;
+        const newCount = dashEntries.length - existCount;
+        document.getElementById('gs-summary').textContent =
+            `기존 등록: ${dashEntries.length}명 (재원 ${existCount} + 비원 ${newCount})`;
+
+        gsRenderDashboard();
+    }
+}
+
+// Add date change listeners for auto-loading existing data
+document.getElementById('gs-start-date')?.addEventListener('change', gsShowExisting);
+document.getElementById('gs-end-date')?.addEventListener('change', gsShowExisting);
+
+// CSV import trigger
+window.gsImportCSV = () => {
+    document.getElementById('gs-csv-input').click();
+};
+
+// Handle CSV file selection
+window.gsHandleCSVFile = (input) => {
+    const file = input.files[0];
+    if (!file) return;
+
+    const startDate = document.getElementById('gs-start-date').value;
+    const endDate = document.getElementById('gs-end-date').value;
+    const weekCount = parseInt(document.getElementById('gs-week-count').value) || 3;
+
+    if (!startDate || !endDate) {
+        alert('시작일과 종료일을 먼저 설정해주세요.');
+        input.value = '';
+        return;
+    }
+
+    _gsState.startDate = startDate;
+    _gsState.endDate = endDate;
+    _gsState.weekCount = weekCount;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            gsParseCSV(e.target.result);
+        } catch (err) {
+            console.error('[GS CSV ERROR]', err);
+            alert('CSV 파싱 오류: ' + err.message);
+        }
+    };
+    reader.readAsText(file, 'UTF-8');
+    input.value = '';
+};
+
+function gsParseCSV(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) { alert('CSV 데이터가 부족합니다.'); return; }
+
+    const headers = parseCSVLine(lines[0]);
+
+    // Auto-detect columns
+    const colName = headers.findIndex(h => /이름|name/i.test(h));
+    const colPhone = headers.findIndex(h => /연락처|phone/i.test(h));
+    const colType = headers.findIndex(h => /재원|비원|원생/i.test(h));
+    const colSchool = headers.findIndex(h => /학교|school/i.test(h));
+    const colLevel = headers.findIndex(h => /학부|level/i.test(h));
+    const colGrade = headers.findIndex(h => /학년|grade/i.test(h));
+
+    // Find week columns
+    const weekColIndices = [];
+    headers.forEach((h, i) => {
+        if (/주차|week/i.test(h)) weekColIndices.push(i);
+    });
+
+    if (colName < 0 || colPhone < 0) {
+        alert('CSV에 이름/연락처 컬럼을 찾을 수 없습니다.\n헤더: ' + headers.join(', '));
+        return;
+    }
+
+    const entries = [];
+    const errors = [];
+    const studentMap = new Map(allStudents.map(s => [s.id, s]));
+
+    for (let i = 1; i < lines.length; i++) {
+        const cols = parseCSVLine(lines[i]);
+        const name = (cols[colName] || '').trim();
+        const phone = (cols[colPhone] || '').replace(/\D/g, '');
+        if (!name || !phone) { errors.push(`행 ${i + 1}: 이름/연락처 누락`); continue; }
+
+        const docId = makeDocId(name, phone);
+        let normPhone = phone;
+        if (normPhone.length === 11 && normPhone.startsWith('0')) normPhone = normPhone.slice(1);
+
+        // Parse weekly slots
+        const weeklySchedule = [];
+        for (let wi = 0; wi < weekColIndices.length; wi++) {
+            const raw = (cols[weekColIndices[wi]] || '').trim();
+            if (!raw || raw === '-') continue;
+            const parts = raw.split('/').map(s => s.trim());
+            if (parts.length >= 3) {
+                weeklySchedule.push({
+                    week: wi + 1,
+                    level: parts[0],
+                    day: parts[1],
+                    time: parts[2],
+                });
+            }
+        }
+
+        if (weeklySchedule.length === 0) { errors.push(`행 ${i + 1}: ${name} 주차 선택 없음`); continue; }
+
+        const existingStudent = studentMap.get(docId);
+        const isTypeExisting = colType >= 0 ? /재원/i.test(cols[colType] || '') : !!existingStudent;
+
+        entries.push({
+            name,
+            docId,
+            phone: normPhone,
+            isExisting: isTypeExisting,
+            existingStudent,
+            school: colSchool >= 0 ? (cols[colSchool] || '').trim() : '',
+            level: colLevel >= 0 ? (cols[colLevel] || '').trim() : '',
+            grade: colGrade >= 0 ? (cols[colGrade] || '').trim() : '',
+            weeklySchedule,
+        });
+    }
+
+    if (errors.length > 0) {
+        console.warn('[GS CSV] 파싱 경고:', errors);
+    }
+
+    _gsState.entries = entries;
+
+    const existCount = entries.filter(e => e.isExisting).length;
+    const newCount = entries.length - existCount;
+    document.getElementById('gs-summary').textContent =
+        `총 ${entries.length}명 (재원 ${existCount} + 비원 ${newCount})` +
+        (errors.length > 0 ? ` ⚠ ${errors.length}건 오류` : '');
+
+    gsRenderDashboard();
+}
+
+function gsRenderDashboard() {
+    const dashboard = document.getElementById('gs-dashboard');
+    const { entries, weekCount } = _gsState;
+
+    if (entries.length === 0) {
+        dashboard.innerHTML = '<p style="color:var(--text-sec);font-size:13px;text-align:center;padding:20px 0;">등록된 학생이 없습니다.</p>';
+        return;
+    }
+
+    let html = '';
+
+    for (let w = 1; w <= weekCount; w++) {
+        // Group entries by slot (level + day + time)
+        const slotMap = {};
+        for (const entry of entries) {
+            const ws = entry.weeklySchedule.find(s => s.week === w);
+            if (!ws) continue;
+            const key = `${ws.level}|${ws.day}|${ws.time}`;
+            if (!slotMap[key]) slotMap[key] = { level: ws.level, day: ws.day, time: ws.time, students: [] };
+            slotMap[key].students.push(entry);
+        }
+
+        const dayOrder = { '월': 0, '화': 1, '수': 2, '목': 3, '금': 4, '토': 5, '일': 6 };
+        const slots = Object.values(slotMap).sort((a, b) => {
+            if (a.level !== b.level) return a.level.localeCompare(b.level);
+            if (a.day !== b.day) return (dayOrder[a.day] || 9) - (dayOrder[b.day] || 9);
+            return a.time.localeCompare(b.time);
+        });
+
+        html += `<div class="gs-week-section">`;
+        html += `<h4 class="gs-week-header">${w}주차</h4>`;
+        html += `<div class="gs-level-grid">`;
+
+        for (const slot of slots) {
+            html += `<div class="gs-slot-card">`;
+            html += `<div class="gs-slot-title">`;
+            html += `level-${esc(slot.level)} / ${esc(slot.day)} / ${esc(slot.time)}`;
+            html += `<span class="gs-slot-count">${slot.students.length}명</span>`;
+            html += `</div>`;
+            html += `<div class="gs-slot-students">`;
+            for (const st of slot.students) {
+                const chipClass = st.isExisting ? 'existing' : 'new-student';
+                html += `<span class="gs-student-chip ${chipClass}" title="${st.isExisting ? '재원생' : '비원생'}">${esc(st.name)}</span>`;
+            }
+            html += `</div></div>`;
+        }
+
+        html += `</div></div>`;
+    }
+
+    dashboard.innerHTML = html;
+}
+
+// Save grammar special enrollments to Firestore
+window.saveGrammarSpecial = async () => {
+    const { startDate, endDate, entries } = _gsState;
+    if (!startDate || !endDate) { alert('기간을 설정해주세요.'); return; }
+    if (endDate <= startDate) { alert('종료일은 시작일 이후여야 합니다.'); return; }
+    if (entries.length === 0) { alert('저장할 학생이 없습니다.'); return; }
+
+    // Filter out already-saved entries
+    const toSave = entries.filter(e => !e.isAlreadySaved);
+    if (toSave.length === 0) { alert('모든 학생이 이미 저장되어 있습니다.'); return; }
+
+    // Check for existing grammar special with same dates
+    const conflicts = [];
+    for (const entry of toSave) {
+        if (entry.existingStudent) {
+            const hasGS = (entry.existingStudent.enrollments || []).some(e =>
+                e.class_type === '특강' && e.level_symbol === 'GR' &&
+                e.start_date === startDate && e.end_date === endDate
+            );
+            if (hasGS) conflicts.push(entry.name);
+        }
+    }
+    if (conflicts.length > 0) {
+        if (!confirm(`다음 학생에 동일 기간 문법 특강이 이미 있습니다:\n${conflicts.join(', ')}\n\n기존 특강을 덮어쓰시겠습니까?`)) return;
+    }
+
+    const existCount = toSave.filter(e => e.isExisting).length;
+    const newCount = toSave.length - existCount;
+    if (!confirm(`${toSave.length}명 문법 특강을 저장합니다.\n(재원 ${existCount} + 비원 ${newCount})\n기간: ${startDate} ~ ${endDate}\n\n진행하시겠습니까?`)) return;
+
+    const saveBtn = document.getElementById('gs-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = '저장 중...';
+
+    try {
+        const semester = activeFilters.semester || currentSemester || '';
+        const BATCH_SIZE = 200;
+        const studentMap = new Map(allStudents.map(s => [s.id, s]));
+
+        for (let i = 0; i < toSave.length; i += BATCH_SIZE) {
+            const chunk = toSave.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+
+            for (const entry of chunk) {
+                const allDays = [...new Set(entry.weeklySchedule.map(ws => ws.day))];
+                const newEnrollment = {
+                    class_type: '특강',
+                    level_symbol: 'GR',
+                    class_number: '901',
+                    day: allDays,
+                    start_date: startDate,
+                    end_date: endDate,
+                    semester,
+                    weekly_schedule: entry.weeklySchedule,
+                };
+
+                const existingS = studentMap.get(entry.docId);
+
+                if (existingS) {
+                    // Existing student — append/replace enrollment
+                    let enrollments = [...(existingS.enrollments || [])];
+                    const existIdx = enrollments.findIndex(e =>
+                        e.class_type === '특강' && e.level_symbol === 'GR' &&
+                        e.start_date === startDate && e.end_date === endDate
+                    );
+                    if (existIdx >= 0) {
+                        enrollments[existIdx] = newEnrollment;
+                    } else {
+                        enrollments.push(newEnrollment);
+                    }
+
+                    batch.update(doc(db, 'students', entry.docId), { enrollments });
+
+                    // Local sync
+                    if (existIdx >= 0) {
+                        existingS.enrollments[existIdx] = newEnrollment;
+                    } else {
+                        existingS.enrollments = [...(existingS.enrollments || []), newEnrollment];
+                    }
+                } else {
+                    // New student (비원생) — create
+                    const studentData = {
+                        name: entry.name,
+                        parent_phone_1: entry.phone || '',
+                        level: entry.level || '',
+                        school: entry.school || '',
+                        grade: entry.grade || '',
+                        branch: '',
+                        status: '등원예정',
+                        student_phone: '',
+                        parent_phone_2: '',
+                        guardian_name_1: '',
+                        guardian_name_2: '',
+                        first_registered: startDate,
+                        enrollments: [newEnrollment],
+                    };
+
+                    batch.set(doc(db, 'students', entry.docId), studentData);
+
+                    // Also create contacts
+                    batch.set(doc(db, 'contacts', entry.docId), {
+                        name: entry.name,
+                        parent_phone_1: entry.phone || '',
+                        level: entry.level || '',
+                        school: entry.school || '',
+                        grade: entry.grade || '',
+                    });
+
+                    // Add to local allStudents
+                    allStudents.push({ ...studentData, id: entry.docId });
+                }
+
+                // History log
+                const scheduleStr = entry.weeklySchedule.map(ws => `${ws.week}주:${ws.level}/${ws.day}/${ws.time}`).join(', ');
+                const historyRef = doc(collection(db, 'history_logs'));
+                batch.set(historyRef, {
+                    doc_id: entry.docId,
+                    change_type: existingS ? 'UPDATE' : 'ENROLL',
+                    before: '—',
+                    after: `문법 특강 ${existingS ? '추가' : '신규등록'}: ${scheduleStr} (${startDate}~${endDate})`,
+                    google_login_id: currentUser?.email || '—',
+                    timestamp: serverTimestamp(),
+                });
+            }
+
+            await batch.commit();
+        }
+
+        applyFilterAndRender();
+        window.closeGrammarSpecial();
+        alert(`${toSave.length}명의 문법 특강을 저장했습니다.`);
+    } catch (e) {
+        console.error('[GS SAVE ERROR]', e);
+        alert('문법 특강 저장 실패: ' + e.message);
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '저장';
+    }
+};
+

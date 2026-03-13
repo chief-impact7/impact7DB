@@ -2651,3 +2651,117 @@ summary.menu-l2 .material-symbols-outlined {
     .naesin-subgroup { flex-direction: column; }
 }
 
+/* ── 문법 특강 관리 모달 ───────────────────────────────────────────────── */
+.grammar-special-modal-card {
+    width: 800px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+}
+
+.grammar-special-period-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.grammar-special-period-row label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-sec);
+    white-space: nowrap;
+}
+.grammar-special-period-row .field-input {
+    width: 150px;
+}
+
+.grammar-special-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.gs-summary {
+    font-size: 13px;
+    color: var(--text-sec);
+}
+
+.gs-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-height: 55vh;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+
+.gs-week-section {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    background: var(--surface);
+}
+.gs-week-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin: 0 0 10px 0;
+}
+
+.gs-level-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.gs-slot-card {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+.gs-slot-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.gs-slot-count {
+    font-size: 11px;
+    background: var(--primary-light);
+    color: var(--primary);
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 500;
+}
+.gs-slot-students {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+.gs-student-chip {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text-main);
+    white-space: nowrap;
+}
+.gs-student-chip.existing {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+.gs-student-chip.new-student {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+@media (max-width: 600px) {
+    .grammar-special-modal-card { width: 100%; max-height: 90vh; }
+    .gs-level-grid { grid-template-columns: 1fr; }
+}
+
