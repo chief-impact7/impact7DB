@@ -47,7 +47,7 @@ const hasNonSemesterFilter = () =>
 
 // 학부 + 연도 기준으로 <option> 문자열 생성 (현재 연도 + 다음 연도)
 function getSemesterOptions(level, selectedSemester) {
-    const year = new Date().getFullYear();
+    const year = parseInt(getTodayDateStr().slice(0, 4));
     const names = SEMESTER_NAMES[level] || DEFAULT_SEMESTER_NAMES;
     return [year, year + 1].flatMap(y =>
         names.map(name => {
@@ -128,8 +128,7 @@ const getActiveEnrollments = (s) => {
     const enrollments = s.enrollments || [];
     if (enrollments.length === 0) return [];
 
-    const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const today = getTodayDateStr();
     const byType = {};
 
     for (const e of enrollments) {
@@ -497,8 +496,7 @@ async function loadLeaveRequests() {
 // 일별 통계 스냅샷 (Daily Stats)
 // ---------------------------------------------------------------------------
 const getTodayDateStr = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
 };
 
 async function generateDailyStatsIfNeeded() {
@@ -916,7 +914,7 @@ async function loadSemesterSettings() {
 }
 
 function getCurrentSemester() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayDateStr();
     const entries = Object.entries(semesterSettings)
         .filter(([, v]) => v.start_date)
         .sort((a, b) => a[1].start_date.localeCompare(b[1].start_date));
@@ -1523,7 +1521,7 @@ window.showNewStudentForm = () => {
     if (editEnrollList) { editEnrollList.style.display = 'none'; editEnrollList.innerHTML = ''; }
 
     // 오늘 날짜를 기본값으로
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayDateStr();
     document.querySelector('[name="start_date"]').value = today;
 
     // 수업종류: 정규 기본 → 등원일 라벨 + 날짜 제한
@@ -1564,9 +1562,9 @@ window.handleStatusChange = (val) => {
         if (val === '실휴원' || val === '가휴원') {
             const startInput = document.querySelector('[name="pause_start_date"]');
             if (startInput) {
-                const minStart = new Date();
+                const minStart = new Date(getTodayDateStr() + 'T00:00:00+09:00');
                 minStart.setMonth(minStart.getMonth() - 1);
-                startInput.min = minStart.toISOString().split('T')[0];
+                startInput.min = minStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
             }
         }
     }
@@ -1887,18 +1885,18 @@ window.submitNewStudent = async () => {
 // 날짜 제한 공통: 시작일은 오늘-1개월~, 종료일은 시작일+3개월 이내
 const applyDateConstraints = (startInput, endInput) => {
     if (!startInput) return;
-    const today = new Date();
-    const minStart = new Date(today);
+    const todayStr = getTodayDateStr();
+    const minStart = new Date(todayStr + 'T00:00:00+09:00');
     minStart.setMonth(minStart.getMonth() - 1);
-    startInput.min = minStart.toISOString().split('T')[0];
+    startInput.min = minStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
 
     if (endInput) {
         const syncEnd = () => {
             if (startInput.value) {
                 endInput.min = startInput.value;
-                const maxEnd = new Date(startInput.value);
+                const maxEnd = new Date(startInput.value + 'T00:00:00+09:00');
                 maxEnd.setMonth(maxEnd.getMonth() + 3);
-                endInput.max = maxEnd.toISOString().split('T')[0];
+                endInput.max = maxEnd.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
             }
         };
         startInput.addEventListener('change', syncEnd);
@@ -1936,7 +1934,7 @@ window.openFormEnrollmentModal = () => {
     if (!modal) return;
     const form = document.getElementById('enrollment-form');
     if (form) form.reset();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayDateStr();
     const startInput = modal.querySelector('[name="enroll_start_date"]');
     if (startInput) startInput.value = today;
     const specContainer = document.getElementById('enroll-special-period');
@@ -2106,7 +2104,7 @@ window.addEditEnrollment = () => {
     if (!modal) return;
     const form = document.getElementById('enrollment-form');
     if (form) form.reset();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayDateStr();
     const startInput = modal.querySelector('[name="enroll_start_date"]');
     if (startInput) startInput.value = today;
     const specContainer = document.getElementById('enroll-special-period');
@@ -2279,7 +2277,7 @@ window.openEnrollmentModal = () => {
     // 폼 리셋
     const form = document.getElementById('enrollment-form');
     if (form) form.reset();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayDateStr();
     const startInput = modal.querySelector('[name="enroll_start_date"]');
     if (startInput) startInput.value = today;
     // 기본 정규 → 등원일, 종료일 숨김
@@ -2586,10 +2584,10 @@ window.checkDurationLimit = () => {
     if (startInput && endInput) {
         if (startInput.value) {
             endInput.min = startInput.value;
-            const startDate = new Date(startInput.value);
+            const startDate = new Date(startInput.value + 'T00:00:00+09:00');
             const maxDate = new Date(startDate);
             maxDate.setFullYear(startDate.getFullYear() + 1);
-            endInput.max = maxDate.toISOString().split('T')[0];
+            endInput.max = maxDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
         }
 
         if (startInput.value && endInput.value) {
@@ -2658,7 +2656,7 @@ window.handleSheetExport = async () => {
 
     try {
         // 1. 스프레드시트 생성 + 헤더 + 데이터 한번에
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getTodayDateStr();
         const sheetTitle = `impact7DB_${today}${hasNonSemesterFilter() ? '_필터적용' : ''}`;
         const headerRow = {
             values: EXPORT_HEADERS.map(h => ({
@@ -4421,7 +4419,7 @@ function _openReturnModal(studentId, type) {
     }
     document.getElementById('rfl-leave-period').textContent = periodText;
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getTodayDateStr();
     document.getElementById('rfl-return-date').value = today;
     document.getElementById('rfl-consultation-note').value = '';
 

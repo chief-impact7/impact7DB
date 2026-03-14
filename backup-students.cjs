@@ -20,7 +20,7 @@ const db = admin.firestore();
   const backupDir = path.join(__dirname, 'backups');
   if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir);
 
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
   const collections = ['students', 'contacts', 'class_settings'];
 
   for (const colName of collections) {
