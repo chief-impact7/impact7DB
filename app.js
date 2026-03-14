@@ -124,11 +124,9 @@ const branchesFromStudent = (s) => {
  * 같은 class_type의 새 enrollment이 없으면 이전 것이 계속 활성.
  * 내신이 활성 기간이면 정규를 숨김.
  */
-const getActiveEnrollments = (s) => {
+const getActiveEnrollments = (s, today = getTodayDateStr()) => {
     const enrollments = s.enrollments || [];
     if (enrollments.length === 0) return [];
-
-    const today = getTodayDateStr();
     const byType = {};
 
     for (const e of enrollments) {
@@ -495,9 +493,8 @@ async function loadLeaveRequests() {
 // ---------------------------------------------------------------------------
 // 일별 통계 스냅샷 (Daily Stats)
 // ---------------------------------------------------------------------------
-const getTodayDateStr = () => {
-    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-};
+const toDateStrKST = (date) => date.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+const getTodayDateStr = () => toDateStrKST(new Date());
 
 async function generateDailyStatsIfNeeded() {
     const dateStr = getTodayDateStr();
@@ -1564,7 +1561,7 @@ window.handleStatusChange = (val) => {
             if (startInput) {
                 const minStart = new Date(getTodayDateStr() + 'T00:00:00+09:00');
                 minStart.setMonth(minStart.getMonth() - 1);
-                startInput.min = minStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                startInput.min = toDateStrKST(minStart);
             }
         }
     }
@@ -1888,7 +1885,7 @@ const applyDateConstraints = (startInput, endInput) => {
     const todayStr = getTodayDateStr();
     const minStart = new Date(todayStr + 'T00:00:00+09:00');
     minStart.setMonth(minStart.getMonth() - 1);
-    startInput.min = minStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    startInput.min = toDateStrKST(minStart);
 
     if (endInput) {
         const syncEnd = () => {
@@ -1896,7 +1893,7 @@ const applyDateConstraints = (startInput, endInput) => {
                 endInput.min = startInput.value;
                 const maxEnd = new Date(startInput.value + 'T00:00:00+09:00');
                 maxEnd.setMonth(maxEnd.getMonth() + 3);
-                endInput.max = maxEnd.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                endInput.max = toDateStrKST(maxEnd);
             }
         };
         startInput.addEventListener('change', syncEnd);
@@ -2587,12 +2584,12 @@ window.checkDurationLimit = () => {
             const startDate = new Date(startInput.value + 'T00:00:00+09:00');
             const maxDate = new Date(startDate);
             maxDate.setFullYear(startDate.getFullYear() + 1);
-            endInput.max = maxDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            endInput.max = toDateStrKST(maxDate);
         }
 
         if (startInput.value && endInput.value) {
-            const start = new Date(startInput.value);
-            const end = new Date(endInput.value);
+            const start = new Date(startInput.value + 'T00:00:00+09:00');
+            const end = new Date(endInput.value + 'T00:00:00+09:00');
             const diffTime = end - start;
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -4059,8 +4056,9 @@ window.showDailyStats = async () => {
 
     // 오늘 날짜로 로드
     const dateInput = document.getElementById('stats-date-input');
-    dateInput.value = getTodayDateStr();
-    await loadStatsForDate(getTodayDateStr());
+    const todayStr = getTodayDateStr();
+    dateInput.value = todayStr;
+    await loadStatsForDate(todayStr);
 };
 
 window.hideDailyStats = () => {
