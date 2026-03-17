@@ -852,6 +852,7 @@ function applyFilterAndRender() {
     renderStudentList(filtered, []);
 
     // 과거 학생 비동기 검색 (Firestore prefix 쿼리)
+    ++_contactSearchId; // 이전 검색 결과 무효화
     if (rawTerm.length >= 2) {
         const searchId = ++_contactSearchId;
         searchContacts(rawTerm).then(results => {
