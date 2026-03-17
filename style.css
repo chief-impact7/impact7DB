@@ -111,8 +111,8 @@ body {
     align-items: center;
     height: 48px;
     width: 100%;
-    max-width: 600px;
-    margin-right: 24px;
+    max-width: 480px;
+    margin-right: auto;
 }
 
 .search-box input {
