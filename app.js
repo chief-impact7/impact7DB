@@ -4447,21 +4447,22 @@ function _renderLeaveRequestRow(r, studentId) {
         : '';
 
     let actionsHtml = '';
-    if (r.status !== 'approved' && r.status !== 'cancelled' && r.status !== 'rejected') {
+    if (r.status !== 'approved' && r.status !== 'rejected') {
+        const cDone = r.status === 'cancelled';
         const tDone = !!r.teacher_approved_by;
         const aDone = !!r.approved_by;
         actionsHtml = `
             <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">
-                <button class="btn-cancel" style="font-size:11px;padding:4px 10px;"
-                    onclick="event.stopPropagation(); window.cancelLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
-                    요청 취소
+                <button class="${cDone ? 'btn-cancel' : 'btn-cancel'}" style="font-size:11px;padding:4px 10px;${cDone ? '' : 'opacity:0.5;'}"
+                    onclick="event.stopPropagation(); window.toggleCancelLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
+                    ${cDone ? '취소 ✕' : '취소'}
                 </button>
-                <button class="${tDone ? 'btn-save' : 'btn-cancel'}" style="font-size:11px;padding:4px 10px;${tDone ? '' : 'opacity:0.6;'}"
-                    ${tDone ? 'disabled' : `onclick="event.stopPropagation(); window.teacherApproveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')"`}>
+                <button class="${tDone ? 'btn-save' : 'btn-cancel'}" style="font-size:11px;padding:4px 10px;${tDone ? '' : 'opacity:0.5;'}"
+                    onclick="event.stopPropagation(); window.teacherApproveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
                     ${tDone ? '교수부 ✓' : '교수부'}
                 </button>
-                <button class="${aDone ? 'btn-save' : 'btn-cancel'}" style="font-size:11px;padding:4px 10px;${aDone ? '' : 'opacity:0.6;'}"
-                    ${aDone ? 'disabled' : `onclick="event.stopPropagation(); window.approveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')"`}>
+                <button class="${aDone ? 'btn-save' : 'btn-cancel'}" style="font-size:11px;padding:4px 10px;${aDone ? '' : 'opacity:0.5;'}"
+                    onclick="event.stopPropagation(); window.approveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
                     ${aDone ? '행정부 ✓' : '행정부'}
                 </button>
             </div>`;
@@ -4616,10 +4617,38 @@ window.submitReturnFromLeave = async () => {
 };
 
 // 교수부 승인 (순서 무관, 행정부와 독립)
+// 요청취소 토글
+window.toggleCancelLeaveRequest = async (docId, studentId) => {
+    const r = leaveRequests.find(lr => lr.docId === docId);
+    if (!r) return;
+    const isCancelled = r.status === 'cancelled';
+    try {
+        await updateDoc(doc(db, 'leave_requests', docId), {
+            status: isCancelled ? 'requested' : 'cancelled',
+            updated_at: serverTimestamp()
+        });
+        const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
+        if (lrIdx >= 0) leaveRequests[lrIdx].status = isCancelled ? 'requested' : 'cancelled';
+        const stu = allStudents.find(s => s.id === studentId);
+        if (stu) window.selectStudent(studentId, stu);
+    } catch (err) { alert('처리 실패: ' + err.message); }
+};
+
+// 교수부 승인 토글
 window.teacherApproveLeaveRequest = async (docId, studentId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
     if (!r) return;
-    if (r.teacher_approved_by) { alert('이미 교수부 승인되었습니다.'); return; }
+    // 토글: 이미 승인 → 취소
+    if (r.teacher_approved_by) {
+        try {
+            await updateDoc(doc(db, 'leave_requests', docId), { teacher_approved_by: deleteField(), teacher_approved_at: deleteField(), updated_at: serverTimestamp() });
+            const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
+            if (lrIdx >= 0) { delete leaveRequests[lrIdx].teacher_approved_by; delete leaveRequests[lrIdx].teacher_approved_at; }
+            const stu = allStudents.find(s => s.id === studentId);
+            if (stu) window.selectStudent(studentId, stu);
+        } catch (err) { alert('교수부 승인 취소 실패: ' + err.message); }
+        return;
+    }
     const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
     if (!confirm(`${r.student_name} — ${typeLabel}\n교수부 승인하시겠습니까?`)) return;
 
@@ -4657,7 +4686,17 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
 window.approveLeaveRequest = async (docId, studentId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
     if (!r) return;
-    if (r.approved_by) { alert('이미 행정부 승인되었습니다.'); return; }
+    // 토글: 이미 승인 → 취소
+    if (r.approved_by) {
+        try {
+            await updateDoc(doc(db, 'leave_requests', docId), { approved_by: deleteField(), approved_at: deleteField(), updated_at: serverTimestamp() });
+            const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
+            if (lrIdx >= 0) { delete leaveRequests[lrIdx].approved_by; delete leaveRequests[lrIdx].approved_at; }
+            const stu = allStudents.find(s => s.id === studentId);
+            if (stu) window.selectStudent(studentId, stu);
+        } catch (err) { alert('행정부 승인 취소 실패: ' + err.message); }
+        return;
+    }
 
     const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
     if (!confirm(`${r.student_name} — ${typeLabel}\n행정부 승인하시겠습니까?`)) return;
