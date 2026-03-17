@@ -34,7 +34,6 @@
         <ul class="help-guide-list">
           <li><strong>이름</strong> &mdash; 학생 이름 전체 또는 일부 입력 (예: 김민준)</li>
           <li><strong>전화번호</strong> &mdash; 학부모 또는 학생 연락처 입력</li>
-          <li><strong>초성 검색</strong> &mdash; 한글 초성만 입력 (예: ㄱㅁㅈ &rarr; 김민준)</li>
           <li><strong>학교명</strong> &mdash; 학교 이름으로 검색 (예: 진명여고)</li>
         </ul>
       </section>
@@ -276,7 +275,7 @@
       },
       {
         q: '검색이 안 돼요',
-        a: '검색창에서는 <strong>이름</strong>, <strong>학교명</strong>, <strong>전화번호</strong>, <strong>초성</strong>으로 검색할 수 있습니다. 초성 검색은 한글 자음만 입력하면 됩니다. (예: "ㄱㅁㅈ" &rarr; 김민준) 전화번호는 하이픈(-) 없이 숫자만 입력해도 검색됩니다.',
+        a: '검색창에서는 <strong>이름</strong>, <strong>학교명</strong>, <strong>전화번호</strong>로 검색할 수 있습니다. 전화번호는 하이픈(-) 없이 숫자만 입력해도 검색됩니다.',
       },
       {
         q: '학생 정보를 잘못 입력했어요',

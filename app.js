@@ -211,28 +211,6 @@ const abbreviateSchool = (s) => {
 };
 
 // ---------------------------------------------------------------------------
-// 한글 초성 검색 헬퍼
-// ---------------------------------------------------------------------------
-const CHO = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
-
-// 완성형 한글에서 초성 추출 (가=0xAC00, 각 초성 = 21*28 = 588 간격)
-const getChosung = (str) => {
-    return [...(str || '')].map(ch => {
-        const code = ch.charCodeAt(0);
-        if (code >= 0xAC00 && code <= 0xD7A3) return CHO[Math.floor((code - 0xAC00) / 588)];
-        return ch;
-    }).join('');
-};
-
-// 검색어가 초성으로만 구성되어 있는지 확인
-const isChosungOnly = (str) => str && [...str].every(ch => CHO.includes(ch));
-
-// 초성 패턴 매칭: 검색어 초성이 대상 문자열의 초성에 포함되는지
-const matchChosung = (target, term) => {
-    if (!target || !term) return false;
-    return getChosung(target).includes(term);
-};
-
 // day 필드 정규화 → 배열 (예: "월요일" → ["월"], ["월","수"] → ["월","수"])
 const normalizeDays = (day) => {
     if (!day) return [];
@@ -882,25 +860,21 @@ function applyFilterAndRender() {
     const rawTerm = document.getElementById('studentSearchInput')?.value.trim() || '';
     const term = rawTerm.toLowerCase();
     if (term) {
-        const chosungMode = isChosungOnly(term);
-        filtered = filtered.filter(s => {
-            if (chosungMode) {
-                return matchChosung(s.name, term) || matchChosung(s.school, term);
-            }
-            return (s.name && s.name.toLowerCase().includes(term)) ||
-                (s.school && s.school.toLowerCase().includes(term)) ||
-                (s.student_phone && s.student_phone.includes(term)) ||
-                (s.parent_phone_1 && s.parent_phone_1.includes(term)) ||
-                allClassCodes(s).some(code => code.toLowerCase().includes(term));
-        });
+        filtered = filtered.filter(s =>
+            (s.name && s.name.toLowerCase().includes(term)) ||
+            (s.school && s.school.toLowerCase().includes(term)) ||
+            (s.student_phone && s.student_phone.includes(term)) ||
+            (s.parent_phone_1 && s.parent_phone_1.includes(term)) ||
+            allClassCodes(s).some(code => code.toLowerCase().includes(term))
+        );
     }
 
     currentFilteredStudents = filtered;
     updateFilterChips();
     renderStudentList(filtered, []);
 
-    // 과거 학생 비동기 검색 (Firestore prefix 쿼리, 초성 제외)
-    if (rawTerm.length >= 2 && !isChosungOnly(term)) {
+    // 과거 학생 비동기 검색 (Firestore prefix 쿼리)
+    if (rawTerm.length >= 2) {
         const searchId = ++_contactSearchId;
         searchContacts(rawTerm).then(results => {
             if (searchId !== _contactSearchId) return;
@@ -4174,7 +4148,7 @@ window.confirmBulkDelete = async () => {
             const chunk = ids.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(id => {
-                batch.set(doc(db, 'students', id), { status: '퇴원' }, { merge: true });
+                batch.set(doc(db, 'students', id), { status: '퇴원', withdrawal_date: getTodayDateStr() }, { merge: true });
                 const historyRef = doc(collection(db, 'history_logs'));
                 batch.set(historyRef, {
                     doc_id: id, change_type: 'WITHDRAW',
@@ -4658,6 +4632,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
             studentUpdate.pause_end_date = deleteField();
         } else if (isWithdrawal) {
             studentUpdate.status = '퇴원';
+            studentUpdate.withdrawal_date = r.withdrawal_date || getTodayDateStr();
             studentUpdate.pause_start_date = deleteField();
             studentUpdate.pause_end_date = deleteField();
         } else {

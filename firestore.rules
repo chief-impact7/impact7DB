@@ -58,7 +58,7 @@ service cloud.firestore {
           'day', 'class_type', 'level_code', 'level_symbol', 'class_number',
           'start_date', 'special_start_date', 'special_end_date',
           'first_registered',
-          'has_memo',
+          'has_memo', 'withdrawal_date',
           'return_consult_done', 'return_consult_note',
           'return_consult_done_by', 'return_consult_done_at'
         ];
@@ -166,6 +166,30 @@ service cloud.firestore {
            ]);
 
       allow update, delete: if false;
+    }
+
+    // =========================================================================
+    // [DSC] Temp Class Overrides (임시 타반수업)
+    // =========================================================================
+    match /temp_class_overrides/{docId} {
+
+      function hasOnlyAllowedTempClassOverrideFields() {
+        return request.resource.data.keys().hasOnly([
+          'student_id', 'student_name', 'original_class_code', 'target_class_code',
+          'target_start_time', 'override_date', 'reason', 'status',
+          'created_by', 'created_at'
+        ]);
+      }
+
+      allow read: if isAuthorized();
+
+      allow create, update: if isAuthorized()
+        && hasOnlyAllowedTempClassOverrideFields()
+        && request.resource.data.status is string
+        && request.resource.data.status in ['active', 'cancelled']
+        && withinFieldLimit(15);
+
+      allow delete: if isAuthorized();
     }
 
     // =========================================================================
@@ -593,6 +617,14 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // [Director] Assignments (root-level)
+    // =========================================================================
+    match /assignments/{id} {
+      allow read: if isLoggedIn();
+      allow write: if isDirector();
+    }
+
+    // =========================================================================
     // [Director] Staff + 서브컬렉션
     // =========================================================================
     match /staff/{staffId} {
@@ -610,11 +642,11 @@ service cloud.firestore {
           (isStaff() && resource.data.assignedTo == request.auth.uid);
         allow write: if isDirector();
 
-        // 비인증: 토큰 기반 계약서 읽기 + 서명 업데이트
+        // 비인증: 토큰 기반 계약서 읽기 + 서명/급여통보/PDF URL 업데이트
         allow get: if true;
         allow update: if request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['signatures', 'status', 'updatedAt'])
-          && request.resource.data.status in ['ready', 'signed'];
+          .hasOnly(['signatures', 'salaryNotification', 'status', 'updatedAt', 'signedPdfUrl', 'salaryPdfUrl'])
+          && request.resource.data.status in ['ready', 'signed', 'salary_sent'];
       }
 
       match /assignments/{id} {
@@ -631,6 +663,21 @@ service cloud.firestore {
       match /performanceNotes/{noteId} {
         allow read, write: if isDirector();
       }
+    }
+
+    // =========================================================================
+    // [Director] collectionGroup 쿼리용 — contracts
+    // =========================================================================
+    match /{path=**}/contracts/{contractId} {
+      allow read: if isDirector() ||
+        (isStaff() && resource.data.assignedTo == request.auth.uid);
+    }
+
+    // =========================================================================
+    // [Director] collectionGroup 쿼리용 — documents (서류함)
+    // =========================================================================
+    match /{path=**}/documents/{docId} {
+      allow read: if isDirector();
     }
 
     // =========================================================================
@@ -662,6 +709,79 @@ service cloud.firestore {
       allow read: if isDirector();
       allow create: if isLoggedIn();
       allow update, delete: if false;
+    }
+
+    // =========================================================================
+    // [Director] Employee Onboarding Tokens
+    // =========================================================================
+    match /employeeOnboardingTokens/{tokenId} {
+      allow read, write: if isDirector() || isStaff();
+      allow read: if true;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['status', 'employeeId'])
+        && request.resource.data.status == 'completed'
+        && resource.data.status == 'pending'
+        && resource.data.expiresAt > request.time;
+      allow create, delete: if isDirector() || isStaff();
+    }
+
+    // =========================================================================
+    // [Director] Employee Contract Signing Tokens
+    // =========================================================================
+    match /employeeContractSigningTokens/{tokenId} {
+      allow read, write: if isDirector() || isStaff();
+      allow read: if true;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['status'])
+        && request.resource.data.status == 'signed'
+        && resource.data.status == 'pending'
+        && resource.data.expiresAt > request.time;
+      allow create, delete: if isDirector() || isStaff();
+    }
+
+    // =========================================================================
+    // [Director] Employees + 서브컬렉션
+    // =========================================================================
+    match /employees/{employeeId} {
+      allow read: if isLoggedIn();
+      allow write: if isDirector();
+      allow create: if request.resource.data.status == 'onboarding';
+      allow get: if true;
+
+      match /contracts/{contractId} {
+        allow read: if isDirector() ||
+          (isStaff() && resource.data.assignedTo == request.auth.uid);
+        allow write: if isDirector();
+        allow get: if true;
+        allow update: if request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['signatures', 'salaryNotification', 'status', 'updatedAt', 'signedPdfUrl', 'salaryPdfUrl'])
+          && request.resource.data.status in ['ready', 'signed', 'salary_sent'];
+      }
+
+      match /performanceNotes/{noteId} {
+        allow read, write: if isDirector();
+      }
+    }
+
+    // =========================================================================
+    // [QBank] 영어 문제 DB
+    // =========================================================================
+    match /questions/{questionId} {
+      allow read: if isAuthorized();
+      allow create, update: if isAuthorized() && withinFieldLimit(35);
+      allow delete: if isAuthorized();
+    }
+
+    match /exams/{examId} {
+      allow read: if isAuthorized();
+      allow create, update: if isAuthorized() && withinFieldLimit(15);
+      allow delete: if isAuthorized();
+    }
+
+    match /books/{bookId} {
+      allow read: if isAuthorized();
+      allow create, update: if isAuthorized() && withinFieldLimit(15);
+      allow delete: if isAuthorized();
     }
 
     // =========================================================================
