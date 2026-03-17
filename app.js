@@ -4412,7 +4412,7 @@ function _leaveRequestStatusBadge(status) {
     const map = {
         'requested': { label: '대기', color: '#f59e0b', bg: '#fef3c7' },
         'teacher_approved': { label: '교수부승인', color: '#2563eb', bg: '#dbeafe' },
-        'approved': { label: '최종승인', color: '#16a34a', bg: '#dcfce7' },
+        'approved': { label: '승인완료', color: '#16a34a', bg: '#dcfce7' },
         'rejected': { label: '반려', color: '#dc2626', bg: '#fee2e2' },
         'cancelled': { label: '취소', color: '#6b7280', bg: '#f3f4f6' }
     };
