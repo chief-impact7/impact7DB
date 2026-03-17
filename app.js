@@ -518,7 +518,7 @@ async function _syncStudentsToContacts() {
 // ---------------------------------------------------------------------------
 async function loadLeaveRequests() {
     try {
-        const snapshot = await getDocs(query(collection(db, 'leave_requests'), where('status', '==', 'requested')));
+        const snapshot = await getDocs(query(collection(db, 'leave_requests'), where('status', 'in', ['requested', 'teacher_approved'])));
         leaveRequests = [];
         snapshot.forEach((docSnap) => {
             leaveRequests.push({ docId: docSnap.id, ...docSnap.data() });
@@ -4428,7 +4428,8 @@ function _leaveRequestTypeBadge(r) {
 function _leaveRequestStatusBadge(status) {
     const map = {
         'requested': { label: '대기', color: '#f59e0b', bg: '#fef3c7' },
-        'approved': { label: '승인', color: '#16a34a', bg: '#dcfce7' },
+        'teacher_approved': { label: '교수부승인', color: '#2563eb', bg: '#dbeafe' },
+        'approved': { label: '최종승인', color: '#16a34a', bg: '#dcfce7' },
         'rejected': { label: '반려', color: '#dc2626', bg: '#fee2e2' },
         'cancelled': { label: '취소', color: '#6b7280', bg: '#f3f4f6' }
     };
@@ -4442,6 +4443,66 @@ function _fmtTs(ts) {
     return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+function _renderLeaveRequestRow(r, studentId) {
+    let dateStr = '';
+    if (r.return_date) dateStr = `복귀일: ${r.return_date}`;
+    else if (r.withdrawal_date) dateStr = `퇴원일: ${r.withdrawal_date}`;
+    else if (r.leave_start_date) dateStr = `${r.leave_start_date} ~ ${r.leave_end_date || ''}`;
+
+    const reqBy = (r.requested_by || '').split('@')[0];
+    const tAppBy = (r.teacher_approved_by || '').split('@')[0];
+    const appBy = (r.approved_by || '').split('@')[0];
+    let metaHtml = `<div style="font-size:10px;color:var(--text-sec);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
+        ${reqBy ? `<span>요청: ${esc(reqBy)} ${_fmtTs(r.requested_at)}</span>` : ''}
+        ${tAppBy ? `<span>교수부: ${esc(tAppBy)} ${_fmtTs(r.teacher_approved_at)}</span>` : ''}
+        ${appBy ? `<span>행정부: ${esc(appBy)} ${_fmtTs(r.approved_at)}</span>` : ''}
+    </div>`;
+
+    const noteHtml = r.consultation_note
+        ? `<div style="font-size:12px;margin-top:4px;padding:6px 8px;background:var(--bg-secondary);border-radius:4px;">${esc(r.consultation_note)}</div>`
+        : '';
+
+    let actionsHtml = '';
+    if (r.status === 'requested') {
+        actionsHtml = `
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+                <button class="btn-cancel" style="font-size:11px;padding:4px 10px;"
+                    onclick="event.stopPropagation(); window.cancelLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
+                    요청 취소
+                </button>
+                <button class="btn-save" style="font-size:11px;padding:4px 10px;"
+                    onclick="event.stopPropagation(); window.teacherApproveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
+                    교수부 승인
+                </button>
+            </div>`;
+    } else if (r.status === 'teacher_approved') {
+        actionsHtml = `
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
+                <button class="btn-cancel" style="font-size:11px;padding:4px 10px;"
+                    onclick="event.stopPropagation(); window.cancelLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
+                    요청 취소
+                </button>
+                <button class="btn-save" style="font-size:11px;padding:4px 10px;"
+                    onclick="event.stopPropagation(); window.approveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
+                    행정부 승인
+                </button>
+            </div>`;
+    }
+
+    return `
+        <div style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.querySelector('.lr-expand').style.display = this.querySelector('.lr-expand').style.display === 'none' ? 'block' : 'none'">
+            <div style="display:flex;align-items:center;gap:6px;">
+                ${_leaveRequestTypeBadge(r)} ${_leaveRequestStatusBadge(r.status)}
+                <span style="font-size:12px;color:var(--text-sec);margin-left:4px;">${esc(dateStr)}</span>
+            </div>
+            <div class="lr-expand" style="display:none;margin-top:6px;">
+                ${noteHtml}
+                ${metaHtml}
+                ${actionsHtml}
+            </div>
+        </div>`;
+}
+
 function renderLeaveRequestCard(studentId) {
     const records = leaveRequests.filter(r => r.student_id === studentId);
     const student = allStudents.find(s => s.id === studentId);
@@ -4449,79 +4510,46 @@ function renderLeaveRequestCard(studentId) {
     const isWithdrawnStu = stuStatus === '퇴원';
     const isLeaveStu = LEAVE_STATUSES.includes(stuStatus);
 
-    let cardTitle = '휴퇴원요청서';
-    let actionBtn = '';
-    if (isWithdrawnStu) {
-        cardTitle = '퇴원요청서';
-        actionBtn = `<button class="btn-save" style="font-size:11px;padding:2px 8px;margin-left:auto;"
-            onclick="window.openReEnrollModal('${escAttr(studentId)}')">
-            <span class="material-symbols-outlined" style="font-size:14px;">person_add</span>재등원
-        </button>`;
-    } else if (isLeaveStu) {
-        cardTitle = '휴원요청서';
-        actionBtn = `<button class="btn-save" style="font-size:11px;padding:2px 8px;margin-left:auto;"
-            onclick="window.openReturnFromLeaveModal('${escAttr(studentId)}')">
-            <span class="material-symbols-outlined" style="font-size:14px;">undo</span>복귀
-        </button>`;
-    }
+    // 휴원/퇴원 요청 분리
+    const leaveRecords = records.filter(r => !_isWithdrawalType(r.request_type) && !_isReturnType(r.request_type));
+    const withdrawRecords = records.filter(r => _isWithdrawalType(r.request_type) || _isReturnType(r.request_type));
 
-    if (records.length === 0 && !actionBtn) return '';
+    const btnStyle = 'font-size:11px;padding:2px 8px;margin-left:auto;display:inline-flex;align-items:center;gap:4px;';
+    let cards = '';
 
-    const rows = records.map(r => {
-        let dateStr = '';
-        if (r.return_date) dateStr = `복귀일: ${r.return_date}`;
-        else if (r.withdrawal_date) dateStr = `퇴원일: ${r.withdrawal_date}`;
-        else if (r.leave_start_date) dateStr = `${r.leave_start_date} ~ ${r.leave_end_date || ''}`;
-
-        const reqBy = (r.requested_by || '').split('@')[0];
-        const appBy = (r.approved_by || '').split('@')[0];
-        let metaHtml = `<div style="font-size:10px;color:var(--text-sec);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
-            ${reqBy ? `<span>요청: ${esc(reqBy)} ${_fmtTs(r.requested_at)}</span>` : ''}
-            ${appBy ? `<span>승인: ${esc(appBy)} ${_fmtTs(r.approved_at)}</span>` : ''}
-        </div>`;
-
-        const noteHtml = r.consultation_note
-            ? `<div style="font-size:12px;margin-top:4px;padding:6px 8px;background:var(--bg-secondary);border-radius:4px;">${esc(r.consultation_note)}</div>`
-            : '';
-
-        let actionsHtml = '';
-        if (r.status === 'requested') {
-            actionsHtml = `
-                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;">
-                    <button class="btn-cancel" style="font-size:11px;padding:4px 10px;"
-                        onclick="event.stopPropagation(); window.cancelLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
-                        요청 취소
-                    </button>
-                    <button class="btn-save" style="font-size:11px;padding:4px 10px;"
-                        onclick="event.stopPropagation(); window.approveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
-                        승인
-                    </button>
-                </div>`;
-        }
-
-        return `
-            <div style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.querySelector('.lr-expand').style.display = this.querySelector('.lr-expand').style.display === 'none' ? 'block' : 'none'">
-                <div style="display:flex;align-items:center;gap:6px;">
-                    ${_leaveRequestTypeBadge(r)} ${_leaveRequestStatusBadge(r.status)}
-                    <span style="font-size:12px;color:var(--text-sec);margin-left:4px;">${esc(dateStr)}</span>
-                </div>
-                <div class="lr-expand" style="display:none;margin-top:6px;">
-                    ${noteHtml}
-                    ${metaHtml}
-                    ${actionsHtml}
-                </div>
-            </div>`;
-    }).join('');
-
-    return `
-        <div class="form-card">
+    // 휴원요청서 카드
+    const leaveBtn = isLeaveStu
+        ? `<button class="btn-save" style="${btnStyle}" onclick="window.openReturnFromLeaveModal('${escAttr(studentId)}')">
+            <span class="material-symbols-outlined" style="font-size:14px;">undo</span>복귀</button>`
+        : '';
+    if (leaveRecords.length > 0 || leaveBtn) {
+        cards += `<div class="form-card">
             <h3 class="info-card-title" style="display:flex;align-items:center;gap:6px;">
                 <span class="material-symbols-outlined">description</span>
-                ${cardTitle} <span style="font-size:12px;color:var(--text-sec);">(${records.length}건)</span>
-                ${actionBtn}
+                휴원요청서 <span style="font-size:12px;color:var(--text-sec);">(${leaveRecords.length}건)</span>
+                ${leaveBtn}
             </h3>
-            ${rows}
+            ${leaveRecords.map(r => _renderLeaveRequestRow(r, studentId)).join('')}
         </div>`;
+    }
+
+    // 퇴원요청서 카드
+    const withdrawBtn = isWithdrawnStu
+        ? `<button class="btn-save" style="${btnStyle}" onclick="window.openReEnrollModal('${escAttr(studentId)}')">
+            <span class="material-symbols-outlined" style="font-size:14px;">person_add</span>재등원</button>`
+        : '';
+    if (withdrawRecords.length > 0 || withdrawBtn) {
+        cards += `<div class="form-card">
+            <h3 class="info-card-title" style="display:flex;align-items:center;gap:6px;">
+                <span class="material-symbols-outlined">description</span>
+                퇴원요청서 <span style="font-size:12px;color:var(--text-sec);">(${withdrawRecords.length}건)</span>
+                ${withdrawBtn}
+            </h3>
+            ${withdrawRecords.map(r => _renderLeaveRequestRow(r, studentId)).join('')}
+        </div>`;
+    }
+
+    return cards;
 }
 
 // ─── 재등원 / 복귀 모달 (공용) ──────────────────────────────────────────────
@@ -4610,12 +4638,41 @@ window.submitReturnFromLeave = async () => {
     }
 };
 
+// 1단계: 교수부 승인 (requested → teacher_approved)
+window.teacherApproveLeaveRequest = async (docId, studentId) => {
+    const r = leaveRequests.find(lr => lr.docId === docId);
+    if (!r) return;
+    const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
+    if (!confirm(`${r.student_name} — ${typeLabel}\n교수부 승인하시겠습니까?`)) return;
+
+    try {
+        await updateDoc(doc(db, 'leave_requests', docId), {
+            status: 'teacher_approved',
+            teacher_approved_by: currentUser?.email || '',
+            teacher_approved_at: serverTimestamp(),
+            updated_at: serverTimestamp()
+        });
+        const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
+        if (lrIdx >= 0) {
+            leaveRequests[lrIdx].status = 'teacher_approved';
+            leaveRequests[lrIdx].teacher_approved_by = currentUser?.email || '';
+            leaveRequests[lrIdx].teacher_approved_at = new Date();
+        }
+        const stu = allStudents.find(s => s.id === studentId);
+        if (stu) window.selectStudent(studentId, stu);
+    } catch (err) {
+        alert('교수부 승인 실패: ' + err.message);
+        console.error(err);
+    }
+};
+
+// 2단계: 행정부 승인 (teacher_approved → approved, 학생 상태 변경)
 window.approveLeaveRequest = async (docId, studentId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
     if (!r) return;
 
     const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
-    if (!confirm(`${r.student_name} — ${typeLabel}\n승인하시겠습니까?`)) return;
+    if (!confirm(`${r.student_name} — ${typeLabel}\n행정부 최종 승인하시겠습니까?`)) return;
 
     try {
         const cachedStudent = allStudents.find(s => s.id === studentId);
@@ -4664,7 +4721,6 @@ window.approveLeaveRequest = async (docId, studentId) => {
             })
         ]);
 
-        // 로컬 캐시 업데이트
         const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
         if (lrIdx >= 0) leaveRequests[lrIdx].status = 'approved';
 
@@ -4686,7 +4742,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
             window.selectStudent(studentId, allStudents[sIdx]);
         }
     } catch (err) {
-        alert('승인 처리 실패: ' + err.message);
+        alert('행정부 승인 실패: ' + err.message);
         console.error(err);
     }
 };

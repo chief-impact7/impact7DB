@@ -460,6 +460,7 @@ service cloud.firestore {
           'student_phone', 'parent_phone_1',
           'consultation_note', 'status',
           'requested_by', 'requested_at',
+          'teacher_approved_by', 'teacher_approved_at',
           'approved_by', 'approved_at',
           'previous_status', 'created_at', 'updated_at'
         ]);
@@ -470,7 +471,7 @@ service cloud.firestore {
       allow create, update: if isAuthorized()
         && hasOnlyAllowedLeaveRequestFields()
         && request.resource.data.status is string
-        && request.resource.data.status in ['requested', 'approved', 'rejected', 'cancelled']
+        && request.resource.data.status in ['requested', 'teacher_approved', 'approved', 'rejected', 'cancelled']
         && withinFieldLimit(25);
 
       allow delete: if isAuthorized();
