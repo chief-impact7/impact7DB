@@ -4408,14 +4408,16 @@ function _leaveRequestTypeBadge(r) {
     return badge;
 }
 
-function _leaveRequestStatusBadge(status) {
-    const map = {
-        'requested': { label: '승인대기', color: '#f59e0b', bg: '#fef3c7' },
-        'approved': { label: '승인완료', color: '#16a34a', bg: '#dcfce7' },
-        'rejected': { label: '반려', color: '#dc2626', bg: '#fee2e2' },
-        'cancelled': { label: '취소', color: '#6b7280', bg: '#f3f4f6' }
-    };
-    const s = map[status] || { label: status, color: '#666', bg: '#f3f4f6' };
+function _leaveRequestStatusBadge(r) {
+    if (r.status === 'approved') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#16a34a;background:#dcfce7;">승인완료</span>`;
+    if (r.status === 'cancelled') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#6b7280;background:#f3f4f6;">취소</span>`;
+    if (r.status === 'rejected') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#dc2626;background:#fee2e2;">반려</span>`;
+    // 미승인 부서 표시
+    const pending = [];
+    if (!r.teacher_approved_by) pending.push('교수부');
+    if (!r.approved_by) pending.push('행정부');
+    const label = pending.length > 0 ? `${pending.join('·')}대기` : '승인대기';
+    const s = { label, color: '#f59e0b', bg: '#fef3c7' };
     return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:${s.color};background:${s.bg};">${esc(s.label)}</span>`;
 }
 
@@ -4468,7 +4470,7 @@ function _renderLeaveRequestRow(r, studentId) {
     return `
         <div style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.querySelector('.lr-expand').style.display = this.querySelector('.lr-expand').style.display === 'none' ? 'block' : 'none'">
             <div style="display:flex;align-items:center;gap:6px;">
-                ${_leaveRequestTypeBadge(r)} ${_leaveRequestStatusBadge(r.status)}
+                ${_leaveRequestTypeBadge(r)} ${_leaveRequestStatusBadge(r)}
                 <span style="font-size:12px;color:var(--text-sec);margin-left:4px;">${esc(dateStr)}</span>
             </div>
             <div class="lr-expand" style="display:none;margin-top:6px;">
