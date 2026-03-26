@@ -58,9 +58,10 @@ service cloud.firestore {
           'day', 'class_type', 'level_code', 'level_symbol', 'class_number',
           'start_date', 'special_start_date', 'special_end_date',
           'first_registered',
-          'has_memo', 'withdrawal_date',
+          'has_memo',
           'return_consult_done', 'return_consult_note',
-          'return_consult_done_by', 'return_consult_done_at'
+          'return_consult_done_by', 'return_consult_done_at',
+          'updated_at', 'updated_by', 'withdrawal_date'
         ];
         return request.resource.data.keys().hasOnly(allowed);
       }
@@ -431,7 +432,6 @@ service cloud.firestore {
           'reason', 'reason_valid', 'resolution', 'settlement_memo',
           'makeup_date', 'makeup_time',
           'makeup_status', 'makeup_completed_by', 'makeup_completed_at',
-          'marked_absent_by', 'marked_absent_at',
           'reschedule_history',
           'status', 'created_by', 'created_at', 'updated_by', 'updated_at'
         ]);
@@ -443,7 +443,7 @@ service cloud.firestore {
         && hasOnlyAllowedAbsenceFields()
         && request.resource.data.status is string
         && request.resource.data.status in ['open', 'closed']
-        && withinFieldLimit(30);
+        && withinFieldLimit(25);
 
       allow delete: if isAuthorized();
     }
@@ -461,7 +461,6 @@ service cloud.firestore {
           'student_phone', 'parent_phone_1',
           'consultation_note', 'status',
           'requested_by', 'requested_at',
-          'teacher_approved_by', 'teacher_approved_at',
           'approved_by', 'approved_at',
           'previous_status', 'created_at', 'updated_at'
         ]);
@@ -472,7 +471,7 @@ service cloud.firestore {
       allow create, update: if isAuthorized()
         && hasOnlyAllowedLeaveRequestFields()
         && request.resource.data.status is string
-        && request.resource.data.status in ['requested', 'teacher_approved', 'approved', 'rejected', 'cancelled']
+        && request.resource.data.status in ['requested', 'approved', 'rejected', 'cancelled']
         && withinFieldLimit(25);
 
       allow delete: if isAuthorized();
@@ -763,27 +762,6 @@ service cloud.firestore {
       match /performanceNotes/{noteId} {
         allow read, write: if isDirector();
       }
-    }
-
-    // =========================================================================
-    // [QBank] 영어 문제 DB
-    // =========================================================================
-    match /questions/{questionId} {
-      allow read: if isAuthorized();
-      allow create, update: if isAuthorized() && withinFieldLimit(35);
-      allow delete: if isAuthorized();
-    }
-
-    match /exams/{examId} {
-      allow read: if isAuthorized();
-      allow create, update: if isAuthorized() && withinFieldLimit(15);
-      allow delete: if isAuthorized();
-    }
-
-    match /books/{bookId} {
-      allow read: if isAuthorized();
-      allow create, update: if isAuthorized() && withinFieldLimit(15);
-      allow delete: if isAuthorized();
     }
 
     // =========================================================================
