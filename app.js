@@ -380,6 +380,7 @@ async function loadStudentList() {
             allStudents.push(data);
         });
         allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+        await promoteEnrollPending();
         buildSiblingMap();
         buildClassFilterSidebar();
         buildGradeFilterSidebar();
@@ -395,6 +396,26 @@ async function loadStudentList() {
 }
 
 window.refreshStudents = loadStudentList;
+
+async function promoteEnrollPending() {
+    const today = getTodayDateStr();
+    const pending = allStudents.filter(s =>
+        s.status === '등원예정' &&
+        (s.enrollments || []).some(e => e.start_date && e.start_date <= today)
+    );
+    if (pending.length === 0) return;
+    const batch = writeBatch(db);
+    for (const s of pending) {
+        batch.update(doc(db, 'students', s.id), { status: '재원', updated_at: serverTimestamp() });
+        s.status = '재원';
+    }
+    try {
+        await batch.commit();
+        console.log(`[promoteEnrollPending] ${pending.length}명 등원예정→재원 전환:`, pending.map(s => s.name));
+    } catch (err) {
+        console.error('[promoteEnrollPending] 전환 실패:', err);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // 로컬 캐시 업데이트 후 UI 갱신 (전체 재조회 없이)
