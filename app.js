@@ -381,6 +381,8 @@ async function loadStudentList() {
         });
         allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
         await promoteEnrollPending();
+        await handleScheduledLeaves();
+        await handleScheduledWithdrawals();
         buildSiblingMap();
         buildClassFilterSidebar();
         buildGradeFilterSidebar();
@@ -414,6 +416,88 @@ async function promoteEnrollPending() {
         console.log(`[promoteEnrollPending] ${pending.length}명 등원예정→재원 전환:`, pending.map(s => s.name));
     } catch (err) {
         console.error('[promoteEnrollPending] 전환 실패:', err);
+    }
+}
+
+// 휴원 날짜 기반 자동 전환: 시작일 전이면 재원 유지, 시작일 도래 시 휴원 전환
+async function handleScheduledLeaves() {
+    const today = getTodayDateStr();
+    const batch = writeBatch(db);
+    let count = 0;
+
+    for (const s of allStudents) {
+        // 1) 휴원 상태인데 pause_start_date가 아직 안 됐으면 → 재원으로 복원
+        if ((s.status === '실휴원' || s.status === '가휴원') && s.pause_start_date && s.pause_start_date > today) {
+            batch.update(doc(db, 'students', s.id), {
+                status: '재원',
+                scheduled_leave_status: s.status,
+                updated_at: serverTimestamp(),
+            });
+            s.scheduled_leave_status = s.status;
+            s.status = '재원';
+            count++;
+        }
+        // 2) 재원인데 예약된 휴원 시작일이 도래했으면 → 휴원으로 전환
+        else if (s.status === '재원' && s.scheduled_leave_status && s.pause_start_date && s.pause_start_date <= today) {
+            const leaveStatus = s.scheduled_leave_status;
+            batch.update(doc(db, 'students', s.id), {
+                status: leaveStatus,
+                scheduled_leave_status: deleteField(),
+                updated_at: serverTimestamp(),
+            });
+            s.status = leaveStatus;
+            delete s.scheduled_leave_status;
+            count++;
+        }
+    }
+
+    if (count === 0) return;
+    try {
+        await batch.commit();
+        console.log(`[handleScheduledLeaves] ${count}명 휴원 상태 전환 완료`);
+    } catch (err) {
+        console.error('[handleScheduledLeaves] 전환 실패:', err);
+    }
+}
+
+// 퇴원 날짜 기반 자동 전환: 퇴원일 전이면 기존 상태 유지, 퇴원일 도래 시 퇴원 전환
+async function handleScheduledWithdrawals() {
+    const today = getTodayDateStr();
+    const batch = writeBatch(db);
+    let count = 0;
+
+    for (const s of allStudents) {
+        // 1) 퇴원 상태인데 withdrawal_date가 아직 안 됐으면 → 이전 상태로 복원
+        if (s.status === '퇴원' && s.withdrawal_date && s.withdrawal_date > today) {
+            const prevStatus = s.pre_withdrawal_status || '재원';
+            batch.update(doc(db, 'students', s.id), {
+                status: prevStatus,
+                pre_withdrawal_status: prevStatus,
+                updated_at: serverTimestamp(),
+            });
+            s.pre_withdrawal_status = prevStatus;
+            s.status = prevStatus;
+            count++;
+        }
+        // 2) 예약된 퇴원일이 도래했으면 → 퇴원으로 전환
+        else if (s.pre_withdrawal_status && s.withdrawal_date && s.withdrawal_date <= today) {
+            batch.update(doc(db, 'students', s.id), {
+                status: '퇴원',
+                pre_withdrawal_status: deleteField(),
+                updated_at: serverTimestamp(),
+            });
+            s.status = '퇴원';
+            delete s.pre_withdrawal_status;
+            count++;
+        }
+    }
+
+    if (count === 0) return;
+    try {
+        await batch.commit();
+        console.log(`[handleScheduledWithdrawals] ${count}명 퇴원 상태 전환 완료`);
+    } catch (err) {
+        console.error('[handleScheduledWithdrawals] 전환 실패:', err);
     }
 }
 
@@ -4779,14 +4863,27 @@ async function _finalizeLeaveRequest(r, studentId) {
             studentUpdate.name = `${baseName}${Math.max(...usedNumbers) + 1}`;
         }
     } else if (isWithdrawal) {
-        studentUpdate.status = '퇴원';
-        studentUpdate.withdrawal_date = r.withdrawal_date || getTodayDateStr();
+        const wDate = r.withdrawal_date || getTodayDateStr();
+        studentUpdate.withdrawal_date = wDate;
         studentUpdate.pause_start_date = deleteField();
         studentUpdate.pause_end_date = deleteField();
+        if (wDate > getTodayDateStr()) {
+            // 미래 퇴원일: 현재 상태 유지, 예약만 저장
+            studentUpdate.pre_withdrawal_status = beforeStatus || '재원';
+        } else {
+            studentUpdate.status = '퇴원';
+        }
     } else {
-        studentUpdate.status = r.leave_sub_type || '실휴원';
-        studentUpdate.pause_start_date = r.leave_start_date || '';
+        const leaveStart = r.leave_start_date || '';
+        const leaveType = r.leave_sub_type || '실휴원';
+        studentUpdate.pause_start_date = leaveStart;
         studentUpdate.pause_end_date = r.leave_end_date || '';
+        if (leaveStart > getTodayDateStr()) {
+            // 미래 휴원 시작일: 현재 상태 유지, 예약만 저장
+            studentUpdate.scheduled_leave_status = leaveType;
+        } else {
+            studentUpdate.status = leaveType;
+        }
     }
 
     const changeType = isReturn ? 'RETURN' : isWithdrawal ? 'WITHDRAW' : 'UPDATE';
@@ -4802,10 +4899,21 @@ async function _finalizeLeaveRequest(r, studentId) {
 
     const sIdx = allStudents.findIndex(s => s.id === studentId);
     if (sIdx >= 0) {
-        if (isReturn) { allStudents[sIdx].status = '재원'; delete allStudents[sIdx].pause_start_date; delete allStudents[sIdx].pause_end_date; }
-        else if (isWithdrawal) { allStudents[sIdx].status = '퇴원'; delete allStudents[sIdx].pause_start_date; delete allStudents[sIdx].pause_end_date; }
-        else { allStudents[sIdx].status = studentUpdate.status; allStudents[sIdx].pause_start_date = studentUpdate.pause_start_date; allStudents[sIdx].pause_end_date = studentUpdate.pause_end_date; }
-        window.selectStudent(studentId, allStudents[sIdx]);
+        const s = allStudents[sIdx];
+        if (isReturn) {
+            s.status = '재원'; delete s.pause_start_date; delete s.pause_end_date;
+        } else if (isWithdrawal) {
+            s.withdrawal_date = studentUpdate.withdrawal_date;
+            delete s.pause_start_date; delete s.pause_end_date;
+            if (studentUpdate.pre_withdrawal_status) { s.pre_withdrawal_status = studentUpdate.pre_withdrawal_status; }
+            else { s.status = '퇴원'; }
+        } else {
+            s.pause_start_date = studentUpdate.pause_start_date;
+            s.pause_end_date = studentUpdate.pause_end_date;
+            if (studentUpdate.scheduled_leave_status) { s.scheduled_leave_status = studentUpdate.scheduled_leave_status; }
+            else { s.status = studentUpdate.status; }
+        }
+        window.selectStudent(studentId, s);
     }
 }
 
@@ -5197,7 +5305,7 @@ window.saveNaesinSchedule = async () => {
                 const newEnrollment = {
                     class_type: '내신',
                     day: w.days,
-                    time: w.time,
+                    start_time: w.time,
                     start_date: startDate,
                     end_date: endDate,
                     class_number: '',
