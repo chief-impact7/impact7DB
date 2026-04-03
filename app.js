@@ -5794,14 +5794,24 @@ function renderLevelSemesterSettings(level) {
                 <span class="semester-setting-label">
                     ${year} ${name}${isCurrent ? '<span class="current-badge">현재</span>' : ''}
                 </span>
-                <input type="date" class="semester-setting-date" value="${setting.start_date || ''}"
-                    onchange="window.saveLevelSemesterDate('${key}', this.value)">
+                <input type="text" class="semester-setting-date" value="${setting.start_date || ''}"
+                    placeholder="YYYY-MM-DD" maxlength="10"
+                    oninput="window.autoFormatDateInput(this)"
+                    onblur="window.saveLevelSemesterDate('${key}', this.value)"
+                    onkeydown="if(event.key==='Enter'){window.saveLevelSemesterDate('${key}',this.value);this.blur();}">
             </div>`;
         })
     );
 
     body.innerHTML = rows.length ? rows.join('') : '<p style="color:var(--text-sec);font-size:13px;">설정 없음</p>';
 }
+
+window.autoFormatDateInput = function(el) {
+    let v = el.value.replace(/\D/g, '').substring(0, 8);
+    if (v.length > 4) v = v.substring(0, 4) + '-' + v.substring(4);
+    if (v.length > 7) v = v.substring(0, 7) + '-' + v.substring(7);
+    el.value = v;
+};
 
 window.saveLevelSemesterDate = async (key, startDate) => {
     try {
