@@ -5785,11 +5785,21 @@ function renderLevelSemesterSettings(level) {
     const currentYear = new Date().getFullYear();
     const years = [currentYear - 1, currentYear, currentYear + 1];
 
+    // 레벨별 현재 학기 계산
+    const today = getTodayDateStr();
+    const levelEntries = Object.entries(semesterSettings)
+        .filter(([k, v]) => k.startsWith(`${level}-`) && v.start_date)
+        .sort((a, b) => a[1].start_date.localeCompare(b[1].start_date));
+    let currentLevelSemester = null;
+    for (const [k, { start_date }] of levelEntries) {
+        if (start_date <= today) currentLevelSemester = k;
+    }
+
     const rows = years.flatMap(year =>
         semNames.map(name => {
             const key = `${level}-${year}-${name}`;
             const setting = semesterSettings[key] || {};
-            const isCurrent = key === currentSemester;
+            const isCurrent = key === currentLevelSemester;
             return `<div class="semester-setting-row">
                 <span class="semester-setting-label">
                     ${year} ${name}${isCurrent ? '<span class="current-badge">현재</span>' : ''}

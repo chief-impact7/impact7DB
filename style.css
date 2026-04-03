@@ -2790,6 +2790,27 @@ summary.menu-l2 .material-symbols-outlined {
     max-width: 480px;
     width: 100%;
 }
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0 16px;
+}
+.btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    cursor: pointer;
+    color: var(--text-sec, #666);
+    transition: background 0.15s;
+}
+.btn-icon:hover { background: var(--hover-bg, rgba(0,0,0,0.06)); }
+.btn-icon .material-symbols-outlined { font-size: 20px; }
 .admin-settings-tabs {
     display: flex;
     border-bottom: 1px solid var(--border, #e0e0e0);
