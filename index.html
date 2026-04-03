@@ -215,6 +215,12 @@
                     <span class="material-symbols-outlined">bar_chart</span>Daily Stats
                 </div>
             </div>
+
+            <!-- 설정 버튼 (좌측 하단) -->
+            <div class="sidebar-settings-btn" onclick="window.openAdminSettingsModal()">
+                <span class="material-symbols-outlined">settings</span>
+                설정
+            </div>
         </nav>
 
         <!-- Main Content -->
@@ -846,7 +852,7 @@
         </div>
     </div>
 
-    <!-- 학기 시작일 설정 모달 -->
+    <!-- 학기 시작일 설정 모달 (구형 - 학기 필터 옆 버튼용, 유지) -->
     <div id="semester-settings-modal" class="modal-overlay" onclick="window.closeSemesterSettingsModal(event)" style="display:none;">
         <div class="modal-card" style="max-width:400px;">
             <div class="modal-header">
@@ -856,6 +862,44 @@
                 </button>
             </div>
             <div class="modal-body" id="semester-settings-body"></div>
+        </div>
+    </div>
+
+    <!-- 관리자 설정 모달 -->
+    <div id="admin-settings-modal" class="modal-overlay" onclick="window.closeAdminSettingsModal(event)" style="display:none;">
+        <div class="modal-card admin-settings-card">
+            <div class="modal-header">
+                <h3 style="margin:0;font-size:16px;">설정</h3>
+                <button class="btn-icon" onclick="window.closeAdminSettingsModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="admin-settings-tabs">
+                <button class="admin-tab active" onclick="window.switchAdminTab('semester')">학기 설정</button>
+                <button class="admin-tab" onclick="window.switchAdminTab('promotion')">자동 승급</button>
+            </div>
+            <div class="modal-body" style="padding:0;">
+                <!-- 학기 설정 탭 -->
+                <div id="admin-tab-semester" class="admin-tab-panel">
+                    <div class="admin-level-tabs">
+                        <button class="admin-level-tab active" onclick="window.switchLevelTab('초등')">초등</button>
+                        <button class="admin-level-tab" onclick="window.switchLevelTab('중등')">중등</button>
+                        <button class="admin-level-tab" onclick="window.switchLevelTab('고등')">고등</button>
+                    </div>
+                    <div id="admin-semester-body" style="padding:16px;"></div>
+                </div>
+                <!-- 자동 승급 탭 -->
+                <div id="admin-tab-promotion" class="admin-tab-panel" style="display:none;">
+                    <div style="padding:16px;">
+                        <p class="admin-promo-desc">매년 2월 둘째주, 전체 학생의 학년을 일괄 승급합니다.<br>승급 전 미리보기를 확인하세요.</p>
+                        <div id="admin-promo-preview" style="margin:12px 0;"></div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn-secondary" onclick="window.loadPromotionPreview()">미리보기</button>
+                            <button class="btn-primary" id="admin-promo-run-btn" onclick="window.runPromotion()" disabled>승급 실행</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

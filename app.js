@@ -1020,6 +1020,13 @@ window.handleSemesterFilter = (val) => {
     applyFilterAndRender();
 };
 
+// ─── 학부별 학기 정의 ──────────────────────────────────────────────────────
+const LEVEL_SEMESTERS = {
+    '초등': ['winter', 'spring1', 'spring2', 'summer', 'autumn'],
+    '중등': ['winter', 'spring', 'summer', 'autumn'],
+    '고등': ['winter', 'spring', 'autumn'],
+};
+
 // ─── 학기 설정 (시작일) ──────────────────────────────────────────────────
 async function loadSemesterSettings() {
     const snap = await getDocs(collection(db, 'semester_settings'));
@@ -5743,3 +5750,158 @@ window.saveGrammarSpecial = async () => {
     }
 };
 
+
+// ─── 관리자 설정 모달 ────────────────────────────────────────────────────────
+let _adminCurrentLevel = '초등';
+
+window.openAdminSettingsModal = () => {
+    document.getElementById('admin-settings-modal').style.display = 'flex';
+    window.switchAdminTab('semester');
+    window.switchLevelTab('초등');
+};
+
+window.closeAdminSettingsModal = (e) => {
+    if (e && e.target !== document.getElementById('admin-settings-modal')) return;
+    document.getElementById('admin-settings-modal').style.display = 'none';
+};
+
+window.switchAdminTab = (tab) => {
+    document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.admin-tab-panel').forEach(p => p.style.display = 'none');
+    document.querySelector(`.admin-tab[onclick*="${tab}"]`).classList.add('active');
+    document.getElementById(`admin-tab-${tab}`).style.display = '';
+};
+
+window.switchLevelTab = (level) => {
+    _adminCurrentLevel = level;
+    document.querySelectorAll('.admin-level-tab').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.admin-level-tab[onclick*="'${level}'"]`).classList.add('active');
+    renderLevelSemesterSettings(level);
+};
+
+function renderLevelSemesterSettings(level) {
+    const body = document.getElementById('admin-semester-body');
+    const semNames = LEVEL_SEMESTERS[level] || [];
+    const currentYear = new Date().getFullYear();
+    const years = [currentYear - 1, currentYear, currentYear + 1];
+
+    const rows = years.flatMap(year =>
+        semNames.map(name => {
+            const key = `${level}-${year}-${name}`;
+            const setting = semesterSettings[key] || {};
+            const isCurrent = key === currentSemester;
+            return `<div class="semester-setting-row">
+                <span class="semester-setting-label">
+                    ${year} ${name}${isCurrent ? '<span class="current-badge">현재</span>' : ''}
+                </span>
+                <input type="date" class="semester-setting-date" value="${setting.start_date || ''}"
+                    onchange="window.saveLevelSemesterDate('${key}', this.value)">
+            </div>`;
+        })
+    );
+
+    body.innerHTML = rows.length ? rows.join('') : '<p style="color:var(--text-sec);font-size:13px;">설정 없음</p>';
+}
+
+window.saveLevelSemesterDate = async (key, startDate) => {
+    try {
+        if (startDate) {
+            await setDoc(doc(db, 'semester_settings', key), { start_date: startDate });
+            semesterSettings[key] = { start_date: startDate };
+        } else {
+            await deleteDoc(doc(db, 'semester_settings', key));
+            delete semesterSettings[key];
+        }
+        getCurrentSemester();
+        updateReadonlyBanner();
+        renderLevelSemesterSettings(_adminCurrentLevel);
+    } catch (err) {
+        console.error('학기 시작일 저장 실패:', err);
+        alert('저장 실패: ' + err.message);
+    }
+};
+
+// ─── 자동 승급 ───────────────────────────────────────────────────────────────
+const LEVEL_ORDER = ['초등', '중등', '고등'];
+const GRADE_LEVEL_MAP = { 7: '중등', 10: '고등' };
+
+function getPromotedStudent(s) {
+    const curGrade = parseInt(s.grade, 10);
+    if (isNaN(curGrade) || s.status === '퇴원') return null;
+    const newGrade = curGrade + 1;
+    const newLevel = GRADE_LEVEL_MAP[newGrade] || s.level;
+    const levelChanged = newLevel !== s.level;
+    return { ...s, grade: String(newGrade), level: newLevel, _levelChanged: levelChanged };
+}
+
+window.loadPromotionPreview = () => {
+    const preview = document.getElementById('admin-promo-preview');
+    const runBtn = document.getElementById('admin-promo-run-btn');
+    const targets = allStudents.filter(s => s.status !== '퇴원' && s.grade);
+    const levelChanges = targets.filter(s => {
+        const p = getPromotedStudent(s);
+        return p && p._levelChanged;
+    });
+    const total = targets.length;
+
+    preview.innerHTML = `
+        <div class="promo-preview-box">
+            <div class="promo-stat">전체 대상: <strong>${total}명</strong></div>
+            <div class="promo-stat">학부 전환: <strong>${levelChanges.length}명</strong>
+                ${levelChanges.length > 0 ? `<span class="promo-detail">(${levelChanges.map(s => `${s.name} ${s.level}→${getPromotedStudent(s).level}`).slice(0,5).join(', ')}${levelChanges.length > 5 ? ' 외 ' + (levelChanges.length-5) + '명' : ''})</span>` : ''}
+            </div>
+        </div>`;
+    runBtn.disabled = false;
+};
+
+window.runPromotion = async () => {
+    const runBtn = document.getElementById('admin-promo-run-btn');
+    if (!confirm('전체 재원생의 학년을 1 승급합니다. 계속하시겠습니까?')) return;
+    runBtn.disabled = true;
+    runBtn.textContent = '처리 중...';
+    try {
+        const targets = allStudents.filter(s => s.status !== '퇴원' && s.grade);
+        const BATCH_SIZE = 400;
+        for (let i = 0; i < targets.length; i += BATCH_SIZE) {
+            const chunk = targets.slice(i, i + BATCH_SIZE);
+            const b = writeBatch(db);
+            for (const s of chunk) {
+                const promoted = getPromotedStudent(s);
+                if (!promoted) continue;
+                const updates = { grade: promoted.grade, level: promoted.level };
+                if (promoted._levelChanged) {
+                    // 학교 이력 보존
+                    const historyEntry = { school: s.school || '', level: s.level, grade: String(curGrade), year: new Date().getFullYear() - 1 };
+                    const existing = s.school_history || [];
+                    updates.school_history = [...existing, historyEntry];
+                }
+                b.update(doc(db, 'students', s.id), updates);
+                // history log
+                const logRef = doc(collection(db, 'history_logs'));
+                b.set(logRef, {
+                    doc_id: s.id,
+                    change_type: 'PROMOTION',
+                    before: `${s.level} ${s.grade}학년`,
+                    after: `${promoted.level} ${promoted.grade}학년`,
+                    google_login_id: currentUser?.email || '—',
+                    timestamp: serverTimestamp(),
+                });
+            }
+            await b.commit();
+        }
+        // 로컬 업데이트
+        allStudents.forEach(s => {
+            const p = getPromotedStudent(s);
+            if (p) { s.grade = p.grade; s.level = p.level; }
+        });
+        applyFilterAndRender();
+        alert('승급 완료!');
+        document.getElementById('admin-promo-preview').innerHTML = '';
+        runBtn.textContent = '승급 실행';
+    } catch (err) {
+        console.error('승급 실패:', err);
+        alert('승급 실패: ' + err.message);
+        runBtn.disabled = false;
+        runBtn.textContent = '승급 실행';
+    }
+};
