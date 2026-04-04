@@ -5847,7 +5847,7 @@ window.saveLevelSemesterDate = async (key, startDate) => {
 
 function getPromotedStudent(s) {
     const curGrade = parseInt(s.grade, 10);
-    if (isNaN(curGrade) || s.status === '퇴원') return null;
+    if (isNaN(curGrade)) return null;
     const maxGrade = LEVEL_MAX_GRADE[s.level];
     if (maxGrade && curGrade >= maxGrade && NEXT_LEVEL[s.level]) {
         return { grade: '1', level: NEXT_LEVEL[s.level], _levelChanged: true };
@@ -5887,7 +5887,7 @@ window.runPromotion = async () => {
     runBtn.textContent = '처리 중...';
     try {
         const prevYear = new Date().getFullYear() - 1;
-        const targets = allStudents.filter(s => s.status !== '퇴원' && s.grade);
+        const targets = allStudents.filter(s => s.grade);
         const promotions = targets.map(s => ({ s, p: getPromotedStudent(s) })).filter(r => r.p);
         const BATCH_SIZE = 400;
         for (let i = 0; i < promotions.length; i += BATCH_SIZE) {
