@@ -62,7 +62,8 @@ service cloud.firestore {
           'return_consult_done', 'return_consult_note',
           'return_consult_done_by', 'return_consult_done_at',
           'updated_at', 'updated_by', 'withdrawal_date',
-          'scheduled_leave_status', 'pre_withdrawal_status'
+          'scheduled_leave_status', 'pre_withdrawal_status',
+          'school_history'
         ];
         return request.resource.data.keys().hasOnly(allowed);
       }
@@ -120,7 +121,7 @@ service cloud.firestore {
           && data.doc_id is string
           && data.doc_id.size() > 0
           && data.change_type is string
-          && data.change_type in ['ENROLL', 'UPDATE', 'WITHDRAW', 'DELETE', 'RETURN']
+          && data.change_type in ['ENROLL', 'UPDATE', 'WITHDRAW', 'DELETE', 'RETURN', 'PROMOTION']
           && data.before is string
           && data.after is string
           && data.google_login_id is string

@@ -32,6 +32,10 @@ const SEMESTER_NAMES = {
 };
 const DEFAULT_SEMESTER_NAMES = ['Winter', 'Spring', 'Summer', 'Autumn'];
 
+// 학부별 최대 학년 및 전환 규칙
+const LEVEL_MAX_GRADE = { '초등': 6, '중등': 3, '고등': 3 };
+const NEXT_LEVEL = { '초등': '중등', '중등': '고등' };
+
 // 구글시트 내보내기/템플릿 공용 헤더
 const STUDENT_SHEET_HEADERS = [
     'name', 'level', 'school', 'grade', 'student_phone',
@@ -206,7 +210,9 @@ const abbreviateSchool = (s) => {
         .trim();
     const level = (s.level || '');
     const levelShort = level === '초등' ? '초' : level === '중등' ? '중' : level === '고등' ? '고' : level;
-    const grade = s.grade ? `${s.grade}` : '';
+    const gradeNum = parseInt(s.grade, 10);
+    const maxGrade = LEVEL_MAX_GRADE[level];
+    const grade = s.grade ? (!NEXT_LEVEL[level] && maxGrade && gradeNum > maxGrade ? `${maxGrade}+` : `${s.grade}`) : '';
     return `${school}${levelShort}${grade}`.trim() || '—';
 };
 
@@ -4106,10 +4112,6 @@ window.applyBulkPromotion = async () => {
     if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
     const newSchool = document.getElementById('bulk-promote-school').value.trim();
 
-    // 승격 규칙: 초등 max 6학년, 중등 max 3학년, 고등 max 3학년
-    const MAX_GRADE = { '초등': 6, '중등': 3, '고등': 3 };
-    const NEXT_LEVEL = { '초등': '중등', '중등': '고등' };
-
     const ids = [...selectedStudentIds];
     const changes = [];
     const skipped = [];
@@ -4122,7 +4124,7 @@ window.applyBulkPromotion = async () => {
         const oldSchool = student.school || '';
         if (!oldLevel || !oldGrade) { skipped.push(`${student.name} (학부/학년 정보 없음)`); return; }
 
-        const maxG = MAX_GRADE[oldLevel] || 6;
+        const maxG = LEVEL_MAX_GRADE[oldLevel] || 6;
         let afterLevel = oldLevel;
         let afterGrade = oldGrade + 1;
         let afterSchool = oldSchool;
@@ -5842,33 +5844,37 @@ window.saveLevelSemesterDate = async (key, startDate) => {
 };
 
 // ─── 자동 승급 ───────────────────────────────────────────────────────────────
-const LEVEL_ORDER = ['초등', '중등', '고등'];
-const GRADE_LEVEL_MAP = { 7: '중등', 10: '고등' };
 
 function getPromotedStudent(s) {
     const curGrade = parseInt(s.grade, 10);
     if (isNaN(curGrade) || s.status === '퇴원') return null;
-    const newGrade = curGrade + 1;
-    const newLevel = GRADE_LEVEL_MAP[newGrade] || s.level;
-    const levelChanged = newLevel !== s.level;
-    return { ...s, grade: String(newGrade), level: newLevel, _levelChanged: levelChanged };
+    const maxGrade = LEVEL_MAX_GRADE[s.level];
+    if (maxGrade && curGrade >= maxGrade && NEXT_LEVEL[s.level]) {
+        return { grade: '1', level: NEXT_LEVEL[s.level], _levelChanged: true };
+    }
+    if (!NEXT_LEVEL[s.level] && maxGrade && curGrade >= maxGrade) return null;
+    return { grade: String(curGrade + 1), level: s.level, _levelChanged: false };
+}
+
+function buildLevelChangeHistory(s, year) {
+    return {
+        school_history: [...(s.school_history || []), { school: s.school || '', level: s.level, grade: s.grade, year }],
+        school: '',
+    };
 }
 
 window.loadPromotionPreview = () => {
     const preview = document.getElementById('admin-promo-preview');
     const runBtn = document.getElementById('admin-promo-run-btn');
     const targets = allStudents.filter(s => s.status !== '퇴원' && s.grade);
-    const levelChanges = targets.filter(s => {
-        const p = getPromotedStudent(s);
-        return p && p._levelChanged;
-    });
-    const total = targets.length;
+    const results = targets.map(s => ({ s, p: getPromotedStudent(s) })).filter(r => r.p);
+    const levelChanges = results.filter(r => r.p._levelChanged);
 
     preview.innerHTML = `
         <div class="promo-preview-box">
-            <div class="promo-stat">전체 대상: <strong>${total}명</strong></div>
+            <div class="promo-stat">전체 대상: <strong>${results.length}명</strong></div>
             <div class="promo-stat">학부 전환: <strong>${levelChanges.length}명</strong>
-                ${levelChanges.length > 0 ? `<span class="promo-detail">(${levelChanges.map(s => `${s.name} ${s.level}→${getPromotedStudent(s).level}`).slice(0,5).join(', ')}${levelChanges.length > 5 ? ' 외 ' + (levelChanges.length-5) + '명' : ''})</span>` : ''}
+                ${levelChanges.length > 0 ? `<span class="promo-detail">(${levelChanges.map(r => `${r.s.name} ${r.s.level}→${r.p.level}`).slice(0,5).join(', ')}${levelChanges.length > 5 ? ' 외 ' + (levelChanges.length-5) + '명' : ''})</span>` : ''}
             </div>
         </div>`;
     runBtn.disabled = false;
@@ -5880,40 +5886,34 @@ window.runPromotion = async () => {
     runBtn.disabled = true;
     runBtn.textContent = '처리 중...';
     try {
+        const prevYear = new Date().getFullYear() - 1;
         const targets = allStudents.filter(s => s.status !== '퇴원' && s.grade);
+        const promotions = targets.map(s => ({ s, p: getPromotedStudent(s) })).filter(r => r.p);
         const BATCH_SIZE = 400;
-        for (let i = 0; i < targets.length; i += BATCH_SIZE) {
-            const chunk = targets.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < promotions.length; i += BATCH_SIZE) {
+            const chunk = promotions.slice(i, i + BATCH_SIZE);
             const b = writeBatch(db);
-            for (const s of chunk) {
-                const promoted = getPromotedStudent(s);
-                if (!promoted) continue;
-                const updates = { grade: promoted.grade, level: promoted.level };
-                if (promoted._levelChanged) {
-                    // 학교 이력 보존
-                    const historyEntry = { school: s.school || '', level: s.level, grade: String(curGrade), year: new Date().getFullYear() - 1 };
-                    const existing = s.school_history || [];
-                    updates.school_history = [...existing, historyEntry];
-                }
+            for (const { s, p } of chunk) {
+                const updates = { grade: p.grade, level: p.level };
+                if (p._levelChanged) Object.assign(updates, buildLevelChangeHistory(s, prevYear));
                 b.update(doc(db, 'students', s.id), updates);
-                // history log
-                const logRef = doc(collection(db, 'history_logs'));
-                b.set(logRef, {
-                    doc_id: s.id,
-                    change_type: 'PROMOTION',
-                    before: `${s.level} ${s.grade}학년`,
-                    after: `${promoted.level} ${promoted.grade}학년`,
-                    google_login_id: currentUser?.email || '—',
-                    timestamp: serverTimestamp(),
+                b.set(doc(collection(db, 'history_logs')), {
+                    doc_id: s.id, change_type: 'PROMOTION',
+                    before: `${s.level} ${s.grade}학년`, after: `${p.level} ${p.grade}학년`,
+                    google_login_id: currentUser?.email || '—', timestamp: serverTimestamp(),
                 });
             }
             await b.commit();
         }
-        // 로컬 업데이트
-        allStudents.forEach(s => {
-            const p = getPromotedStudent(s);
-            if (p) { s.grade = p.grade; s.level = p.level; }
-        });
+        for (const { s, p } of promotions) {
+            if (p._levelChanged) {
+                const hist = buildLevelChangeHistory(s, prevYear);
+                s.school_history = hist.school_history;
+                s.school = '';
+            }
+            s.grade = p.grade;
+            s.level = p.level;
+        }
         applyFilterAndRender();
         alert('승급 완료!');
         document.getElementById('admin-promo-preview').innerHTML = '';
