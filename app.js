@@ -99,6 +99,52 @@ const escAttr = (str) => (str ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot
 // enrollment 코드 = level_symbol + class_number (예: HA + 101 = HA101)
 const enrollmentCode = (e) => `${e.level_symbol || ''}${e.class_number || ''}`;
 
+// 두 enrollment의 시기(start_date~end_date)가 겹치는지 확인 — end_date 비어있으면 무한대 간주
+function _enrollmentsTimeOverlap(a, b) {
+    const aStart = a.start_date || '';
+    const aEnd = a.end_date || '9999-12-31';
+    const bStart = b.start_date || '';
+    const bEnd = b.end_date || '9999-12-31';
+    return aStart <= bEnd && bStart <= aEnd;
+}
+
+// 같은 코드 + 시기 겹침인 enrollment 쌍을 list 안에서 모두 찾기
+function findEnrollmentConflicts(list) {
+    const conflicts = [];
+    for (let i = 0; i < list.length; i++) {
+        const a = list[i];
+        const codeA = enrollmentCode(a);
+        if (!codeA) continue;
+        for (let j = i + 1; j < list.length; j++) {
+            const b = list[j];
+            if (enrollmentCode(b) === codeA && _enrollmentsTimeOverlap(a, b)) {
+                conflicts.push([a, b]);
+            }
+        }
+    }
+    return conflicts;
+}
+
+function _formatEnrollmentForAlert(e) {
+    const days = (e.day || []).join('·') || '요일미정';
+    const range = e.end_date ? `${e.start_date || '?'} ~ ${e.end_date}` : `${e.start_date || '?'} ~`;
+    return `${e.class_type || '정규'} ${enrollmentCode(e)} (${days}, ${range})`;
+}
+
+// 충돌 발견 시 무조건 차단 — 통과면 true, 차단이면 false
+function blockOnEnrollmentConflicts(conflicts) {
+    if (conflicts.length === 0) return true;
+    const lines = conflicts.map(([a, b]) =>
+        `• ${_formatEnrollmentForAlert(a)}\n  ${_formatEnrollmentForAlert(b)}`
+    );
+    alert(
+        `⛔ 같은 시기에 동일한 반명이 ${conflicts.length}건 있습니다.\n\n` +
+        `${lines.join('\n\n')}\n\n` +
+        `정규반과 특강반의 이름이 같으면 안 됩니다.\n저장할 수 없습니다.`
+    );
+    return false;
+}
+
 // 모든 enrollment의 코드 목록
 const allClassCodes = (s) => (s.enrollments || []).map(e => enrollmentCode(e)).filter(Boolean);
 
@@ -771,27 +817,25 @@ function updateListItemIcons(studentId) {
 // On Leave 카운트 업데이트
 // ---------------------------------------------------------------------------
 function updateLeaveCountBadges() {
-    const today = new Date(); today.setHours(0,0,0,0);
-    const in10 = new Date(today); in10.setDate(in10.getDate() + 10);
-
-    const onLeave = allStudents.filter(s => s.status === '실휴원' || s.status === '가휴원');
-    const expected = onLeave.filter(s => {
-        const end = s.pause_end_date ? new Date(s.pause_end_date) : null;
-        if (!end) return false; end.setHours(0,0,0,0);
-        return end >= today && end <= in10;
-    });
-    const nonReturn = onLeave.filter(s => {
-        const end = s.pause_end_date ? new Date(s.pause_end_date) : null;
-        if (!end) return false; end.setHours(0,0,0,0);
-        return end < today;
-    });
-
-    const el1 = document.getElementById('on-leave-count');
-    const el2 = document.getElementById('on-leave-expected-count');
-    const el3 = document.getElementById('on-leave-nonreturn-count');
-    if (el1) el1.textContent = onLeave.length || '';
-    if (el2) el2.textContent = expected.length || '';
-    if (el3) el3.textContent = nonReturn.length || '';
+    const today = getTodayDateStr();
+    let onLeave = 0, nonReturn = 0, expActual = 0, expPending = 0;
+    for (const s of allStudents) {
+        if (!LEAVE_STATUSES.includes(s.status)) continue;
+        onLeave++;
+        if (s.pause_end_date && s.pause_end_date < today) {
+            nonReturn++;
+        } else if (s.status === '실휴원') {
+            expActual++;
+        } else {
+            expPending++;
+        }
+    }
+    const setText = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n || ''; };
+    setText('on-leave-count', onLeave);
+    setText('on-leave-expected-count', onLeave - nonReturn);
+    setText('on-leave-nonreturn-count', nonReturn);
+    setText('lv-exp-actual', expActual);
+    setText('lv-exp-pending', expPending);
 }
 
 // 동적 필터 사이드바 공용 빌더
@@ -922,28 +966,18 @@ function applyFilterAndRender() {
     if (activeFilters.semester && !activeFilters.leave) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
     if (activeFilters.leave) {
         const lv = activeFilters.leave;
-        const today = new Date(); today.setHours(0,0,0,0);
-        const in10 = new Date(today); in10.setDate(in10.getDate() + 10);
-        const isOnLeave = (s) => s.status === '실휴원' || s.status === '가휴원';
-        const endDate = (s) => { const d = s.pause_end_date ? new Date(s.pause_end_date) : null; if (d) d.setHours(0,0,0,0); return d; };
-        const isExpected = (s) => { const e = endDate(s); return e && e >= today && e <= in10; };
-        const isNonReturn = (s) => { const e = endDate(s); return e && e < today; };
+        const today = getTodayDateStr();
+        const isOnLeave = (s) => LEAVE_STATUSES.includes(s.status);
+        const isNonReturn = (s) => s.pause_end_date && s.pause_end_date < today;
+        const isExpected = (s) => isOnLeave(s) && !isNonReturn(s);
 
-        if (lv === 'all') {
-            filtered = filtered.filter(isOnLeave);
-        } else if (lv === 'expected') {
-            filtered = filtered.filter(s => isOnLeave(s) && isExpected(s));
-        } else if (lv === 'expected_actual') {
-            filtered = filtered.filter(s => s.status === '실휴원' && isExpected(s));
-        } else if (lv === 'expected_pending') {
-            filtered = filtered.filter(s => s.status === '가휴원' && isExpected(s));
-        } else if (lv === 'non_return') {
-            filtered = filtered.filter(s => isOnLeave(s) && isNonReturn(s));
-        } else if (lv === 'nonreturn_actual') {
-            filtered = filtered.filter(s => s.status === '실휴원' && isNonReturn(s));
-        } else if (lv === 'nonreturn_pending') {
-            filtered = filtered.filter(s => s.status === '가휴원' && isNonReturn(s));
-        }
+        if (lv === 'all')                    filtered = filtered.filter(isOnLeave);
+        else if (lv === 'expected')          filtered = filtered.filter(isExpected);
+        else if (lv === 'expected_actual')   filtered = filtered.filter(s => s.status === '실휴원' && isExpected(s));
+        else if (lv === 'expected_pending')  filtered = filtered.filter(s => s.status === '가휴원' && isExpected(s));
+        else if (lv === 'non_return')        filtered = filtered.filter(s => isOnLeave(s) && isNonReturn(s));
+        else if (lv === 'nonreturn_actual')  filtered = filtered.filter(s => s.status === '실휴원' && isNonReturn(s));
+        else if (lv === 'nonreturn_pending') filtered = filtered.filter(s => s.status === '가휴원' && isNonReturn(s));
     }
 
     const rawTerm = document.getElementById('studentSearchInput')?.value.trim() || '';
@@ -1164,9 +1198,47 @@ function renderStudentList(students, contactResults) {
         return;
     }
 
+    // Expected 필터 활성 시: 종료일 기준 섹션 헤더로 분리 렌더
+    const EXPECTED_LEAVE_FILTERS = ['expected', 'expected_actual', 'expected_pending'];
+    if (EXPECTED_LEAVE_FILTERS.includes(activeFilters.leave)) {
+        renderExpectedLeaveList(students, listContainer);
+        if (hasContacts) renderContactResults(contactResults, listContainer);
+        return;
+    }
+
     students.forEach(s => renderStudentItem(s, listContainer));
 
     if (hasContacts) renderContactResults(contactResults, listContainer);
+}
+
+// Expected 화면: "10일 이내 / 10일 이후 / 복귀일 미설정" 섹션으로 그룹핑
+function renderExpectedLeaveList(students, container) {
+    const today = getTodayDateStr();
+    const _in10 = new Date(today + 'T00:00:00+09:00'); _in10.setDate(_in10.getDate() + 10);
+    const in10 = toDateStrKST(_in10);
+
+    const within = [], after = [], undated = [];
+    for (const s of students) {
+        const e = s.pause_end_date;
+        if (!e) undated.push(s);
+        else if (e <= in10) within.push(s);
+        else after.push(s);
+    }
+    const cmpEnd = (a, b) => (a.pause_end_date || '').localeCompare(b.pause_end_date || '');
+    within.sort(cmpEnd);
+    after.sort(cmpEnd);
+
+    const appendSection = (label, list) => {
+        if (list.length === 0) return;
+        const header = document.createElement('div');
+        header.className = 'group-header';
+        header.innerHTML = `<span class="group-label">${esc(label)}</span><span class="group-count">${list.length}명</span>`;
+        container.appendChild(header);
+        list.forEach(s => renderStudentItem(s, container));
+    };
+    appendSection('10일 이내 복귀', within);
+    appendSection('10일 이후 복귀', after);
+    appendSection('복귀일 미설정', undated);
 }
 
 function renderStudentItem(s, container) {
@@ -1603,10 +1675,13 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
     if (targetElement) targetElement.classList.add('active');
 
-    // 휴퇴원요청서 카드 렌더링
+    // 휴퇴원요청서 카드 렌더링 (승인완료 포함, on-demand fetch)
     const lrCardContainer = document.getElementById('leave-request-card-container');
     if (lrCardContainer) {
-        lrCardContainer.innerHTML = renderLeaveRequestCard(studentId);
+        lrCardContainer.innerHTML = '';
+        renderLeaveRequestCard(studentId).then(html => {
+            if (currentStudentId === studentId) lrCardContainer.innerHTML = html;
+        });
     }
 
     // 메모 로드
@@ -1831,6 +1906,7 @@ window.submitNewStudent = async () => {
             return !editedSemesters.has(e.semester);
         });
         const updatedEnrollments = [...editedEnrollments, ...otherEnrollments];
+        if (!blockOnEnrollmentConflicts(findEnrollmentConflicts(updatedEnrollments))) return;
         const firstClassNumber = updatedEnrollments[0]?.class_number || '';
         const branch = branchFromClassNumber(firstClassNumber) || oldStudent.branch || '';
 
@@ -1890,6 +1966,7 @@ window.submitNewStudent = async () => {
 
         // 폼 enrollment + 추가 수업 목록 합치기
         const allEnrollments = [initialEnrollment, ..._pendingEnrollments];
+        if (!blockOnEnrollmentConflicts(findEnrollmentConflicts(allEnrollments))) return;
 
         studentData = {
             name,
@@ -2512,6 +2589,14 @@ window.saveEnrollment = async () => {
     const semester = form.enroll_semester?.value || '';
     const enrollment = { class_type: classType, level_symbol: levelSymbol, class_number: classNumber, day: days, start_date: startDate, semester };
     if (classType !== '정규' && endDate) enrollment.end_date = endDate;
+
+    // 동일 코드 + 시기 겹침 검사 (정규/특강 동일 반명 금지)
+    const existingForCheck =
+        modal?.dataset.context === 'form' ? _pendingEnrollments :
+        modal?.dataset.context === 'edit' ? _editEnrollments :
+        (allStudents.find(s => s.id === currentStudentId)?.enrollments || []);
+    const addConflicts = findEnrollmentConflicts([...existingForCheck, enrollment]);
+    if (!blockOnEnrollmentConflicts(addConflicts)) return;
 
     // 신규등록 폼에서 호출된 경우 → 로컬 배열에 추가
     if (modal?.dataset.context === 'form') {
@@ -4596,8 +4681,29 @@ function _renderLeaveRequestRow(r, studentId) {
         </div>`;
 }
 
-function renderLeaveRequestCard(studentId) {
-    const records = leaveRequests.filter(r => r.student_id === studentId);
+// 학생 상세 패널용: leave_requests 전체(승인완료 포함)를 student_id로 직접 조회
+async function fetchStudentLeaveRequests(studentId) {
+    try {
+        const snap = await getDocs(query(
+            collection(db, 'leave_requests'),
+            where('student_id', '==', studentId)
+        ));
+        const records = [];
+        const seen = new Set();
+        snap.forEach(d => { records.push({ docId: d.id, ...d.data() }); seen.add(d.id); });
+        // 보드 캐시(미처리분)에만 있는 건 머지 — 방금 생성/수정된 미커밋 변경 반영
+        for (const r of leaveRequests) {
+            if (r.student_id === studentId && !seen.has(r.docId)) records.push(r);
+        }
+        return records;
+    } catch (err) {
+        console.error('[FIRESTORE ERROR] fetchStudentLeaveRequests:', err);
+        return leaveRequests.filter(r => r.student_id === studentId);
+    }
+}
+
+async function renderLeaveRequestCard(studentId) {
+    const records = await fetchStudentLeaveRequests(studentId);
     const student = allStudents.find(s => s.id === studentId);
     const stuStatus = student?.status || '';
     const isWithdrawnStu = stuStatus === '퇴원';
