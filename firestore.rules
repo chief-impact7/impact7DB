@@ -29,6 +29,7 @@ service cloud.firestore {
     }
     function isDirector() { return isLoggedIn() && getUserRole() == 'director'; }
     function isStaff() { return isLoggedIn() && getUserRole() == 'staff'; }
+    function isShortTerm() { return isLoggedIn() && getUserRole() == 'shortterm'; }
 
     // =========================================================================
     // [공통] 학생 마스터 컬렉션
@@ -37,15 +38,20 @@ service cloud.firestore {
 
       function hasRequiredStudentFields() {
         let data = request.resource.data;
-        return data.keys().hasAll(['name', 'parent_phone_1', 'branch', 'status', 'enrollments'])
+        // 비원생 신규 생성 허용 — status/phone/branch 없이도 create 가능
+        return data.keys().hasAll(['name', 'enrollments'])
           && data.name is string
           && data.name.size() > 0
-          && data.parent_phone_1 is string
-          && data.parent_phone_1.size() > 0
-          && data.branch is string
-          && data.status is string
-          && data.status in ['등원예정', '재원', '실휴원', '가휴원', '퇴원']
-          && data.enrollments is list;
+          && data.enrollments is list
+          && (!data.keys().hasAny(['status']) || (
+                data.status is string
+                && data.status in ['등원예정', '재원', '실휴원', '가휴원', '퇴원']
+             ))
+          && (!data.keys().hasAny(['parent_phone_1']) || (
+                data.parent_phone_1 is string
+                && data.parent_phone_1.size() > 0
+             ))
+          && (!data.keys().hasAny(['branch']) || data.branch is string);
       }
 
       function hasOnlyAllowedStudentFields() {
@@ -53,7 +59,7 @@ service cloud.firestore {
           'name', 'level', 'school', 'grade',
           'student_phone', 'parent_phone_1', 'parent_phone_2',
           'guardian_name_1', 'guardian_name_2',
-          'branch', 'status', 'enrollments',
+          'branch', 'status', 'status2', 'enrollments',
           'pause_start_date', 'pause_end_date',
           'day', 'class_type', 'level_code', 'level_symbol', 'class_number',
           'start_date', 'special_start_date', 'special_end_date',
@@ -61,9 +67,7 @@ service cloud.firestore {
           'has_memo', 'memo',
           'return_consult_done', 'return_consult_note',
           'return_consult_done_by', 'return_consult_done_at',
-          'updated_at', 'updated_by', 'withdrawal_date',
-          'scheduled_leave_status', 'pre_withdrawal_status',
-          'school_history'
+          'updated_at', 'updated_by', 'withdrawal_date'
         ];
         return request.resource.data.keys().hasOnly(allowed);
       }
@@ -79,7 +83,8 @@ service cloud.firestore {
       allow update: if isAuthorized()
         && hasRequiredStudentFields()
         && hasOnlyAllowedStudentFields()
-        && withinFieldLimit(30);
+        && withinFieldLimit(30)
+        && (!resource.data.keys().hasAny(['status']) || request.resource.data.keys().hasAny(['status']));
 
       allow delete: if false;  // 삭제 차단 — soft-delete(status='퇴원')로 대체
 
@@ -121,7 +126,7 @@ service cloud.firestore {
           && data.doc_id is string
           && data.doc_id.size() > 0
           && data.change_type is string
-          && data.change_type in ['ENROLL', 'UPDATE', 'WITHDRAW', 'DELETE', 'RETURN', 'PROMOTION']
+          && data.change_type in ['ENROLL', 'UPDATE', 'WITHDRAW', 'DELETE', 'RETURN']
           && data.before is string
           && data.after is string
           && data.google_login_id is string
@@ -190,7 +195,7 @@ service cloud.firestore {
         return request.resource.data.keys().hasOnly([
           'student_id', 'student_name', 'original_class_code', 'target_class_code',
           'target_start_time', 'override_date', 'reason', 'status',
-          'created_by', 'created_at'
+          'created_by', 'created_at', 'updated_by', 'updated_at'
         ]);
       }
 
@@ -249,7 +254,7 @@ service cloud.firestore {
           'source_date', 'scheduled_date', 'scheduled_time',
           'alt_hw', 'handler', 'status', 'created_by', 'created_at',
           'completed_by', 'completed_at', 'cancelled_by', 'cancelled_at', 'branch',
-          'reschedule_history'
+          'reschedule_history', 'updated_by', 'updated_at'
         ])
         && request.resource.data.status is string
         && request.resource.data.status in ['pending', '완료', '취소', '기타']
@@ -270,7 +275,7 @@ service cloud.firestore {
           'source_date', 'scheduled_date', 'scheduled_time',
           'alt_hw', 'handler', 'status', 'created_by', 'created_at',
           'completed_by', 'completed_at', 'cancelled_by', 'cancelled_at', 'branch',
-          'reschedule_history'
+          'reschedule_history', 'updated_by', 'updated_at'
         ])
         && request.resource.data.status is string
         && request.resource.data.status in ['pending', '완료', '취소', '기타']
@@ -286,7 +291,7 @@ service cloud.firestore {
 
       function hasOnlyAllowedUserSettingsFields() {
         return request.resource.data.keys().hasOnly([
-          'role', 'updated_at'
+          'role', 'updated_by', 'updated_at'
         ]);
       }
 
@@ -308,7 +313,7 @@ service cloud.firestore {
         return request.resource.data.keys().hasOnly([
           'type', 'student_id', 'student_name', 'content',
           'sender_email', 'sender_role', 'target_roles',
-          'date', 'pinned', 'read_by', 'created_at', 'updated_at'
+          'date', 'pinned', 'read_by', 'created_at', 'updated_by', 'updated_at'
         ]);
       }
 
@@ -330,7 +335,9 @@ service cloud.firestore {
         return request.resource.data.keys().hasOnly([
           'domains', 'test_sections', 'teacher', 'sub_teacher',
           'default_time', 'default_time_updated_by', 'default_time_updated_at',
-          'naesin_start', 'naesin_end', 'schedule'
+          'naesin_start', 'naesin_end', 'schedule',
+          'free_schedule', 'free_start', 'free_end',
+          'class_type', 'fee_type', 'updated_at', 'updated_by'
         ]);
       }
 
@@ -338,7 +345,7 @@ service cloud.firestore {
 
       allow create, update: if isAuthorized()
         && hasOnlyAllowedClassSettingsFields()
-        && withinFieldLimit(15);
+        && withinFieldLimit(18);
 
       allow delete: if isAuthorized();
     }
@@ -478,7 +485,7 @@ service cloud.firestore {
           'approved_by', 'approved_at',
           'teacher_approved_by', 'teacher_approved_at',
           'return_date',
-          'previous_status', 'created_at', 'updated_at'
+          'previous_status', 'created_at', 'updated_by', 'updated_at'
         ]);
       }
 
@@ -524,7 +531,8 @@ service cloud.firestore {
 
       allow create, update: if isAuthorized()
         && request.resource.data.keys().hasOnly([
-          'email', 'display_name', 'photo_url', 'last_login'
+          'email', 'display_name', 'photo_url', 'last_login',
+          'updated_by', 'updated_at'
         ])
         && request.resource.data.email is string
         && withinFieldLimit(10);
@@ -643,6 +651,40 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // [Director] 단기 인원
+    // =========================================================================
+    match /shortTermStaff/{docId} {
+      allow read: if isDirector() || isShortTerm();
+      allow write: if isDirector() || isShortTerm();
+
+      // 비인증: 토큰 기반 등록 (필수 필드 검증)
+      allow create: if request.resource.data.keys().hasAll(['name', 'phone', 'email', 'residentNumber', 'address', 'bank', 'accountNumber', 'accountHolder', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.phone is string;
+
+      match /contracts/{contractId} {
+        allow read: if isDirector() || isShortTerm();
+        allow write: if isDirector() || isShortTerm();
+      }
+    }
+
+    // =========================================================================
+    // [Director] 단기 온보딩 토큰
+    // =========================================================================
+    match /shortTermTokens/{tokenId} {
+      allow read, write: if isDirector() || isShortTerm();
+
+      // 비인증 사용자: 토큰 검증(read) + 완료 처리(update)만 허용
+      allow read: if true;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['status', 'personId'])
+        && request.resource.data.status == 'completed'
+        && resource.data.status == 'pending'
+        && resource.data.expiresAt > request.time;
+
+      allow create, delete: if isDirector() || isShortTerm();
+    }
+
     // [Director] Staff + 서브컬렉션
     // =========================================================================
     match /staff/{staffId} {
@@ -736,7 +778,7 @@ service cloud.firestore {
       allow read, write: if isDirector() || isStaff();
       allow read: if true;
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['status', 'employeeId'])
+        .hasOnly(['status', 'staffId'])
         && request.resource.data.status == 'completed'
         && resource.data.status == 'pending'
         && resource.data.expiresAt > request.time;

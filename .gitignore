@@ -26,8 +26,12 @@ Thumbs.db
 .aider*
 .firebase-ci-token
 
-# 5. Data Files with PII
+# 5. Data Files with PII (real student names/phones — never commit)
 students.csv
+contacts-raw.csv
+bulkuploadexcel.csv
+enrollment_template.csv
+backups/
 
 # 6. Migration / utility scripts (may contain credential paths)
 _migrate.cjs
@@ -35,3 +39,8 @@ _check_dups.cjs
 
 # 7. Git Worktrees
 .worktrees/
+
+# 8. Session artifacts / empty / temp
+.playwright-mcp/
+download.html
+temp_debug_lr.cjs
