@@ -1,0 +1,28 @@
+# Memory Index
+
+- **학년 승격 일괄 변경** 기능 추가됨 — 사용법 매뉴얼에 반영 필요
+- 자동 +1 승격, 초6→중1/중3→고1 학부 자동 전환, 학교 입력(선택)
+- 전환 시 학교 비우면 빈칸 초기화
+- **필터링 기능** — 매뉴얼에 함께 정리 필요
+- `index.html` — 메인 UI (학생 목록, 상세 패널, 일괄 편집)
+- `app.js` — 메인 로직 (Firestore CRUD, 필터, 일괄 변경)
+- Vite 기반 빌드 (`npx vite build`)
+- Firebase/Firestore 백엔드
+- Vault: Jon (iCloud 동기화)
+- 경로: `/Users/jongsooyi/Library/Mobile Documents/iCloud~md~obsidian/Documents/Jon/`
+- 개발 문서 폴더: `impact7DEV/` 아래 서브폴더:
+- `impact7DEV/impact7DB/` — DB 작업일지
+- `impact7DEV/impact7newDSC/` — DSC 작업일지
+- `impact7DEV/impact7HR/` — HR 작업일지
+- 형식: `YYYY-MM-DD.md` (날짜별 세션 로그)
+- CLI: `/Applications/Obsidian.app/Contents/MacOS/Obsidian`
+- 매 세션 종료 시 작업 내용 정리하여 기록
+- 3개 앱이 같은 Firebase 프로젝트(impact7db)를 공유
+- **DB** (impact7db.web.app) — 학생 마스터 관리, Vanilla JS + Vite
+- **DSC** (impact7dsc.web.app) — 일일 출결·숙제·시험 체크, Vanilla JS + React 대시보드
+- **HR** (impact7hr.firebaseapp.com) — 인사·급여·계약, SvelteKit + TypeScript
+- "Director"는 옛 명칭 → 현재 **HR**로 통일
+- 일괄 변경 패턴: UI 섹션(bulk-edit-section) + window 함수 + Firestore batch write(200건) + history_logs + 로컬 동기화
+- 학생 데이터 필드: level(초등/중등/고등), grade(숫자), school(학교명), status, enrollments[], branch
+- [No autonomous batch Firestore ops](feedback_no_autonomous_batch.md) — 대량 배치 실행 전 반드시 사용자 승인 필요 (2026-03-17 47M reads 사고)
+- [동일 시기 동일 반명 금지](project_unique_class_code.md) — 한 학생 enrollments에서 같은 level_symbol+class_number는 시기 겹치면 안 됨 (2026-04-08 11명 정리)
