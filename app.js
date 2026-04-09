@@ -1526,7 +1526,7 @@ _searchClearBtn?.addEventListener('keydown', (e) => {
 });
 
 // ---------------------------------------------------------------------------
-// 등록 폼: 이름 + 전화번호로 과거 학생(퇴원/종강) 자동채움
+// 등록 폼: 이름 + 전화번호로 기존 학생(활성·퇴원 무관) 자동채움
 // ---------------------------------------------------------------------------
 {
     const _form = document.getElementById('new-student-form');
@@ -1556,7 +1556,7 @@ _searchClearBtn?.addEventListener('keydown', (e) => {
 
         const hint = document.getElementById('contact-autofill-hint');
         if (hint) {
-            hint.textContent = `과거 학생 "${pastStudent.name}" 정보를 불러왔습니다`;
+            hint.textContent = `"${pastStudent.name}" 정보를 불러왔습니다`;
             hint.style.display = 'block';
             setTimeout(() => { hint.style.display = 'none'; }, 3000);
         }
