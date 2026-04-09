@@ -1863,8 +1863,15 @@ window.submitNewStudent = async () => {
     const name = f.name.value.trim();
     const parentPhone1 = f.parent_phone_1.value.trim();
 
-    if (!name) { alert('이름을 입력하세요.'); return; }
-    if (!parentPhone1) { alert('학부모 연락처를 입력하세요.'); return; }
+    const school = f.school.value.trim();
+    const grade = f.grade.value.trim().replace(/[^0-9]/g, '');
+    const level = f.level.value;
+
+    if (!name) { alert('이름을 입력하세요.'); f.name.focus(); return; }
+    if (!parentPhone1) { alert('학부모 연락처를 입력하세요.'); f.parent_phone_1.focus(); return; }
+    if (!school) { alert('학교를 입력하세요.'); f.school.focus(); return; }
+    if (!grade) { alert('학년을 입력하세요.'); f.grade.focus(); return; }
+    if (!level) { alert('학부(초/중/고)를 선택하세요.'); f.level.focus(); return; }
 
     // 신규 등록 시 이름 중복 체크 (수정 모드에서는 건너뜀)
     if (!isEditMode) {
@@ -1912,9 +1919,9 @@ window.submitNewStudent = async () => {
 
         studentData = {
             name,
-            level: f.level.value,
-            school: f.school.value.trim(),
-            grade: f.grade.value.trim().replace(/[^0-9]/g, ''),
+            level,
+            school,
+            grade,
             student_phone: f.student_phone.value.trim(),
             parent_phone_1: parentPhone1,
             parent_phone_2: f.parent_phone_2.value.trim(),
@@ -1970,9 +1977,9 @@ window.submitNewStudent = async () => {
 
         studentData = {
             name,
-            level: f.level.value,
-            school: f.school.value.trim(),
-            grade: f.grade.value.trim().replace(/[^0-9]/g, ''),
+            level,
+            school,
+            grade,
             student_phone: f.student_phone.value.trim(),
             parent_phone_1: parentPhone1,
             parent_phone_2: f.parent_phone_2.value.trim(),
