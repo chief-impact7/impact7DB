@@ -791,8 +791,9 @@ function updateListItemIcons(studentId) {
 // ---------------------------------------------------------------------------
 function updateLeaveCountBadges() {
     const today = getTodayDateStr();
-    let onLeave = 0, nonReturn = 0, expActual = 0, expPending = 0;
+    let onLeave = 0, scheduled = 0, nonReturn = 0, expActual = 0, expPending = 0;
     for (const s of allStudents) {
+        if (s.scheduled_leave_status) { scheduled++; onLeave++; continue; }
         if (!LEAVE_STATUSES.includes(s.status)) continue;
         onLeave++;
         if (s.pause_end_date && s.pause_end_date < today) {
@@ -805,7 +806,8 @@ function updateLeaveCountBadges() {
     }
     const setText = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n || ''; };
     setText('on-leave-count', onLeave);
-    setText('on-leave-expected-count', onLeave - nonReturn);
+    setText('on-leave-scheduled-count', scheduled);
+    setText('on-leave-expected-count', onLeave - nonReturn - scheduled);
     setText('on-leave-nonreturn-count', nonReturn);
     setText('lv-exp-actual', expActual);
     setText('lv-exp-pending', expPending);
@@ -941,10 +943,12 @@ function applyFilterAndRender() {
         const lv = activeFilters.leave;
         const today = getTodayDateStr();
         const isOnLeave = (s) => LEAVE_STATUSES.includes(s.status);
+        const isScheduled = (s) => !!s.scheduled_leave_status;
         const isNonReturn = (s) => s.pause_end_date && s.pause_end_date < today;
         const isExpected = (s) => isOnLeave(s) && !isNonReturn(s);
 
-        if (lv === 'all')                    filtered = filtered.filter(isOnLeave);
+        if (lv === 'all')                    filtered = filtered.filter(s => isOnLeave(s) || isScheduled(s));
+        else if (lv === 'scheduled')         filtered = filtered.filter(isScheduled);
         else if (lv === 'expected')          filtered = filtered.filter(isExpected);
         else if (lv === 'expected_actual')   filtered = filtered.filter(s => s.status === '실휴원' && isExpected(s));
         else if (lv === 'expected_pending')  filtered = filtered.filter(s => s.status === '가휴원' && isExpected(s));
