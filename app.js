@@ -1692,7 +1692,6 @@ window.showNewStudentForm = () => {
     document.querySelector('[name="start_date"]').value = today;
 
     _pendingEnrollments = [];
-    // enrollment 카드 숨김 (신규 등록은 반 배정 없음)
     const enrollContainer = document.getElementById('enrollment-fields-container');
     if (enrollContainer) enrollContainer.style.display = 'none';
 };
@@ -1755,7 +1754,6 @@ window.showEditForm = () => {
     // 신규등록 static 필드 숨기고 동적 enrollment 카드 표시
     const staticFields = document.getElementById('static-enrollment-fields');
     if (staticFields) staticFields.style.display = 'none';
-    // enrollment 카드 복원 (신규 등록에서 숨겼으므로 수정 모드에서 되살림)
     const enrollContainer = document.getElementById('enrollment-fields-container');
     if (enrollContainer) enrollContainer.style.display = '';
     // 학기 필터가 있으면 해당 학기 enrollment만 표시, 없으면 활성 enrollment만
@@ -1892,8 +1890,6 @@ window.submitNewStudent = async () => {
             studentData.pause_end_date = f.pause_end_date.value;
         }
     } else {
-        // 신규 등록: 반 배정 없이 저장 (DSC 첫데이터입력과 동일)
-        // 기본 정보만 (branch 제외 — 기존 학생은 보존, 신규 학생은 Firestore 저장 시 추가)
         studentData = {
             name,
             level,
@@ -1977,33 +1973,37 @@ window.submitNewStudent = async () => {
 
             if (existingStudent) {
                 // 기존 학생 존재 (퇴원 등) — 기본 정보만 merge, status/enrollments 보존
-                await setDoc(doc(db, 'students', docId), studentData, { merge: true });
-                await addDoc(collection(db, 'history_logs'), {
-                    doc_id: docId,
-                    change_type: 'UPDATE',
-                    before: `상태: ${existingStudent.status || ''}`,
-                    after: `첫데이터 재입력: ${name}`,
-                    google_login_id: currentUser?.email || 'system',
-                    timestamp: serverTimestamp(),
-                });
+                await Promise.all([
+                    setDoc(doc(db, 'students', docId), studentData, { merge: true }),
+                    addDoc(collection(db, 'history_logs'), {
+                        doc_id: docId,
+                        change_type: 'UPDATE',
+                        before: `상태: ${existingStudent.status || ''}`,
+                        after: `첫데이터 재입력: ${name}`,
+                        google_login_id: currentUser?.email || 'system',
+                        timestamp: serverTimestamp(),
+                    }),
+                ]);
             } else {
                 // 완전 신규 — '상담' 상태로 생성
                 const newStudentData = {
                     ...studentData,
-                    branch: '',       // 신규는 반 배정 전이므로 빈 값
+                    branch: '',
                     status: '상담',
                     enrollments: [],
                 };
-                await setDoc(doc(db, 'students', docId), newStudentData);
-                studentData = newStudentData; // 로컬 캐시용
-                await addDoc(collection(db, 'history_logs'), {
-                    doc_id: docId,
-                    change_type: 'ENROLL',
-                    before: '—',
-                    after: `신규 등록 (첫데이터): ${name}`,
-                    google_login_id: currentUser?.email || 'system',
-                    timestamp: serverTimestamp(),
-                });
+                studentData = newStudentData;
+                await Promise.all([
+                    setDoc(doc(db, 'students', docId), newStudentData),
+                    addDoc(collection(db, 'history_logs'), {
+                        doc_id: docId,
+                        change_type: 'ENROLL',
+                        before: '—',
+                        after: `신규 등록 (첫데이터): ${name}`,
+                        google_login_id: currentUser?.email || 'system',
+                        timestamp: serverTimestamp(),
+                    }),
+                ]);
             }
             currentStudentId = docId;
         }
