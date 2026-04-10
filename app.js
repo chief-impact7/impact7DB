@@ -1691,28 +1691,10 @@ window.showNewStudentForm = () => {
     const today = getTodayDateStr();
     document.querySelector('[name="start_date"]').value = today;
 
-    // 수업종류: 정규 기본 → 등원일 라벨 + 날짜 제한
-    const classTypeSelect = document.querySelector('[name="class_type"]');
-    if (classTypeSelect) classTypeSelect.value = '정규';
-    if (window.handleFormClassTypeChange) window.handleFormClassTypeChange();
-    // 시작일 날짜 제한
-    applyDateConstraints(document.querySelector('[name="start_date"]'), document.querySelector('[name="special_end_date"]'));
-
-    if (window.handleStatusChange) window.handleStatusChange('재원');
-
-    // 학기 드롭다운 초기화 — 사이드바 필터 또는 마지막 선택한 학기를 기본값으로 사용
-    const _defaultSemester = activeFilters.semester || localStorage.getItem('lastSelectedSemester') || '';
-    const initSemSelect = document.getElementById('initial-semester-select');
-    if (initSemSelect) initSemSelect.innerHTML = getSemesterOptions('초등', _defaultSemester);
-
-    // 추가 수업 목록 초기화 + 버튼 표시
     _pendingEnrollments = [];
-    renderPendingEnrollments();
-    const addEnrollBtn = document.getElementById('form-add-enrollment-btn');
-    if (addEnrollBtn) {
-        addEnrollBtn.style.display = 'flex';
-        addEnrollBtn.onclick = window.openFormEnrollmentModal;
-    }
+    // enrollment 카드 숨김 (신규 등록은 반 배정 없음)
+    const enrollContainer = document.getElementById('enrollment-fields-container');
+    if (enrollContainer) enrollContainer.style.display = 'none';
 };
 
 // 학부 변경 시 학기 드롭다운 갱신
@@ -1773,6 +1755,9 @@ window.showEditForm = () => {
     // 신규등록 static 필드 숨기고 동적 enrollment 카드 표시
     const staticFields = document.getElementById('static-enrollment-fields');
     if (staticFields) staticFields.style.display = 'none';
+    // enrollment 카드 복원 (신규 등록에서 숨겼으므로 수정 모드에서 되살림)
+    const enrollContainer = document.getElementById('enrollment-fields-container');
+    if (enrollContainer) enrollContainer.style.display = '';
     // 학기 필터가 있으면 해당 학기 enrollment만 표시, 없으면 활성 enrollment만
     const editEnrolls = activeFilters.semester
         ? (student.enrollments || []).filter(e => e.semester === activeFilters.semester)
@@ -1907,36 +1892,8 @@ window.submitNewStudent = async () => {
             studentData.pause_end_date = f.pause_end_date.value;
         }
     } else {
-        // 신규 등록: 첫 enrollment 포함
-        const classNumber = f.class_number.value.trim();
-        const branch = branchFromClassNumber(classNumber);
-
-        if (!branch) { alert('반넘버를 입력하세요. (1xx: 2단지, 2xx: 10단지)'); return; }
-
-        const days = Array.from(f.querySelectorAll('[name="day"]:checked')).map(cb => cb.value);
-        const classType = f.class_type.value;
-        const levelSymbol = f.level_symbol.value.trim();
-
-        const initialEnrollment = {
-            class_type: classType,
-            level_symbol: levelSymbol,
-            class_number: classNumber,
-            day: days,
-            start_date: f.start_date.value,
-            semester: f.initial_semester?.value || '',
-        };
-        // 선택한 학기를 기억하여 다음 등록 시 기본값으로 사용
-        if (initialEnrollment.semester) {
-            localStorage.setItem('lastSelectedSemester', initialEnrollment.semester);
-        }
-        if (classType !== '정규' && f.special_end_date.value) {
-            initialEnrollment.end_date = f.special_end_date.value;
-        }
-
-        // 폼 enrollment + 추가 수업 목록 합치기
-        const allEnrollments = [initialEnrollment, ..._pendingEnrollments];
-        if (!blockOnEnrollmentConflicts(findEnrollmentConflicts(allEnrollments))) return;
-
+        // 신규 등록: 반 배정 없이 저장 (DSC 첫데이터입력과 동일)
+        // 기본 정보만 (branch 제외 — 기존 학생은 보존, 신규 학생은 Firestore 저장 시 추가)
         studentData = {
             name,
             level,
@@ -1945,20 +1902,7 @@ window.submitNewStudent = async () => {
             student_phone: f.student_phone.value.trim(),
             parent_phone_1: parentPhone1,
             parent_phone_2: f.parent_phone_2.value.trim(),
-            branch,
-            status: f.status.value,
-            pause_start_date: '',
-            pause_end_date: '',
-            enrollments: allEnrollments,
         };
-        // 휴원 상태일 때만 휴원 날짜 저장
-        if (f.status.value === '실휴원' || f.status.value === '가휴원') {
-            studentData.pause_start_date = f.pause_start_date.value;
-            studentData.pause_end_date = f.pause_end_date.value;
-        }
-        if (f.status.value === '퇴원') {
-            studentData.withdrawal_date = getTodayDateStr();
-        }
     }
 
     const saveBtn = document.getElementById('save-btn');
@@ -2030,28 +1974,33 @@ window.submitNewStudent = async () => {
         } else {
             const docId = makeDocId(name, parentPhone1);
             const existingStudent = allStudents.find(s => s.id === docId);
+
             if (existingStudent) {
-                // Student exists — add new enrollments to existing doc
-                const newEnrollments = studentData.enrollments || [];
-                const mergedEnrollments = [...(existingStudent.enrollments || []), ...newEnrollments];
-                studentData.enrollments = mergedEnrollments;
-                await setDoc(doc(db, 'students', docId), { ...studentData, enrollments: mergedEnrollments }, { merge: true });
+                // 기존 학생 존재 (퇴원 등) — 기본 정보만 merge, status/enrollments 보존
+                await setDoc(doc(db, 'students', docId), studentData, { merge: true });
                 await addDoc(collection(db, 'history_logs'), {
                     doc_id: docId,
                     change_type: 'UPDATE',
-                    before: `수업: ${allClassCodes(existingStudent).join(', ') || '—'}`,
-                    after: `수업 추가: ${newEnrollments.map(e => enrollmentCode(e)).join(', ')}`,
+                    before: `상태: ${existingStudent.status || ''}`,
+                    after: `첫데이터 재입력: ${name}`,
                     google_login_id: currentUser?.email || 'system',
                     timestamp: serverTimestamp(),
                 });
             } else {
-                await setDoc(doc(db, 'students', docId), studentData);
-                const codes = allClassCodes(studentData).join(', ') || '—';
+                // 완전 신규 — '상담' 상태로 생성
+                const newStudentData = {
+                    ...studentData,
+                    branch: '',       // 신규는 반 배정 전이므로 빈 값
+                    status: '상담',
+                    enrollments: [],
+                };
+                await setDoc(doc(db, 'students', docId), newStudentData);
+                studentData = newStudentData; // 로컬 캐시용
                 await addDoc(collection(db, 'history_logs'), {
                     doc_id: docId,
                     change_type: 'ENROLL',
                     before: '—',
-                    after: `신규 등록: ${name} (${codes})`,
+                    after: `신규 등록 (첫데이터): ${name}`,
                     google_login_id: currentUser?.email || 'system',
                     timestamp: serverTimestamp(),
                 });
