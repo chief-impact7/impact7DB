@@ -33,9 +33,10 @@ bulkuploadexcel.csv
 enrollment_template.csv
 backups/
 
-# 6. Migration / utility scripts (may contain credential paths)
-_migrate.cjs
-_check_dups.cjs
+# 6. Migration / utility scripts (1회성 디버깅·검증·마이그레이션)
+_*.cjs
+import-grammar-special.cjs
+backup-students.cjs
 
 # 7. Git Worktrees
 .worktrees/
@@ -44,3 +45,9 @@ _check_dups.cjs
 .playwright-mcp/
 download.html
 temp_debug_lr.cjs
+
+# 9. Legacy docs (content preserved in git history)
+HANDOFF.md
+MICROAPP_HANDOFF.md
+SECURITY_TEST_SCENARIOS.md
+PATCH_NOTES.js
