@@ -28,3 +28,4 @@
 - [동일 시기 동일 반명 금지](project_unique_class_code.md) — 한 학생 enrollments에서 같은 level_symbol+class_number는 시기 겹치면 안 됨 (2026-04-08 11명 정리)
 - [contacts 컬렉션 폐기 Phase 5 완료](project_contacts_deprecation.md) — impact7DB app.js에서 contacts 읽기/쓰기 모두 제거, rules drop은 컬렉션 drop 이후
 - [rules 동기화 후 4-repo 커밋 규율](feedback_rules_sync_commit.md) — firestore.rules 변경 시 4개 repo 모두 git status clean 확인 후 완료 (2026-04-09 사후 정리 사고)
+- [app.js 점진적 모듈 분리 규칙](feedback_module_separation.md) — 새 기능은 별도 모듈, 기존 코드는 수정 시 분리. 공유 상태 의존성 분석 포함 (2026-04-12)

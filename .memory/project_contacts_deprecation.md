@@ -23,7 +23,7 @@ impact7DB와 impact7newDSC 양쪽 모두 contacts 컬렉션을 더 이상 읽거
 - 자동채움은 로컬 캐시에서 읽으므로 퇴원 학생이 allStudents에 로드되어 있어야 동작. `loadStudentList`는 전체 students 컬렉션 로드이므로 문제 없음.
 
 ## 남은 작업
+- **모니터링 중**: 2026-04-09 배포 완료. contacts 컬렉션 마지막 write는 2026-04-07 10:23 (배포 2일 전). **2026-04-14에 contacts.updated_at 재확인** → 4/7 이후 변화 없으면 drop 진행.
 - firestore.rules의 `match /contacts/{docId}` 블록은 **컬렉션 drop 이후** 제거. 4개 프로젝트(DB/DSC/HR/exam) 동기 필수.
-- 며칠 모니터링하여 contacts에 신규 write가 없는지 확인.
 - 백업 → contacts 컬렉션 drop.
 - docs/plans/2026-03-03-contacts-master-db*.md는 역사적 문서로 보존 (archived plan). `docs/system-overview.md`의 contacts 섹션은 향후 drop 후 업데이트 예정.
