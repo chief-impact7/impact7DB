@@ -1806,6 +1806,25 @@ window.hideForm = () => {
 // ---------------------------------------------------------------------------
 // 신규 등록 / 정보 수정 저장
 // ---------------------------------------------------------------------------
+// 재원/휴원(실/가)/등원예정 집단 중 동명이인이 있으면 { conflicts, suggested } 반환, 없으면 null.
+// excludeDocId는 수정/재등원 승인 시 자기 자신을 제외하기 위한 docId.
+function _suggestUniqueActiveName(candidateName, excludeDocId = null) {
+    const ACTIVE = new Set(['재원', '등원예정', '실휴원', '가휴원']);
+    const baseName = candidateName.replace(/\d+$/, '');
+    const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const variantRe = new RegExp(`^${escapedBase}\\d*$`);
+    const activeVariants = allStudents.filter(s =>
+        s.id !== excludeDocId && ACTIVE.has(s.status || '재원') && variantRe.test(s.name)
+    );
+    const exactMatch = activeVariants.find(s => s.name === candidateName);
+    if (!exactMatch) return null;
+    const usedNumbers = activeVariants.map(s => {
+        const m = s.name.match(/(\d+)$/); return m ? parseInt(m[1], 10) : 1;
+    });
+    const nextNum = Math.max(...usedNumbers) + 1;
+    return { conflicts: activeVariants, suggested: `${baseName}${nextNum}` };
+}
+
 window.submitNewStudent = async () => {
     if (isEditMode && isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     const f = document.getElementById('new-student-form');
@@ -1822,28 +1841,19 @@ window.submitNewStudent = async () => {
     if (!grade) { alert('학년을 입력하세요.'); f.grade.focus(); return; }
     if (!level) { alert('학부(초/중/고)를 선택하세요.'); f.level.focus(); return; }
 
-    // 신규 등록 시 이름 중복 체크 (수정 모드에서는 건너뜀)
-    if (!isEditMode) {
-        const activeStatuses = new Set(['재원', '등원예정', '실휴원', '가휴원']);
-        const isActive = s => activeStatuses.has(s.status || '재원');
-        const baseName = name.replace(/\d+$/, '');  // 숫자 접미사 제거하여 원래 이름 추출
-        const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const variantRe = new RegExp(`^${escapedBase}\\d*$`);  // baseName 및 baseName+숫자 매칭
-        // baseName과 숫자 변형 중 재원/휴원인 학생 한 번에 수집
-        const activeVariants = allStudents.filter(s => variantRe.test(s.name) && isActive(s));
-
-        // 입력한 정확한 이름이 재원/휴원에 있으면 차단 (김나연2를 입력했는데 재원에 김나연만 있으면 허용)
-        const exactMatch = activeVariants.find(s => s.name === name);
-        if (exactMatch) {
-            const usedNumbers = activeVariants
-                .map(s => { const m = s.name.match(/(\d+)$/); return m ? parseInt(m[1], 10) : 1; });
-            const nextNum = Math.max(...usedNumbers) + 1;
-            const suggested = `${baseName}${nextNum}`;
-            alert(`동일한 이름의 재원/휴원 학생이 있습니다.\n[${activeVariants.map(s => `${s.name} (${s.status})`).join(', ')}]\n\n이름 뒤에 숫자를 붙여 주세요. (예: ${suggested})`);
-            f.name.focus();
-            return;
+    // 이름 중복 체크 — 신규 등록, 또는 수정 모드에서 이름을 변경한 경우
+    {
+        const excludeId = isEditMode ? currentStudentId : null;
+        const oldName = isEditMode ? (allStudents.find(s => s.id === currentStudentId)?.name || '') : '';
+        const nameChanged = !isEditMode || name !== oldName;
+        if (nameChanged) {
+            const dup = _suggestUniqueActiveName(name, excludeId);
+            if (dup) {
+                alert(`동일한 이름의 재원/휴원 학생이 있습니다.\n[${dup.conflicts.map(s => `${s.name} (${s.status})`).join(', ')}]\n\n이름 뒤에 숫자를 붙여 주세요. (예: ${dup.suggested})`);
+                f.name.focus();
+                return;
+            }
         }
-        // 퇴원/비재원에만 동일 이름 존재 → 허용
     }
 
     let studentData;
@@ -4869,18 +4879,8 @@ async function _finalizeLeaveRequest(r, studentId) {
         studentUpdate.status = '재원';
         studentUpdate.pause_start_date = deleteField();
         studentUpdate.pause_end_date = deleteField();
-        const studentName = cachedStudent?.name || '';
-        const baseName = studentName.replace(/\d+$/, '');
-        const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const variantRe = new RegExp(`^${escapedBase}\\d*$`);
-        const activeVariants = allStudents.filter(s =>
-            s.id !== studentId && variantRe.test(s.name) && s.status === '재원'
-        );
-        if (activeVariants.length > 0) {
-            const usedNumbers = [cachedStudent, ...activeVariants]
-                .map(s => { const m = s.name.match(/(\d+)$/); return m ? parseInt(m[1], 10) : 1; });
-            studentUpdate.name = `${baseName}${Math.max(...usedNumbers) + 1}`;
-        }
+        const dup = _suggestUniqueActiveName(cachedStudent?.name || '', studentId);
+        if (dup) studentUpdate.name = dup.suggested;
     } else if (isWithdrawal) {
         const wDate = r.withdrawal_date || getTodayDateStr();
         studentUpdate.withdrawal_date = wDate;
