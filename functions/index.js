@@ -21,8 +21,6 @@ export const onLeaveRequestApproved = onDocumentUpdated(
     const after  = event.data?.after?.data();
     if (!before || !after) return null;
 
-    // 마이그레이션 플래그 (Phase 6에서 제거)
-    if (!after.use_server_finalize) return null;
     // 승인 전이만 처리
     if (before.status === 'approved' || after.status !== 'approved') return null;
     // 중복 발동 방어
