@@ -48,3 +48,30 @@ describe('buildUpdate — 휴원연장', () => {
     expect(studentUpdate.pause_start_date).toBeUndefined();
   });
 });
+
+describe('buildUpdate — 퇴원요청', () => {
+  it('withdrawal_date가 오늘 이하 → status=퇴원', () => {
+    const r = { request_type: '퇴원요청', withdrawal_date: '2026-04-21' };
+    const { studentUpdate, changeType } = buildUpdate(r, baseStu, {}, []);
+    expect(changeType).toBe('WITHDRAW');
+    expect(studentUpdate.status).toBe('퇴원');
+    expect(studentUpdate.withdrawal_date).toBe('2026-04-21');
+  });
+
+  it('withdrawal_date가 미래 → pre_withdrawal_status 저장, status 유지', () => {
+    const r = { request_type: '퇴원요청', withdrawal_date: '2026-05-15' };
+    const stu = { ...baseStu, status: '실휴원' };
+    const { studentUpdate } = buildUpdate(r, stu, {}, []);
+    expect(studentUpdate.status).toBeUndefined();
+    expect(studentUpdate.pre_withdrawal_status).toBe('실휴원');
+    expect(studentUpdate.withdrawal_date).toBe('2026-05-15');
+  });
+
+  it('휴원→퇴원도 동일 동작', () => {
+    const r = { request_type: '휴원→퇴원', withdrawal_date: '2026-04-21' };
+    const stu = { ...baseStu, status: '실휴원', pause_start_date: '2026-04-01', pause_end_date: '2026-05-31' };
+    const { studentUpdate } = buildUpdate(r, stu, {}, []);
+    expect(studentUpdate.status).toBe('퇴원');
+    // pause_* 필드는 finalize 단계에서 deleteField로 처리 (Task 1.9)
+  });
+});

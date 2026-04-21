@@ -20,8 +20,14 @@ export function buildUpdate(r, student, classSettings, allStudents) {
     throw new Error('not implemented');
   }
   if (WITHDRAW_TYPES.has(r.request_type)) {
-    // Task 1.7에서 채움
-    throw new Error('not implemented');
+    const wDate = r.withdrawal_date || today;
+    const studentUpdate = { withdrawal_date: wDate };
+    if (wDate > today) {
+      studentUpdate.pre_withdrawal_status = student.status || '재원';
+    } else {
+      studentUpdate.status = '퇴원';
+    }
+    return { studentUpdate, changeType: 'WITHDRAW' };
   }
 
   // 휴원요청 / 퇴원→휴원
