@@ -12,6 +12,7 @@ export async function finalize(lrRef, r) {
   csSnap.forEach(d => { classSettings[d.id] = d.data(); });
 
   // 활성 학생 목록도 미리 로드 (동명이인 체크용)
+  // 주의: 트랜잭션 밖 스냅샷이라 동시 다발 동명 등록 시 race 가능 (현 규모에서는 허용).
   const stuSnap = await db.collection('students')
     .where('status', 'in', ['재원', '등원예정'])
     .get();
@@ -32,6 +33,7 @@ export async function finalize(lrRef, r) {
       finalUpdate.pause_start_date = FieldValue.delete();
       finalUpdate.pause_end_date = FieldValue.delete();
       finalUpdate.scheduled_leave_status = FieldValue.delete();
+      finalUpdate.pre_withdrawal_status = FieldValue.delete();
       if (r.request_type === '재등원요청') {
         finalUpdate.withdrawal_date = FieldValue.delete();
       }
@@ -66,6 +68,7 @@ export async function finalize(lrRef, r) {
         status: studentUpdate.status || beforeStatus,
         pause_start_date: changeType === 'UPDATE' ? (studentUpdate.pause_start_date || '') : '',
         pause_end_date: changeType === 'UPDATE' ? (studentUpdate.pause_end_date || '') : '',
+        ...(changeType === 'RETURN' && enrollments ? { enrollments } : {}),
       }),
       google_login_id: r.approved_by || r.teacher_approved_by || 'cloud-function',
       timestamp: FieldValue.serverTimestamp(),

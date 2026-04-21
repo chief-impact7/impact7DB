@@ -1,9 +1,11 @@
 import { initializeApp } from 'firebase-admin/app';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { finalize } from './src/finalize.js';
 
 initializeApp();
+getFirestore();
 
 // 모든 함수 기본 옵션
 setGlobalOptions({
@@ -13,7 +15,7 @@ setGlobalOptions({
 
 // leave_requests/{docId} 승인 전이 트리거
 export const onLeaveRequestApproved = onDocumentUpdated(
-  'leave_requests/{docId}',
+  { document: 'leave_requests/{docId}', retry: true },
   async (event) => {
     const before = event.data?.before?.data();
     const after  = event.data?.after?.data();
@@ -31,11 +33,15 @@ export const onLeaveRequestApproved = onDocumentUpdated(
     } catch (err) {
       console.error('[onLeaveRequestApproved] finalize failed:', err);
       // 에러를 leave_request에 기록 (재시도용 상태)
-      await event.data.after.ref.update({
-        finalize_error: String(err?.message || err),
-        finalize_attempts: (after.finalize_attempts || 0) + 1,
-      });
-      throw err; // Functions 런타임이 자동 재시도
+      try {
+        await event.data.after.ref.update({
+          finalize_error: String(err?.message || err),
+          finalize_attempts: FieldValue.increment(1),
+        });
+      } catch (writeErr) {
+        console.error('[onLeaveRequestApproved] failed to write finalize_error:', writeErr);
+      }
+      throw err; // Functions 런타임이 자동 재시도 (retry: true 설정 시)
     }
   }
 );
