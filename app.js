@@ -4559,6 +4559,15 @@ function _renderLeaveRequestRow(r, studentId) {
         ? `<div style="font-size:12px;margin-top:4px;padding:6px 8px;background:var(--bg-secondary);border-radius:4px;">${esc(r.consultation_note)}</div>`
         : '';
 
+    // 서버 finalize 실패 배지
+    const errorHtml = r.finalize_error
+        ? `<div style="margin-top:6px;padding:6px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:11px;">
+            <strong>서버 처리 실패</strong> (${r.finalize_attempts || 0}회 시도): ${esc(r.finalize_error)}
+            <button class="btn-cancel" style="margin-left:8px;font-size:10px;padding:2px 6px;"
+                onclick="event.stopPropagation(); window._retryFinalize('${escAttr(r.docId)}')">재시도</button>
+           </div>`
+        : '';
+
     let actionsHtml = '';
     if (r.status !== 'approved' && r.status !== 'rejected') {
         const cDone = r.status === 'cancelled';
@@ -4588,12 +4597,28 @@ function _renderLeaveRequestRow(r, studentId) {
                 <span style="font-size:12px;color:var(--text-sec);margin-left:4px;">${esc(dateStr)}</span>
             </div>
             <div class="lr-expand" style="display:none;margin-top:6px;">
+                ${errorHtml}
                 ${noteHtml}
                 ${metaHtml}
                 ${actionsHtml}
             </div>
         </div>`;
 }
+
+// finalize_error 재시도: status를 requested → approved 토글하면 Cloud Function이 다시 발동
+window._retryFinalize = async (docId) => {
+    const r = leaveRequests.find(lr => lr.docId === docId);
+    if (!r) return;
+    if (!confirm(`${r.student_name} — 서버 처리 재시도할까요?`)) return;
+    try {
+        await updateDoc(doc(db, 'leave_requests', docId), { status: 'requested', updated_at: serverTimestamp() });
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await updateDoc(doc(db, 'leave_requests', docId), { status: 'approved', updated_at: serverTimestamp() });
+    } catch (err) {
+        alert('재시도 실패: ' + err.message);
+        console.error(err);
+    }
+};
 
 // 학생 상세 패널용: leave_requests 전체(승인완료 포함)를 student_id로 직접 조회
 async function fetchStudentLeaveRequests(studentId) {
@@ -4670,6 +4695,65 @@ async function renderLeaveRequestCard(studentId) {
 let _returnModalStudentId = null;
 let _returnModalType = null;
 
+// class_settings 캐시 (모달 오픈 시 lazy load)
+let _classSettingsCache = null;
+
+async function _populateTargetClassDropdown(student) {
+    const branch = branchFromStudent(student);
+    const select = document.getElementById('rfl-target-class');
+    select.innerHTML = '<option value="">-- 로딩 중 --</option>';
+
+    if (!_classSettingsCache) {
+        try {
+            const snap = await getDocs(collection(db, 'class_settings'));
+            _classSettingsCache = {};
+            snap.forEach(d => { _classSettingsCache[d.id] = d.data(); });
+        } catch (err) {
+            console.error('class_settings 로드 실패:', err);
+            select.innerHTML = '<option value="">(로드 실패)</option>';
+            return;
+        }
+    }
+
+    select.innerHTML = '<option value="">-- 반 선택 --</option>';
+    // 정규반만 (class_type 없음=레거시 정규 포함, '내신'/'특강' 제외)
+    // class_settings에 level(초/중/고) 메타가 없어 branch만으로 필터.
+    const candidates = Object.entries(_classSettingsCache)
+        .filter(([code, cs]) => {
+            if (cs.class_type && cs.class_type !== '정규') return false;
+            const firstChar = (code.match(/\d/) || [''])[0];
+            const codeBranch = firstChar === '1' ? '2단지' : firstChar === '2' ? '10단지' : '';
+            if (branch && codeBranch && codeBranch !== branch) return false;
+            return true;
+        })
+        .sort(([a], [b]) => a.localeCompare(b));
+    for (const [code, cs] of candidates) {
+        const days = (cs.default_days || Object.keys(cs.schedule || {})).join('·');
+        const opt = document.createElement('option');
+        opt.value = code;
+        opt.textContent = days ? `${code} (${days})` : code;
+        select.appendChild(opt);
+    }
+    // 기존 정규 enrollment의 반 코드를 기본값으로
+    const existingReg = (student.enrollments || []).find(e =>
+        (!e.class_type || e.class_type === '정규') && e.class_number
+    );
+    if (existingReg) {
+        const existingCode = `${existingReg.level_symbol || ''}${existingReg.class_number || ''}`;
+        if (candidates.some(([c]) => c === existingCode)) {
+            select.value = existingCode;
+        }
+    }
+    const hintEl = document.getElementById('rfl-target-class-hint');
+    hintEl.textContent = select.value
+        ? `현재 선택: ${select.value}`
+        : '복귀할 반을 선택하세요';
+    window._onRflTargetClassChange = () => {
+        const code = select.value;
+        hintEl.textContent = code ? `선택: ${code}` : '복귀할 반을 선택하세요';
+    };
+}
+
 function _openReturnModal(studentId, type) {
     const student = allStudents.find(s => s.id === studentId);
     if (!student) { alert('학생 정보를 찾을 수 없습니다.'); return; }
@@ -4697,6 +4781,9 @@ function _openReturnModal(studentId, type) {
     document.getElementById('rfl-return-date').value = today;
     document.getElementById('rfl-consultation-note').value = '';
 
+    // 정규반 드롭다운 비동기 채우기
+    _populateTargetClassDropdown(student);
+
     document.getElementById('return-from-leave-modal').style.display = 'flex';
 }
 
@@ -4712,6 +4799,12 @@ window.submitReturnFromLeave = async () => {
     const returnDate = document.getElementById('rfl-return-date').value;
     if (!returnDate) { alert(_isReEnrollType(_returnModalType) ? '재등원일을 입력해주세요.' : '복귀일을 입력해주세요.'); return; }
 
+    const targetClassCode = document.getElementById('rfl-target-class').value || '';
+    if (!targetClassCode) {
+        alert('복귀할 반을 선택해주세요.');
+        return;
+    }
+
     const note = document.getElementById('rfl-consultation-note').value.trim();
 
     try {
@@ -4722,6 +4815,8 @@ window.submitReturnFromLeave = async () => {
             class_codes: allClassCodes(student),
             request_type: _returnModalType,
             return_date: returnDate,
+            target_class_code: targetClassCode,
+            use_server_finalize: true,
             student_phone: student.student_phone || '',
             parent_phone_1: student.parent_phone_1 || '',
             consultation_note: note,
@@ -4768,6 +4863,18 @@ window.toggleCancelLeaveRequest = async (docId, studentId) => {
     } catch (err) { alert('처리 실패: ' + err.message); }
 };
 
+// 레거시 요청 가드: 최종 승인 시 target_class_code가 필요한 RETURN 유형이 세팅 안 됐으면 차단
+function _checkLegacyReturnTarget(r, willFinalize) {
+    if (!willFinalize) return true;
+    if (r.use_server_finalize) return true;
+    const isReturn = _isReturnType(r.request_type);
+    if (isReturn && !r.target_class_code) {
+        alert('이 요청은 구버전에서 생성되어 "복귀할 반" 정보가 없습니다.\n요청을 취소하고 새로 작성해주세요.');
+        return false;
+    }
+    return true;
+}
+
 // 교수부 승인 토글
 window.teacherApproveLeaveRequest = async (docId, studentId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
@@ -4783,6 +4890,9 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
         } catch (err) { alert('교수부 승인 취소 실패: ' + err.message); }
         return;
     }
+    const isFinal = !!r.approved_by;
+    // 레거시 가드 (최종 승인 시점에만 체크)
+    if (!_checkLegacyReturnTarget(r, isFinal)) return;
     const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
     if (!confirm(`${r.student_name} — ${typeLabel}\n교수부 승인하시겠습니까?`)) return;
 
@@ -4794,6 +4904,8 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
         };
         // 행정부가 이미 승인했으면 → 최종 승인
         if (r.approved_by) updates.status = 'approved';
+        // 레거시 요청이 최종 승인될 때 플래그 자동 부여 → Cloud Function 트리거
+        if (isFinal && !r.use_server_finalize) updates.use_server_finalize = true;
         await updateDoc(doc(db, 'leave_requests', docId), updates);
 
         const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
@@ -4801,15 +4913,12 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
             leaveRequests[lrIdx].teacher_approved_by = currentUser?.email || '';
             leaveRequests[lrIdx].teacher_approved_at = new Date();
             if (r.approved_by) leaveRequests[lrIdx].status = 'approved';
+            if (updates.use_server_finalize) leaveRequests[lrIdx].use_server_finalize = true;
         }
 
-        // 양쪽 모두 승인 → 학생 상태 변경
-        if (r.approved_by) {
-            await _finalizeLeaveRequest(r, studentId);
-        } else {
-            const stu = allStudents.find(s => s.id === studentId);
-            if (stu) window.selectStudent(studentId, stu);
-        }
+        // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
+        const stu = allStudents.find(s => s.id === studentId);
+        if (stu) window.selectStudent(studentId, stu);
     } catch (err) {
         alert('교수부 승인 실패: ' + err.message);
         console.error(err);
@@ -4832,6 +4941,9 @@ window.approveLeaveRequest = async (docId, studentId) => {
         return;
     }
 
+    const isFinal = !!r.teacher_approved_by;
+    // 레거시 가드
+    if (!_checkLegacyReturnTarget(r, isFinal)) return;
     const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
     if (!confirm(`${r.student_name} — ${typeLabel}\n행정부 승인하시겠습니까?`)) return;
 
@@ -4843,6 +4955,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
         };
         // 교수부가 이미 승인했으면 → 최종 승인
         if (r.teacher_approved_by) updates.status = 'approved';
+        if (isFinal && !r.use_server_finalize) updates.use_server_finalize = true;
         await updateDoc(doc(db, 'leave_requests', docId), updates);
 
         const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
@@ -4850,15 +4963,12 @@ window.approveLeaveRequest = async (docId, studentId) => {
             leaveRequests[lrIdx].approved_by = currentUser?.email || '';
             leaveRequests[lrIdx].approved_at = new Date();
             if (r.teacher_approved_by) leaveRequests[lrIdx].status = 'approved';
+            if (updates.use_server_finalize) leaveRequests[lrIdx].use_server_finalize = true;
         }
 
-        // 양쪽 모두 승인 → 학생 상태 변경
-        if (r.teacher_approved_by) {
-            await _finalizeLeaveRequest(r, studentId);
-        } else {
-            const stu = allStudents.find(s => s.id === studentId);
-            if (stu) window.selectStudent(studentId, stu);
-        }
+        // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
+        const stu = allStudents.find(s => s.id === studentId);
+        if (stu) window.selectStudent(studentId, stu);
     } catch (err) {
         alert('행정부 승인 실패: ' + err.message);
         console.error(err);
