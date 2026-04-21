@@ -16,8 +16,16 @@ export function buildUpdate(r, student, classSettings, allStudents) {
   }
 
   if (RETURN_TYPES.has(r.request_type)) {
-    // Task 1.8에서 채움
-    throw new Error('not implemented');
+    const studentUpdate = { status: '재원' };
+    const dedup = deduplicateName(student.id, student.name || '', allStudents);
+    if (dedup) studentUpdate.name = dedup;
+    const enrollments = replaceRegularEnrollment(
+      student,
+      r.target_class_code || '',
+      r.return_date || today,
+      classSettings,
+    );
+    return { studentUpdate, enrollments, changeType: 'RETURN' };
   }
   if (WITHDRAW_TYPES.has(r.request_type)) {
     const wDate = r.withdrawal_date || today;

@@ -49,6 +49,51 @@ describe('buildUpdate — 휴원연장', () => {
   });
 });
 
+describe('buildUpdate — 재등원/복귀요청', () => {
+  const cs = { A103: { default_days: ['월', '수'] } };
+
+  it('재등원: status=재원, enrollment 정규 교체', () => {
+    const stu = {
+      id: 'a',
+      name: '유시우',
+      status: '퇴원',
+      enrollments: [
+        { class_type: '내신', class_number: '103', day: ['화'], end_date: '2026-05-03' },
+      ],
+    };
+    const r = { request_type: '재등원요청', target_class_code: 'A103', return_date: '2026-04-21' };
+    const { studentUpdate, changeType, enrollments } = buildUpdate(r, stu, cs, []);
+    expect(changeType).toBe('RETURN');
+    expect(studentUpdate.status).toBe('재원');
+    expect(enrollments).toHaveLength(2);
+    expect(enrollments.find(e => e.class_type === '정규').class_number).toBe('103');
+    expect(enrollments.find(e => e.class_type === '내신')).toBeDefined();
+  });
+
+  it('복귀: status=재원, target 없으면 기존 enrollment 유지', () => {
+    const stu = {
+      id: 'a',
+      name: '김민수',
+      status: '실휴원',
+      enrollments: [{ class_type: '정규', class_number: '101', day: ['월', '금'] }],
+      pause_start_date: '2026-03-01',
+      pause_end_date: '2026-04-30',
+    };
+    const r = { request_type: '복귀요청', return_date: '2026-04-21' };
+    const { studentUpdate, enrollments } = buildUpdate(r, stu, cs, []);
+    expect(studentUpdate.status).toBe('재원');
+    expect(enrollments).toEqual(stu.enrollments);
+  });
+
+  it('동명이인 → 숫자 접미사', () => {
+    const stu = { id: 'a', name: '김철수', status: '퇴원', enrollments: [] };
+    const allStudents = [{ id: 'b', name: '김철수', status: '재원' }];
+    const r = { request_type: '재등원요청', target_class_code: 'A103', return_date: '2026-04-21' };
+    const { studentUpdate } = buildUpdate(r, stu, cs, allStudents);
+    expect(studentUpdate.name).toBe('김철수2');
+  });
+});
+
 describe('buildUpdate — 퇴원요청', () => {
   it('withdrawal_date가 오늘 이하 → status=퇴원', () => {
     const r = { request_type: '퇴원요청', withdrawal_date: '2026-04-21' };
