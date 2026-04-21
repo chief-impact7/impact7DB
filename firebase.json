@@ -15,7 +15,7 @@
   "functions": [
     {
       "source": "functions",
-      "codebase": "default",
+      "codebase": "leave-request",
       "runtime": "nodejs20",
       "ignore": ["node_modules", ".git", "*.log"]
     }
