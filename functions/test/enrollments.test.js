@@ -62,6 +62,17 @@ describe('replaceRegularEnrollment', () => {
     expect(result[0].day).toEqual(['월', '수']);
   });
 
+  it('class_type이 빈 문자열인 레거시 enrollment도 교체 대상', () => {
+    const stu = {
+      enrollments: [{ class_type: '', class_number: '101', day: ['월'] }],
+    };
+    const cs = { A103: { default_days: ['월'] } };
+    const result = replaceRegularEnrollment(stu, 'A103', '2026-04-21', cs);
+    expect(result).toHaveLength(1);
+    expect(result[0].class_type).toBe('정규');
+    expect(result[0].class_number).toBe('103');
+  });
+
   it('enrollments 배열이 없는 학생도 처리', () => {
     const stu = {};
     const cs = { A103: { default_days: ['월'] } };

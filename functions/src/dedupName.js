@@ -19,5 +19,6 @@ export function deduplicateName(selfId, currentName, allStudents) {
     return m ? parseInt(m[1], 10) : 1;
   });
   used.push(1);
+  // max + 1 전략 (의도적): 빈 번호를 채우지 않음. 재사용 혼동 방지.
   return `${base}${Math.max(...used) + 1}`;
 }
