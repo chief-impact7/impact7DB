@@ -1,9 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildUpdate } from '../src/buildUpdate.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-04-21T03:00:00Z')); // KST 12:00
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const baseStu = { id: 'a', name: '김철수', status: '재원', enrollments: [] };
@@ -35,6 +39,28 @@ describe('buildUpdate — 휴원요청', () => {
     expect(studentUpdate.status).toBeUndefined();
     expect(studentUpdate.scheduled_leave_status).toBe('가휴원');
     expect(studentUpdate.pause_start_date).toBe('2026-05-01');
+  });
+
+  it('leave_start_date 누락 → 오늘 시작 간주, 즉시 status 변경', () => {
+    const r = { request_type: '휴원요청', leave_sub_type: '실휴원', leave_end_date: '2026-05-31' };
+    const { studentUpdate } = buildUpdate(r, baseStu, {}, []);
+    expect(studentUpdate.status).toBe('실휴원');
+    expect(studentUpdate.scheduled_leave_status).toBeUndefined();
+    expect(studentUpdate.pause_start_date).toBe('');
+  });
+
+  it('퇴원→휴원도 동일 분기 (휴원요청 default branch)', () => {
+    const r = {
+      request_type: '퇴원→휴원',
+      leave_sub_type: '가휴원',
+      leave_start_date: '2026-04-21',
+      leave_end_date: '2026-06-30',
+    };
+    const stu = { ...baseStu, status: '퇴원' };
+    const { studentUpdate, changeType } = buildUpdate(r, stu, {}, []);
+    expect(changeType).toBe('UPDATE');
+    expect(studentUpdate.status).toBe('가휴원');
+    expect(studentUpdate.pause_start_date).toBe('2026-04-21');
   });
 });
 
@@ -118,5 +144,8 @@ describe('buildUpdate — 퇴원요청', () => {
     const { studentUpdate } = buildUpdate(r, stu, {}, []);
     expect(studentUpdate.status).toBe('퇴원');
     // pause_* 필드는 finalize 단계에서 deleteField로 처리 (Task 1.9)
+    // buildUpdate는 pause_* 삭제 안 함 — finalize.js (Task 1.9)가 deleteField 처리
+    expect(studentUpdate.pause_start_date).toBeUndefined();
+    expect(studentUpdate.pause_end_date).toBeUndefined();
   });
 });

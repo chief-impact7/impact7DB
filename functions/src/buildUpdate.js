@@ -31,6 +31,7 @@ export function buildUpdate(r, student, classSettings, allStudents) {
     const wDate = r.withdrawal_date || today;
     const studentUpdate = { withdrawal_date: wDate };
     if (wDate > today) {
+      // status 없는 레거시 문서는 재원으로 간주
       studentUpdate.pre_withdrawal_status = student.status || '재원';
     } else {
       studentUpdate.status = '퇴원';
@@ -40,6 +41,7 @@ export function buildUpdate(r, student, classSettings, allStudents) {
 
   // 휴원요청 / 퇴원→휴원
   const subType = r.leave_sub_type || '실휴원';
+  // leave_start_date가 없으면 오늘 시작으로 간주 → 즉시 상태 변경
   const start = r.leave_start_date || '';
   const studentUpdate = {
     pause_start_date: start,
