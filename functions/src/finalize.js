@@ -1,9 +1,6 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { buildUpdate } from './buildUpdate.js';
 
-const RETURN_TYPES = new Set(['복귀요청', '재등원요청']);
-const WITHDRAW_TYPES = new Set(['퇴원요청', '휴원→퇴원']);
-
 // leave_request 승인 이벤트를 학생 문서·history_logs로 원자적 반영.
 export async function finalize(lrRef, r) {
   const db = getFirestore();
