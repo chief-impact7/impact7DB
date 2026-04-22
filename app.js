@@ -4605,15 +4605,18 @@ function _renderLeaveRequestRow(r, studentId) {
         </div>`;
 }
 
-// finalize_error 재시도: status를 requested → approved 토글하면 Cloud Function이 다시 발동
+// finalize_error 수동 재시도: status를 'requested' → 'approved' 토글로 onUpdate 재발동.
+// finalize_* 필드는 admin SDK만 쓸 수 있어 클라이언트에서 삭제 불가 → status 토글 방식 사용.
+// 두 write 사이 지연은 Firestore가 빠른 연속 write를 하나의 onUpdate로 coalesce하는 것을 방지.
 window._retryFinalize = async (docId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
     if (!r) return;
     if (!confirm(`${r.student_name} — 서버 처리 재시도할까요?`)) return;
+    const auditFields = { updated_at: serverTimestamp(), updated_by: currentUser?.email || '' };
     try {
-        await updateDoc(doc(db, 'leave_requests', docId), { status: 'requested', updated_at: serverTimestamp() });
+        await updateDoc(doc(db, 'leave_requests', docId), { status: 'requested', ...auditFields });
         await new Promise(resolve => setTimeout(resolve, 500));
-        await updateDoc(doc(db, 'leave_requests', docId), { status: 'approved', updated_at: serverTimestamp() });
+        await updateDoc(doc(db, 'leave_requests', docId), { status: 'approved', ...auditFields });
     } catch (err) {
         alert('재시도 실패: ' + err.message);
         console.error(err);
@@ -4716,13 +4719,14 @@ async function _populateTargetClassDropdown(student) {
     }
 
     select.innerHTML = '<option value="">-- 반 선택 --</option>';
-    // 정규반만 (class_type 없음=레거시 정규 포함, '내신'/'특강' 제외)
-    // class_settings에 level(초/중/고) 메타가 없어 branch만으로 필터.
+    // NOTE: DSC leave-request.js의 _openReturnModal 드롭다운 로직과 동일 구조.
+    // 변경 시 양쪽 동시 수정. class_settings에 level 메타 없어 branch만으로 필터.
     const candidates = Object.entries(_classSettingsCache)
         .filter(([code, cs]) => {
+            // 정규반만 (class_type 없음=레거시 정규 포함, '내신'/'특강' 제외)
             if (cs.class_type && cs.class_type !== '정규') return false;
-            const firstChar = (code.match(/\d/) || [''])[0];
-            const codeBranch = firstChar === '1' ? '2단지' : firstChar === '2' ? '10단지' : '';
+            const firstDigit = (code.match(/\d/) || [''])[0];
+            const codeBranch = firstDigit === '1' ? '2단지' : firstDigit === '2' ? '10단지' : '';
             if (branch && codeBranch && codeBranch !== branch) return false;
             return true;
         })
@@ -4734,12 +4738,11 @@ async function _populateTargetClassDropdown(student) {
         opt.textContent = days ? `${code} (${days})` : code;
         select.appendChild(opt);
     }
-    // 기존 정규 enrollment의 반 코드를 기본값으로
     const existingReg = (student.enrollments || []).find(e =>
         (!e.class_type || e.class_type === '정규') && e.class_number
     );
     if (existingReg) {
-        const existingCode = `${existingReg.level_symbol || ''}${existingReg.class_number || ''}`;
+        const existingCode = enrollmentCode(existingReg);
         if (candidates.some(([c]) => c === existingCode)) {
             select.value = existingCode;
         }
