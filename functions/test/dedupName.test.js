@@ -40,4 +40,13 @@ describe('deduplicateName', () => {
     const others = [{ id: 'b', name: '김철수', status: '등원예정' }];
     expect(deduplicateName('a', '김철수', others)).toBe('김철수2');
   });
+
+  it('실휴원/가휴원도 활성으로 간주 (재원 전환 시 충돌 방지)', () => {
+    const others = [
+      { id: 'b', name: '김철수', status: '실휴원' },
+      { id: 'c', name: '이영희', status: '가휴원' },
+    ];
+    expect(deduplicateName('a', '김철수', others)).toBe('김철수2');
+    expect(deduplicateName('a', '이영희', others)).toBe('이영희2');
+  });
 });

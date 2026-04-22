@@ -41,7 +41,7 @@ describe('finalize — integration', () => {
       {
         student_id: 's1', request_type: '재등원요청',
         target_class_code: 'A103', return_date: '2026-04-21',
-        status: 'approved', use_server_finalize: true,
+        status: 'approved',
       },
       { A103: { default_days: ['월', '수'] } },
     );
@@ -68,7 +68,7 @@ describe('finalize — integration', () => {
       {
         student_id: 's2', request_type: '휴원요청', leave_sub_type: '실휴원',
         leave_start_date: '2099-01-01', leave_end_date: '2099-02-01',
-        status: 'approved', use_server_finalize: true,
+        status: 'approved',
       },
     );
     const lr = (await lrRef.get()).data();
@@ -88,7 +88,7 @@ describe('finalize — integration', () => {
       },
       {
         student_id: 's3', request_type: '휴원→퇴원', withdrawal_date: '2026-04-21',
-        status: 'approved', use_server_finalize: true,
+        status: 'approved',
       },
     );
     const lr = (await lrRef.get()).data();

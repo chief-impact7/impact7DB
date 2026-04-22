@@ -1,23 +1,30 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { buildUpdate } from './buildUpdate.js';
 
+const RETURN_TYPES = new Set(['복귀요청', '재등원요청']);
+
 // leave_request 승인 이벤트를 학생 문서·history_logs로 원자적 반영.
 export async function finalize(lrRef, r) {
   const db = getFirestore();
   const studentRef = db.doc(`students/${r.student_id}`);
 
-  // class_settings는 transaction 밖에서 로드 (마스터 데이터, 경합 없음)
-  const csSnap = await db.collection('class_settings').get();
+  // 동명이인 체크는 RETURN(재원 전환) 시에만 필요. 다른 유형은 학생 조회 스킵.
+  // 활성 집합은 휴원 포함 — 재원 전환 시 휴원 중인 동명이인과도 충돌 방지.
+  const stuPromise = RETURN_TYPES.has(r.request_type)
+    ? db.collection('students')
+        .where('status', 'in', ['재원', '등원예정', '실휴원', '가휴원'])
+        .get()
+    : Promise.resolve(null);
+  // 트랜잭션 밖 스냅샷: 동시 다발 동명 등록 시 race 가능 (현 규모에서는 허용).
+  // class_settings는 마스터 데이터라 경합 없음.
+  const [csSnap, stuSnap] = await Promise.all([
+    db.collection('class_settings').get(),
+    stuPromise,
+  ]);
   const classSettings = {};
   csSnap.forEach(d => { classSettings[d.id] = d.data(); });
-
-  // 활성 학생 목록도 미리 로드 (동명이인 체크용)
-  // 주의: 트랜잭션 밖 스냅샷이라 동시 다발 동명 등록 시 race 가능 (현 규모에서는 허용).
-  const stuSnap = await db.collection('students')
-    .where('status', 'in', ['재원', '등원예정'])
-    .get();
   const allStudents = [];
-  stuSnap.forEach(d => allStudents.push({ id: d.id, ...d.data() }));
+  if (stuSnap) stuSnap.forEach(d => allStudents.push({ id: d.id, ...d.data() }));
 
   await db.runTransaction(async tx => {
     const stuDoc = await tx.get(studentRef);

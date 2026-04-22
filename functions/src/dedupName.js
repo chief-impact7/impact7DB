@@ -1,4 +1,6 @@
-const ACTIVE = new Set(['재원', '등원예정']);
+// 등록/휴원 중인 학생 모두를 포함해야 재원 전환 시 충돌 방지 가능.
+// (impact7DB의 _suggestUniqueActiveName과 동일 정책)
+const ACTIVE = new Set(['재원', '등원예정', '실휴원', '가휴원']);
 
 // 활성 학생 중 동명이인이 있으면 숫자 접미사 붙인 이름 반환, 없으면 null.
 export function deduplicateName(selfId, currentName, allStudents) {
