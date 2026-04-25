@@ -8,12 +8,17 @@ firebase-adminsdk.json
 firebase-key.json
 serviceAccountKey.json
 service-account.json
+service-account.json.bak*
+*.bak
+*.bak.*
 
 # 2. Dependencies & Node Modules
 node_modules/
 package-lock.json
 npm-debug.log
 yarn-error.log
+firestore-debug.log
+firebase-debug.log
 
 # 3. Build & Output Directories
 dist/
