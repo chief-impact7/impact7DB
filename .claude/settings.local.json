@@ -104,7 +104,7 @@
       "Bash(curl -s -L -w \"\\\\nHTTP_CODE: %{http_code}\" \"https://script.google.com/a/macros/gw.impact7.kr/s/AKfycbxS51Bs0GJqaUk2hDZkh2RUHL7eyKRr8mjKCzOKAEW2OpNhZQuZH4BdS9Nu3JZmVGGrSA/exec?action=import&sheetId=test&format=json\" 2>&1 | tail -20)",
       "Bash(git status -u)",
       "Bash(git remote set-url origin https://github.com/chief-impact7/impact7DSC2AIs.git && git remote -v)",
-      "Bash(git add upsert-students.js app.js auth.js index.html gas/Code.gs package.json .gitignore HANDOFF.md README_AI.md claude.md user_log.js .claude/settings.local.json)",
+      "Bash(git add upsert-students.js app.js auth.js index.html gas/Code.gs package.json .gitignore HANDOFF.md README_AI.md AGENTS.md user_log.js .claude/settings.local.json)",
       "Bash(git add apps/index.html apps/main.js core/auth.js core/firebase.js core/userlog.js userlog.js claudnotes.md gemini.md gemininotes.md REATME_AI.md \"students.csv\\\\xef\\\\x80\\\\xbaZone.Identifier\" 2>/dev/null; echo \"deleted files staged\")",
       "Bash(git commit -m \"$\\(cat <<'EOF'\nfeat: CSV/구글시트 Upsert 기능 구현 및 레거시 코드 정리\n\n- upsert-students.js: CLI용 CSV Upsert 스크립트 \\(firebase-admin, dry-run 지원\\)\n- app.js: 브라우저 CSV/구글시트 Upsert, Google Picker 연동, makeDocId 전화번호 정규화\\(010→10\\)\n- auth.js: Drive scope 추가, OAuth accessToken export\n- index.html: Google Picker API 로드, 업로드 버튼 통합\n- gas/Code.gs: importFromSheetById\\(\\) 추가, doGet import action 지원\n- 레거시 파일 삭제 \\(apps/, core/, userlog.js, 중복 md 파일 등\\)\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git push origin master)",
