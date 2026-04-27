@@ -83,7 +83,7 @@ body {
     padding: 8px;
     border-radius: 50%;
     cursor: pointer;
-    color: rgba(255,255,255,0.87);
+    color: var(--text-sec);
     transition: background 0.2s;
     user-select: none;
     display: flex;
@@ -92,10 +92,24 @@ body {
 }
 
 .icon-btn:hover {
-    background-color: rgba(255,255,255,0.12);
+    background-color: rgba(0, 0, 0, 0.08);
 }
 
 .icon-btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* App bar에서만 흰색 아이콘 (짙은 녹색 배경) */
+.app-bar .icon-btn {
+    color: rgba(255,255,255,0.87);
+}
+
+.app-bar .icon-btn:hover {
+    background-color: rgba(255,255,255,0.12);
+}
+
+.app-bar .icon-btn:focus-visible {
     outline: 2px solid rgba(255,255,255,0.6);
     outline-offset: 2px;
 }
