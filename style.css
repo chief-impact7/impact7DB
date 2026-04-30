@@ -504,66 +504,121 @@ summary.menu-l2 .material-symbols-outlined {
     letter-spacing: -0.01em;
 }
 
-.semester-selector {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 0 12px;
-    height: 36px;
-    border-radius: 0 16px 16px 0;
-    width: calc(100% - 8px);
-    margin-bottom: 6px;
+.level-semester-item {
+    padding: 0;
+    cursor: default;
+}
+
+.level-semester-item:hover { background: transparent; }
+
+.level-semester-item .level-semester-dropdown {
+    width: 100%;
+    height: 100%;
+    padding: 0 28px 0 28px;
+    border: none;
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23006241' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 10px center;
+    color: inherit;
+    font: inherit;
     cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: inherit;
+}
+
+.level-semester-item .level-semester-dropdown:hover {
+    background-color: var(--hover-bg);
+}
+
+.level-semester-item.active {
     background: var(--sbux-light);
-    transition: background 0.15s;
-}
-
-.semester-selector:hover {
-    background: #b8d9ce;
-}
-
-.semester-selector .material-symbols-outlined {
-    font-size: 20px;
     color: var(--sbux-green);
-    flex-shrink: 0;
 }
 
-.semester-select {
+.level-semester-item .level-semester-dropdown:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+}
+
+.level-semester-dropdowns-mobile {
+    display: none;
+    flex-direction: row;
+    gap: 4px;
     flex: 1;
     min-width: 0;
-    font-size: 13px;
-    font-family: var(--font-heading);
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    padding: 0;
+}
+
+.level-semester-dropdowns-mobile .level-semester-dropdown {
+    flex: 1;
+    min-width: 0;
+    height: 28px;
+    padding: 0 18px 0 8px;
     border: none;
-    border-radius: 0;
-    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23006241' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 4px center;
+    border-radius: 100px;
+    background: var(--sbux-light) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24'%3E%3Cpath fill='%23006241' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 6px center;
     color: var(--sbux-green);
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--font-body);
+    letter-spacing: -0.01em;
     cursor: pointer;
     appearance: none;
     -webkit-appearance: none;
 }
 
-.semester-select:focus-visible {
+.level-semester-dropdowns-mobile .level-semester-dropdown.active {
+    background-color: var(--sbux-green);
+    color: #fff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+}
+
+.level-semester-dropdowns-mobile .level-semester-dropdown:focus-visible {
     outline: 2px solid var(--primary);
     outline-offset: -2px;
 }
 
-.semester-settings-btn {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    padding: 2px;
-    cursor: pointer;
-    color: var(--sbux-green);
-    display: flex;
-    align-items: center;
-    border-radius: 4px;
+.past-semester-year + .past-semester-year {
+    margin-top: 14px;
 }
 
-.semester-settings-btn:hover {
-    background: rgba(0,0,0,0.08);
+.past-semester-year-label {
+    font-family: var(--font-heading);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-sec);
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+
+.past-semester-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.past-semester-item {
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    background: var(--surface);
+    color: var(--text-main);
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.past-semester-item:hover {
+    background: var(--sbux-light);
+    border-color: var(--sbux-light);
+    color: var(--sbux-green);
+}
+
+.past-semester-item.active {
+    background: var(--sbux-green);
+    border-color: var(--sbux-green);
+    color: #fff;
 }
 
 .semester-readonly-banner {
@@ -631,25 +686,6 @@ summary.menu-l2 .material-symbols-outlined {
 
 .filter-chips:empty {
     display: none;
-}
-
-.semester-filter-mobile {
-    display: none;
-    font-size: 12px;
-    font-family: var(--font-body);
-    font-weight: 500;
-    padding: 2px 6px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--surface);
-    color: var(--text-main);
-    cursor: pointer;
-    flex-shrink: 0;
-}
-
-.semester-filter-mobile:focus-visible {
-    outline: 2px solid var(--primary);
-    outline-offset: -2px;
 }
 
 .filter-clear-btn {
@@ -2495,8 +2531,8 @@ summary.menu-l2 .material-symbols-outlined {
     .sidebar-overlay.open {
         display: block;
     }
-    .semester-filter-mobile {
-        display: inline-block;
+    .level-semester-dropdowns-mobile {
+        display: flex;
     }
     .main-content {
         border-radius: 0;

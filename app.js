@@ -24,13 +24,34 @@ function parseCSVLine(line) {
     return result;
 }
 
-// 학부별 학기 이름 목록
+// 학부별 학기 이름 목록 (5-4-3 모델: 초등 5학기, 중등 4학기, 고등 3학기)
+// enrollment.semester는 `${year}-${name}` 대문자 (예: '2026-Spring1')
+// semester_settings 키는 `${level}-${year}-${nameLower}` (예: '초등-2026-spring1')
 const SEMESTER_NAMES = {
-    '초등': ['Winter', 'Spring', 'Summer', 'Autumn'],
+    '초등': ['Winter', 'Spring1', 'Spring2', 'Summer', 'Autumn'],
     '중등': ['Winter', 'Spring', 'Summer', 'Autumn'],
     '고등': ['Winter', 'Spring', 'Autumn'],
 };
 const DEFAULT_SEMESTER_NAMES = ['Winter', 'Spring', 'Summer', 'Autumn'];
+const LEVELS = Object.keys(SEMESTER_NAMES);
+const ALLOWED_SEMESTER_NAMES = Object.fromEntries(LEVELS.map(l => [l, new Set(SEMESTER_NAMES[l])]));
+// 드롭다운 노출 한도 = 현재 + 직전 1년치(학부별 학기 수)
+const LEVEL_MAX_VISIBLE = Object.fromEntries(LEVELS.map(l => [l, SEMESTER_NAMES[l].length + 1]));
+const SEMESTER_MORE_SENTINEL = '__more__';
+
+// semester_settings 키('초등-2026-spring1') ↔ enrollment.semester('2026-Spring1') 변환
+function settingsKeyToSemester(key) {
+    const m = key.match(/^(?:[^-]+-)?(\d{4})-(.+)$/);
+    if (!m) return key;
+    const [, year, name] = m;
+    return `${year}-${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+}
+function semesterToSettingsKey(level, semester) {
+    const m = (semester || '').match(/^(\d{4})-(.+)$/);
+    if (!m) return null;
+    const [, year, name] = m;
+    return `${level}-${year}-${name.toLowerCase()}`;
+}
 
 // 학부별 최대 학년 및 전환 규칙
 const LEVEL_MAX_GRADE = { '초등': 6, '중등': 3, '고등': 3 };
@@ -67,9 +88,6 @@ let currentStudentId = null;
 let allStudents = [];
 // 타입별 독립 필터 — 다른 타입끼리 AND 복합 적용
 let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null, class_code: null, leave: null, semester: null, grade: null };
-// 학기 필터는 localStorage에 저장하여 페이지 새로고침 후에도 유지
-const _savedSemester = localStorage.getItem('semesterFilter');
-if (_savedSemester) activeFilters.semester = _savedSemester;
 let isEditMode = false;
 let groupViewMode = 'none'; // 'none' | 'branch' | 'class'
 let _pendingEnrollments = []; // 신규등록 시 추가 수업 목록
@@ -79,7 +97,10 @@ let selectedStudentIds = new Set();
 let siblingMap = {};    // studentId → [siblingId, ...]
 let memoCache = {};     // studentId → true/false (메모 존재 여부)
 let semesterSettings = {};   // semester → { start_date }
-let currentSemester = null;  // 오늘 기준 현재 학기
+// 학부별 현재 학기 (enrollment 형식: '2026-Spring1')
+let currentSemesterByLevel = Object.fromEntries(LEVELS.map(l => [l, null]));
+// 학부별 학기 풀 캐시 — 학생 데이터 변경 시 invalidateSemesterPool()로 무효화
+let _semesterPoolCache = null;
 let currentFilteredStudents = null; // 필터 적용 후 학생 목록 (내보내기용)
 let leaveRequests = []; // leave_requests 컬렉션 캐시
 let _statsGeneratedDate = null; // daily stats 중복 생성 방지 (날짜 기반)
@@ -376,10 +397,6 @@ onAuthStateChanged(auth, async (user) => {
         await loadUserRole(email);
         await loadSemesterSettings();
         getCurrentSemester();
-        // 저장된 학기 필터가 없으면 현재 학기를 기본값으로 설정
-        if (!activeFilters.semester && currentSemester) {
-            activeFilters.semester = currentSemester;
-        }
         loadStudentList().then(() => generateDailyStatsIfNeeded());
     } else {
         currentUser = null;
@@ -433,10 +450,11 @@ async function loadStudentList() {
         await promoteEnrollPending();
         await handleScheduledLeaves();
         await handleScheduledWithdrawals();
+        invalidateSemesterPool();
         buildSiblingMap();
         buildClassFilterSidebar();
         buildGradeFilterSidebar();
-        buildSemesterFilter();
+        renderLevelSemesterDropdowns();
         updateReadonlyBanner();
         updateLeaveCountBadges();
         loadMemoCacheAndRender();
@@ -592,10 +610,11 @@ function _upsertLocalStudent(docId, data) {
 }
 
 function _refreshUIAfterMutation() {
+    invalidateSemesterPool();
     buildSiblingMap();
     buildClassFilterSidebar();
     buildGradeFilterSidebar();
-    buildSemesterFilter();
+    renderLevelSemesterDropdowns();
     updateReadonlyBanner();
     updateLeaveCountBadges();
     loadMemoCacheAndRender(); // 내부에서 applyFilterAndRender() 호출
@@ -909,6 +928,7 @@ function buildGradeFilterSidebar() {
 // ---------------------------------------------------------------------------
 function applyFilterAndRender() {
     // 필터 변경 시 동적 사이드바 갱신
+    renderLevelSemesterDropdowns();
     buildClassFilterSidebar();
     buildGradeFilterSidebar();
     if (activeFilters.grade) {
@@ -998,44 +1018,39 @@ function updateFilterChips() {
 }
 
 window.clearFilters = () => {
-    // semester는 sticky — 명시적으로 드롭다운에서 바꾸기 전까지 유지
-    const keepSemester = activeFilters.semester;
     Object.keys(activeFilters).forEach(k => activeFilters[k] = null);
-    activeFilters.semester = keepSemester;
-    // 학기 드롭다운 UI 동기화
-    syncSemesterDropdowns(keepSemester || '');
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     document.querySelector('.menu-l1[data-filter-type="all"]')?.classList.add('active');
-    // 동적 필터 active 해제
     document.querySelectorAll('#class-filter-list .nav-item, #grade-filter-list .nav-item').forEach(el => el.classList.remove('active'));
     applyFilterAndRender();
 };
 
-// 사이드바 + 모바일 학기 드롭다운 동기화
-function syncSemesterDropdowns(val) {
-    const ids = ['semester-filter', 'semester-filter-mobile'];
-    ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = val; });
-}
-
-window.handleSemesterFilter = (val) => {
-    activeFilters.semester = val || null;
-    // localStorage에 저장 — 페이지 새로고침 후에도 유지
-    if (val) {
-        localStorage.setItem('semesterFilter', val);
-        localStorage.setItem('lastSelectedSemester', val);
-    } else {
-        localStorage.removeItem('semesterFilter');
+// select.onchange에서 호출. sentinel이면 모달을 열고 select를 원상복귀.
+window.onLevelSemesterSelect = (level, sel) => {
+    if (sel.value === SEMESTER_MORE_SENTINEL) {
+        sel.value = activeFilters.level === level ? (activeFilters.semester || '') : '';
+        window.openPastSemesterModal(level);
+        return;
     }
-    syncSemesterDropdowns(val || '');
-    updateReadonlyBanner();
-    applyFilterAndRender();
+    window.handleLevelSemesterChange(level, sel.value);
 };
 
-// ─── 학부별 학기 정의 ──────────────────────────────────────────────────────
-const LEVEL_SEMESTERS = {
-    '초등': ['winter', 'spring1', 'spring2', 'summer', 'autumn'],
-    '중등': ['winter', 'spring', 'summer', 'autumn'],
-    '고등': ['winter', 'spring', 'autumn'],
+// 학부별 드롭다운에서 학기 선택. 빈 값이면 학부+학기 모두 해제.
+window.handleLevelSemesterChange = (level, semester) => {
+    if (semester) {
+        activeFilters.level = level;
+        activeFilters.semester = semester;
+    } else {
+        if (activeFilters.level === level) activeFilters.level = null;
+        activeFilters.semester = null;
+    }
+    document.querySelectorAll('.nav-item[data-filter-type="level"]').forEach(el => {
+        el.classList.toggle('active', el.dataset.filterValue === activeFilters.level);
+    });
+    document.querySelector('.menu-l1[data-filter-type="all"]')
+        ?.classList.toggle('active', !activeFilters.level);
+    updateReadonlyBanner();
+    applyFilterAndRender();
 };
 
 // ─── 학기 설정 (시작일) ──────────────────────────────────────────────────
@@ -1045,23 +1060,22 @@ async function loadSemesterSettings() {
     snap.forEach(d => { semesterSettings[d.id] = d.data(); });
 }
 
-function getCurrentSemester() {
+// 학부별 현재 학기 캐시 갱신. level 지정 시 해당 학부 값 반환.
+function getCurrentSemester(level) {
     const today = getTodayDateStr();
-    const entries = Object.entries(semesterSettings)
-        .filter(([, v]) => v.start_date)
-        .sort((a, b) => a[1].start_date.localeCompare(b[1].start_date));
-    let result = null;
-    for (const [semester, { start_date }] of entries) {
-        if (start_date <= today) result = semester;
+    for (const lv of LEVELS) {
+        const entries = Object.entries(semesterSettings)
+            .filter(([k, v]) => k.startsWith(`${lv}-`) && v.start_date && v.start_date <= today)
+            .sort((a, b) => a[1].start_date.localeCompare(b[1].start_date));
+        const latest = entries[entries.length - 1];
+        currentSemesterByLevel[lv] = latest ? settingsKeyToSemester(latest[0]) : null;
     }
-    currentSemester = result;
-    return result;
+    return level ? currentSemesterByLevel[level] : currentSemesterByLevel;
 }
 
 function isPastSemester() {
-    if (!currentSemester) return false;
-    if (activeFilters.semester && activeFilters.semester !== currentSemester) return true;
-    return false;
+    if (!activeFilters.semester) return false;
+    return !Object.values(currentSemesterByLevel).includes(activeFilters.semester);
 }
 
 function updateReadonlyBanner() {
@@ -1069,86 +1083,106 @@ function updateReadonlyBanner() {
     if (banner) banner.style.display = isPastSemester() ? '' : 'none';
 }
 
-// ─── 학기 시작일 설정 모달 ──────────────────────────────────────────────────
-window.openSemesterSettingsModal = () => {
-    const modal = document.getElementById('semester-settings-modal');
-    const body = document.getElementById('semester-settings-body');
-    if (!modal || !body) return;
+function invalidateSemesterPool() { _semesterPoolCache = null; }
 
-    const semesters = new Set();
-    allStudents.forEach(s =>
-        (s.enrollments || []).forEach(e => { if (e.semester) semesters.add(e.semester); })
-    );
-    semesters.delete('2026-Spring1');
-    semesters.delete('2026-Spring2');
-    semesters.delete('2027-Spring1');
-    semesters.delete('2027-Spring2');
-    const sorted = [...semesters].sort();
-
-    if (sorted.length === 0) {
-        body.innerHTML = '<p style="color:var(--text-sec);font-size:13px;">등록된 학기가 없습니다.</p>';
-    } else {
-        body.innerHTML = sorted.map(sem => {
-            const setting = semesterSettings[sem] || {};
-            const isCurrent = sem === currentSemester;
-            return `<div class="semester-setting-row">
-                <span class="semester-setting-label">${esc(sem)}${isCurrent ? '<span class="current-badge">현재</span>' : ''}</span>
-                <input type="date" class="semester-setting-date" value="${setting.start_date || ''}"
-                    onchange="window.saveSemesterStartDate('${esc(sem)}', this.value)">
-            </div>`;
-        }).join('');
-    }
-    modal.style.display = 'flex';
-};
-
-window.closeSemesterSettingsModal = (e) => {
-    if (e && e.target !== document.getElementById('semester-settings-modal')) return;
-    document.getElementById('semester-settings-modal').style.display = 'none';
-};
-
-window.saveSemesterStartDate = async (semester, startDate) => {
-    try {
-        if (startDate) {
-            await setDoc(doc(db, 'semester_settings', semester), { start_date: startDate });
-            semesterSettings[semester] = { start_date: startDate };
-        } else {
-            await deleteDoc(doc(db, 'semester_settings', semester));
-            delete semesterSettings[semester];
-        }
-        getCurrentSemester();
-        updateReadonlyBanner();
-        window.openSemesterSettingsModal();
-    } catch (err) {
-        console.error('학기 시작일 저장 실패:', err);
-        alert('저장 실패: ' + err.message);
-    }
-};
-
-function buildSemesterFilter() {
-    const semesters = new Set();
-    allStudents.forEach(s => (s.enrollments || []).forEach(e => { if (e.semester) semesters.add(e.semester); }));
-    // Spring1/Spring2는 Spring으로 통합되었으므로 필터에서 제외
-    semesters.delete('2026-Spring1');
-    semesters.delete('2026-Spring2');
-    semesters.delete('2027-Spring1');
-    semesters.delete('2027-Spring2');
-    const sorted = [...semesters].sort().reverse();
-    const current = activeFilters.semester || '';
-    const optionsHtml = '<option value="">전체 학기</option>' + sorted.map(s => {
-        return `<option value="${esc(s)}"${s === current ? ' selected' : ''}>${esc(s)}</option>`;
-    }).join('');
-    // 사이드바 + 모바일 드롭다운 모두 업데이트
-    ['semester-filter', 'semester-filter-mobile'].forEach(id => {
-        const sel = document.getElementById(id);
-        if (sel) { sel.innerHTML = optionsHtml; sel.value = current; }
+// 5-4-3 모델 외 값은 무시. 캐시는 loadStudentList / _refreshUIAfterMutation에서 무효화.
+function collectSemestersByLevel() {
+    if (_semesterPoolCache) return _semesterPoolCache;
+    const byLevel = Object.fromEntries(LEVELS.map(l => [l, new Set()]));
+    allStudents.forEach(s => {
+        const allowed = byLevel[s.level];
+        const allowedNames = ALLOWED_SEMESTER_NAMES[s.level];
+        if (!allowed || !allowedNames) return;
+        (s.enrollments || []).forEach(e => {
+            if (!e.semester) return;
+            const m = e.semester.match(/^\d{4}-(.+)$/);
+            if (m && allowedNames.has(m[1])) allowed.add(e.semester);
+        });
     });
-    // localStorage에서 복원된 값이 유효한 학기인지 확인
-    if (activeFilters.semester && !semesters.has(activeFilters.semester)) {
-        activeFilters.semester = null;
-        localStorage.removeItem('semesterFilter');
-        syncSemesterDropdowns('');
-    }
+    _semesterPoolCache = byLevel;
+    return byLevel;
 }
+
+function renderLevelSemesterDropdowns() {
+    const sidebar = document.getElementById('level-semester-dropdowns');
+    const mobile = document.getElementById('level-semester-dropdowns-mobile');
+    if (!sidebar && !mobile) return;
+
+    const semesterPool = collectSemestersByLevel();
+    // 활성 학기가 현재 학부 풀에 없으면(데이터 갱신 등) 무효화
+    if (activeFilters.semester && activeFilters.level) {
+        const pool = semesterPool[activeFilters.level];
+        if (pool && !pool.has(activeFilters.semester)) activeFilters.semester = null;
+    }
+
+    let sidebarHtml = '';
+    let mobileHtml = '';
+    LEVELS.forEach(level => {
+        const cur = currentSemesterByLevel[level];
+        const sems = [...semesterPool[level]];
+        if (cur) sems.push(cur);
+        const sorted = [...new Set(sems)].sort().reverse();
+        const visible = sorted.slice(0, LEVEL_MAX_VISIBLE[level]);
+        const hasMore = sorted.length > LEVEL_MAX_VISIBLE[level];
+        const isActive = activeFilters.level === level && activeFilters.semester;
+        const selectedVal = isActive ? activeFilters.semester : '';
+        if (selectedVal && !visible.includes(selectedVal)) visible.unshift(selectedVal);
+        const placeholder = isActive ? `${LEVEL_SHORT[level]} 해제` : `${LEVEL_SHORT[level]} ${cur || '-'}`;
+        const optionItems = [`<option value="">${esc(placeholder)}</option>`];
+        visible.forEach(s => optionItems.push(
+            `<option value="${escAttr(s)}"${s === selectedVal ? ' selected' : ''}>${esc(s)}</option>`
+        ));
+        if (hasMore) optionItems.push(`<option value="${SEMESTER_MORE_SENTINEL}">과거 학기 조회…</option>`);
+        const selectHtml = `<select class="level-semester-dropdown${isActive ? ' active' : ''}"
+                data-level="${level}"
+                onchange="window.onLevelSemesterSelect('${level}', this)"
+                aria-label="${level} 학기 필터">${optionItems.join('')}</select>`;
+        sidebarHtml += `<li class="menu-l2 level-semester-item${isActive ? ' active' : ''}">${selectHtml}</li>`;
+        mobileHtml += selectHtml;
+    });
+
+    if (sidebar) sidebar.innerHTML = sidebarHtml;
+    if (mobile) mobile.innerHTML = mobileHtml;
+}
+
+// 과거 학기 조회 모달 — 그 학부의 모든 학기를 연도별로 묶어 노출
+window.openPastSemesterModal = (level) => {
+    const all = [...collectSemestersByLevel()[level]];
+    if (currentSemesterByLevel[level]) all.push(currentSemesterByLevel[level]);
+    const byYear = {};
+    [...new Set(all)].forEach(s => {
+        const m = s.match(/^(\d{4})-/);
+        if (!m) return;
+        (byYear[m[1]] = byYear[m[1]] || []).push(s);
+    });
+    const years = Object.keys(byYear).sort().reverse();
+    const html = years.length ? years.map(y => {
+        const items = byYear[y].sort().reverse().map(s => {
+            const isActive = activeFilters.level === level && activeFilters.semester === s;
+            return `<button type="button" class="past-semester-item${isActive ? ' active' : ''}"
+                data-semester="${escAttr(s)}">${esc(s)}</button>`;
+        }).join('');
+        return `<div class="past-semester-year">
+            <div class="past-semester-year-label">${y}</div>
+            <div class="past-semester-list">${items}</div>
+        </div>`;
+    }).join('') : '<p style="color:var(--text-sec);font-size:13px;">학기 데이터가 없습니다.</p>';
+    document.getElementById('past-semester-title').textContent = `${level} · 학기 조회`;
+    const body = document.getElementById('past-semester-body');
+    body.innerHTML = html;
+    body.onclick = (ev) => {
+        const btn = ev.target.closest('.past-semester-item');
+        if (!btn) return;
+        window.closePastSemesterModal();
+        window.handleLevelSemesterChange(level, btn.dataset.semester);
+    };
+    document.getElementById('past-semester-modal').style.display = 'flex';
+};
+
+window.closePastSemesterModal = (e) => {
+    if (e && e.target !== document.getElementById('past-semester-modal')) return;
+    document.getElementById('past-semester-modal').style.display = 'none';
+};
 
 function renderStudentList(students, pastResults) {
     const listContainer = document.querySelector('.list-items');
@@ -1703,8 +1737,8 @@ window.showNewStudentForm = () => {
 // 학부 변경 시 학기 드롭다운 갱신
 window.handleLevelChange = (level) => {
     const initSemSelect = document.getElementById('initial-semester-select');
-    const _defSem = activeFilters.semester || localStorage.getItem('lastSelectedSemester') || '';
-    if (initSemSelect) initSemSelect.innerHTML = getSemesterOptions(level, _defSem);
+    const def = activeFilters.semester || currentSemesterByLevel[level] || '';
+    if (initSemSelect) initSemSelect.innerHTML = getSemesterOptions(level, def);
 };
 
 window.handleStatusChange = (val) => {
@@ -2088,7 +2122,7 @@ window.handleFormClassTypeChange = () => {
 // 수업 모달 학기 드롭다운 공통 채우기
 function _populateEnrollmentSemester(level) {
     const sel = document.getElementById('enroll-semester-select');
-    const def = activeFilters.semester || localStorage.getItem('lastSelectedSemester') || '';
+    const def = activeFilters.semester || currentSemesterByLevel[level] || '';
     if (sel) sel.innerHTML = getSemesterOptions(level, def);
 }
 
@@ -5346,7 +5380,7 @@ window.saveNaesinSchedule = async () => {
     saveBtn.textContent = '저장 중...';
 
     try {
-        const semester = activeFilters.semester || currentSemester || '';
+        const filterSemester = activeFilters.semester || '';
         const BATCH_SIZE = 200;
 
         for (let i = 0; i < writes.length; i += BATCH_SIZE) {
@@ -5357,6 +5391,7 @@ window.saveNaesinSchedule = async () => {
                 const s = studentMap.get(w.studentId);
                 if (!s) continue;
 
+                const semester = filterSemester || currentSemesterByLevel[s.level] || '';
                 const newEnrollment = {
                     class_type: '내신',
                     day: w.days,
@@ -5693,7 +5728,7 @@ window.saveGrammarSpecial = async () => {
     saveBtn.textContent = '저장 중...';
 
     try {
-        const semester = activeFilters.semester || currentSemester || '';
+        const filterSemester = activeFilters.semester || '';
         const BATCH_SIZE = 200;
         const studentMap = new Map(allStudents.map(s => [s.id, s]));
 
@@ -5703,6 +5738,9 @@ window.saveGrammarSpecial = async () => {
 
             for (const entry of chunk) {
                 const allDays = [...new Set(entry.weeklySchedule.map(ws => ws.day))];
+                const existingS = studentMap.get(entry.docId);
+                const studentLevel = existingS?.level || entry.level || '';
+                const semester = filterSemester || currentSemesterByLevel[studentLevel] || '';
                 const newEnrollment = {
                     class_type: '특강',
                     level_symbol: 'GR',
@@ -5713,8 +5751,6 @@ window.saveGrammarSpecial = async () => {
                     semester,
                     weekly_schedule: entry.weeklySchedule,
                 };
-
-                const existingS = studentMap.get(entry.docId);
 
                 if (existingS) {
                     // Existing student — append/replace enrollment
@@ -5820,25 +5856,16 @@ window.switchLevelTab = (level) => {
 
 function renderLevelSemesterSettings(level) {
     const body = document.getElementById('admin-semester-body');
-    const semNames = LEVEL_SEMESTERS[level] || [];
+    const semNames = SEMESTER_NAMES[level] || DEFAULT_SEMESTER_NAMES;
     const currentYear = new Date().getFullYear();
     const years = [currentYear - 1, currentYear, currentYear + 1];
-
-    // 레벨별 현재 학기 계산
-    const today = getTodayDateStr();
-    const levelEntries = Object.entries(semesterSettings)
-        .filter(([k, v]) => k.startsWith(`${level}-`) && v.start_date)
-        .sort((a, b) => a[1].start_date.localeCompare(b[1].start_date));
-    let currentLevelSemester = null;
-    for (const [k, { start_date }] of levelEntries) {
-        if (start_date <= today) currentLevelSemester = k;
-    }
+    const currentKey = semesterToSettingsKey(level, currentSemesterByLevel[level]);
 
     const rows = years.flatMap(year =>
         semNames.map(name => {
-            const key = `${level}-${year}-${name}`;
+            const key = `${level}-${year}-${name.toLowerCase()}`;
             const setting = semesterSettings[key] || {};
-            const isCurrent = key === currentLevelSemester;
+            const isCurrent = key === currentKey;
             return `<div class="semester-setting-row">
                 <span class="semester-setting-label">
                     ${year} ${name}${isCurrent ? '<span class="current-badge">현재</span>' : ''}

@@ -41,15 +41,6 @@
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
         <!-- Sidebar -->
         <nav class="sidebar">
-            <div class="semester-selector" id="semester-selector">
-                <span class="material-symbols-outlined">calendar_month</span>
-                <select id="semester-filter" class="semester-select"
-                        onchange="window.handleSemesterFilter(this.value)"
-                        aria-label="학기 필터">
-                    <option value="">전체 학기</option>
-                </select>
-            </div>
-
             <button class="compose-btn" onclick="window.showNewStudentForm()">
                 <span class="material-symbols-outlined">person_add</span>
                 Registration
@@ -87,6 +78,14 @@
                         <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="내신">내신</li>
                     </ul>
                 </details>
+            </details>
+
+            <!-- L1: Semester (학부별 학기 드롭다운) -->
+            <details class="l1-group" open>
+                <summary class="menu-l1">
+                    <span class="material-symbols-outlined">event_note</span>Semester
+                </summary>
+                <ul class="nav-list" id="level-semester-dropdowns" aria-label="학부별 학기 필터"></ul>
             </details>
 
             <!-- L1: School (L2 토글) -->
@@ -227,11 +226,7 @@
             <div class="list-panel">
                 <div class="panel-header">
                     <span id="student-count" class="count-chip">—</span>
-                    <select id="semester-filter-mobile" class="semester-filter-mobile"
-                            onchange="window.handleSemesterFilter(this.value)"
-                            aria-label="학기 선택">
-                        <option value="">전체</option>
-                    </select>
+                    <div class="level-semester-dropdowns level-semester-dropdowns-mobile" id="level-semester-dropdowns-mobile" aria-label="학부별 학기 필터"></div>
                     <span id="filter-chips" class="filter-chips"></span>
                     <span id="filter-clear-btn" class="filter-clear-btn" onclick="window.clearFilters()" title="필터 초기화" style="display:none;" role="button" tabindex="0" aria-label="닫기">
                         <span class="material-symbols-outlined" style="font-size:16px;">close</span>
@@ -850,16 +845,16 @@
         </div>
     </div>
 
-    <!-- 학기 시작일 설정 모달 (구형 - 학기 필터 옆 버튼용, 유지) -->
-    <div id="semester-settings-modal" class="modal-overlay" onclick="window.closeSemesterSettingsModal(event)" style="display:none;">
-        <div class="modal-card" style="max-width:400px;">
+    <!-- 과거 학기 조회 모달 -->
+    <div id="past-semester-modal" class="modal-overlay" onclick="window.closePastSemesterModal(event)" style="display:none;">
+        <div class="modal-card" style="max-width:380px;">
             <div class="modal-header">
-                <h3 style="margin:0;font-size:16px;">학기 시작일 설정</h3>
-                <button class="btn-icon" onclick="window.closeSemesterSettingsModal()">
+                <h3 id="past-semester-title" style="margin:0;font-size:16px;">학기 조회</h3>
+                <button class="btn-icon" onclick="window.closePastSemesterModal()">
                     <span class="material-symbols-outlined">close</span>
                 </button>
             </div>
-            <div class="modal-body" id="semester-settings-body"></div>
+            <div class="modal-body" id="past-semester-body" style="padding:16px;"></div>
         </div>
     </div>
 
