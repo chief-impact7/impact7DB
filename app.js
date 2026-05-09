@@ -1937,6 +1937,24 @@ window.submitNewStudent = async () => {
             studentData.pause_start_date = f.pause_start_date.value;
             studentData.pause_end_date = f.pause_end_date.value;
         }
+
+        if (LEAVE_STATUSES.includes(oldStudent.status)) {
+            const wasLeavePeriodChanged =
+                (oldStudent.pause_start_date || '') !== (studentData.pause_start_date || '') ||
+                (oldStudent.pause_end_date || '') !== (studentData.pause_end_date || '');
+            if (!LEAVE_STATUSES.includes(statusVal)) {
+                alert('휴원 중인 학생의 상태는 직접 변경할 수 없습니다.\n복귀는 휴퇴원요청의 복귀요청으로, 퇴원은 휴원→퇴원으로 처리하세요.');
+                f.status.value = oldStudent.status;
+                if (window.handleStatusChange) window.handleStatusChange(oldStudent.status);
+                return;
+            }
+            if (wasLeavePeriodChanged) {
+                alert('휴원 기간은 직접 변경할 수 없습니다.\n휴원 종료일 변경은 휴퇴원요청의 휴원연장으로 처리하세요.');
+                f.pause_start_date.value = oldStudent.pause_start_date || '';
+                f.pause_end_date.value = oldStudent.pause_end_date || '';
+                return;
+            }
+        }
     } else {
         studentData = {
             name,
