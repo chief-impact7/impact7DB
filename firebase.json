@@ -16,7 +16,7 @@
     {
       "source": "functions",
       "codebase": "leave-request",
-      "runtime": "nodejs20",
+      "runtime": "nodejs22",
       "ignore": ["node_modules", ".git", "*.log"]
     }
   ]
