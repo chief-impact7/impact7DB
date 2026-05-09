@@ -1,8 +1,10 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { finalize } from './src/finalize.js';
+import { runClassCleanup } from './src/cleanup.js';
 
 initializeApp();
 getFirestore();
@@ -12,6 +14,26 @@ setGlobalOptions({
   region: 'asia-northeast3',
   maxInstances: 10,
 });
+
+// 매일 03:00 KST에 종료된 + 0명인 class_settings 자동 정리
+// 특강: special_end + 7일, 내신: naesin_end + 30일 grace period
+export const onScheduleClassCleanup = onSchedule(
+  {
+    schedule: '0 3 * * *',
+    timeZone: 'Asia/Seoul',
+    retryCount: 0,
+  },
+  async () => {
+    const db = getFirestore();
+    try {
+      const result = await runClassCleanup(db);
+      console.log('[onScheduleClassCleanup] 완료:', JSON.stringify(result));
+    } catch (err) {
+      console.error('[onScheduleClassCleanup] 실패:', err);
+      throw err;
+    }
+  }
+);
 
 // leave_requests/{docId} 승인 전이 트리거
 export const onLeaveRequestApproved = onDocumentUpdated(
