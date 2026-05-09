@@ -2,6 +2,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { collection, getDocs, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
 import { auth, db } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken } from './auth.js';
+import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 
 // --- RFC 4180 compliant CSV line parser ---
 function parseCSVLine(line) {
@@ -266,15 +267,14 @@ const activeDays = (s) => [...new Set(relevantEnrollments(s).flatMap(e => normal
 
 // 학교명 축약 표시 (예: 진명여자고등학교 고등 2학년 → 진명여고2)
 const abbreviateSchool = (s) => {
-    // 더 긴 접미사를 먼저 체크해야 부분 일치 오류를 제거할 수 있음
-    const school = (s.school || '')
+    const school = cleanSchoolName(s.school)
         .replace(/고등학교$/, '')
         .replace(/중학교$/, '')
         .replace(/초등학교$/, '')
         .replace(/학교$/, '')
         .trim();
-    const level = (s.level || '');
-    const levelShort = level === '초등' ? '초' : level === '중등' ? '중' : level === '고등' ? '고' : level;
+    const level = s.level || '';
+    const levelShort = levelShortName(level);
     const gradeNum = parseInt(s.grade, 10);
     const maxGrade = LEVEL_MAX_GRADE[level];
     const grade = s.grade ? (!NEXT_LEVEL[level] && maxGrade && gradeNum > maxGrade ? `${maxGrade}+` : `${s.grade}`) : '';
@@ -631,6 +631,7 @@ function searchPastStudents(term) {
     return allStudents.filter(s => {
         if (!PAST_STUDENT_STATUSES.has(s.status)) return false;
         if (s.name && s.name.toLowerCase().includes(lowerTerm)) return true;
+        if (schoolSearchTerms(s).some(v => v.toLowerCase().includes(lowerTerm))) return true;
         if (isPhoneSearch) {
             if (s.student_phone && s.student_phone.includes(term)) return true;
             if (s.parent_phone_1 && s.parent_phone_1.includes(term)) return true;
@@ -982,7 +983,7 @@ function applyFilterAndRender() {
     if (term) {
         filtered = filtered.filter(s =>
             (s.name && s.name.toLowerCase().includes(term)) ||
-            (s.school && s.school.toLowerCase().includes(term)) ||
+            schoolSearchTerms(s).some(v => v.toLowerCase().includes(term)) ||
             (s.student_phone && s.student_phone.includes(term)) ||
             (s.parent_phone_1 && s.parent_phone_1.includes(term)) ||
             allClassCodes(s).some(code => code.toLowerCase().includes(term))
@@ -1865,9 +1866,10 @@ window.submitNewStudent = async () => {
     const name = f.name.value.trim();
     const parentPhone1 = f.parent_phone_1.value.trim();
 
-    const school = f.school.value.trim();
     const grade = f.grade.value.trim().replace(/[^0-9]/g, '');
     const level = f.level.value;
+    const knownSchools = collectKnownSchoolNames(allStudents);
+    const school = normalizeSchoolName(f.school.value, level, knownSchools);
 
     if (!name) { alert('이름을 입력하세요.'); f.name.focus(); return; }
     if (!parentPhone1) { alert('학부모 연락처를 입력하세요.'); f.parent_phone_1.focus(); return; }
@@ -3238,6 +3240,7 @@ async function runUpsertFromRows(rows, sourceName) {
         const parentPhone = raw['parent_phone_1'] || raw['학부모연락처1'] || raw['student_phone'] || raw['학생연락처'] || '';
         if (!name) continue;
 
+        const level = raw['level'] || raw['학부'] || '';
         const classNumber = raw['class_number'] || '';
         const branch = raw['branch'] || branchFromClassNumber(classNumber);
         const docId = makeDocId(name, parentPhone);
@@ -3258,7 +3261,7 @@ async function runUpsertFromRows(rows, sourceName) {
 
         if (!studentMap[docId]) {
             studentMap[docId] = {
-                name, level: raw['level'] || raw['학부'] || '', school: raw['school'] || raw['학교'] || '',
+                name, level, school: cleanSchoolName(raw['school'] || raw['학교'] || ''),
                 grade: raw['grade'] || raw['학년'] || '', student_phone: raw['student_phone'] || raw['학생연락처'] || '',
                 parent_phone_1: parentPhone, parent_phone_2: raw['parent_phone_2'] || raw['학부모연락처2'] || '',
                 guardian_name_1: raw['guardian_name_1'] || raw['보호자명1'] || '',
@@ -3282,6 +3285,7 @@ async function runUpsertFromRows(rows, sourceName) {
     for (const s of allStudents) {
         existingMap[s.id] = s;
     }
+    normalizeStudentSchools(Object.values(studentMap), allStudents);
 
     // 4) Compare and classify
     const infoFields = ['name', 'level', 'school', 'grade', 'student_phone', 'parent_phone_1', 'parent_phone_2', 'guardian_name_1', 'guardian_name_2', 'branch', 'status', 'pause_start_date', 'pause_end_date', 'first_registered'];

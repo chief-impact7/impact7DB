@@ -22,6 +22,7 @@ import { createReadStream, readFileSync } from 'fs';
 import { createInterface } from 'readline';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { cleanSchoolName, normalizeStudentSchools } from './school-normalizer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -226,6 +227,7 @@ async function upsertStudents() {
         const parentPhone = raw['parent_phone_1'] || raw['학부모연락처1'] || raw['student_phone'] || raw['학생연락처'] || '';
         if (!name) continue;
 
+        const level = raw['level'] || raw['학부'] || '';
         const classNumber = raw['class_number'] || raw['반넘버'] || '';
         const branch = raw['branch'] || raw['소속'] || branchFromClassNumber(classNumber);
         const docId = makeDocId(name, parentPhone);
@@ -251,8 +253,8 @@ async function upsertStudents() {
         if (!studentMap[docId]) {
             studentMap[docId] = {
                 name,
-                level: raw['level'] || raw['학부'] || '',
-                school: raw['school'] || raw['학교'] || '',
+                level,
+                school: cleanSchoolName(raw['school'] || raw['학교'] || ''),
                 grade: raw['grade'] || raw['학년'] || '',
                 student_phone: raw['student_phone'] || raw['학생연락처'] || '',
                 parent_phone_1: parentPhone,
@@ -280,6 +282,7 @@ async function upsertStudents() {
     console.log('Firestore 기존 데이터 로드 중...');
     const existing = await fetchExistingStudents();
     console.log(`기존 학생 수: ${Object.keys(existing).length}명\n`);
+    normalizeStudentSchools(Object.values(studentMap), Object.values(existing));
 
     // 3) Compare and classify
     const results = { inserted: [], updated: [], skipped: [] };
