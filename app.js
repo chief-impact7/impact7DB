@@ -477,6 +477,11 @@ async function promoteEnrollPending() {
     const batch = writeBatch(db);
     for (const s of pending) {
         batch.update(doc(db, 'students', s.id), { status: '재원', updated_at: serverTimestamp() });
+        batch.set(doc(collection(db, 'history_logs')), {
+            doc_id: s.id, change_type: 'UPDATE',
+            before: '등원예정', after: '재원',
+            google_login_id: 'auto-transition', timestamp: serverTimestamp(),
+        });
         s.status = '재원';
     }
     try {
@@ -496,10 +501,16 @@ async function handleScheduledLeaves() {
     for (const s of allStudents) {
         // 1) 휴원 상태인데 pause_start_date가 아직 안 됐으면 → 재원으로 복원
         if ((s.status === '실휴원' || s.status === '가휴원') && s.pause_start_date && s.pause_start_date > today) {
+            const beforeStatus = s.status;
             batch.update(doc(db, 'students', s.id), {
                 status: '재원',
                 scheduled_leave_status: s.status,
                 updated_at: serverTimestamp(),
+            });
+            batch.set(doc(collection(db, 'history_logs')), {
+                doc_id: s.id, change_type: 'UPDATE',
+                before: beforeStatus, after: '재원',
+                google_login_id: 'auto-transition', timestamp: serverTimestamp(),
             });
             s.scheduled_leave_status = s.status;
             s.status = '재원';
@@ -512,6 +523,11 @@ async function handleScheduledLeaves() {
                 status: leaveStatus,
                 scheduled_leave_status: deleteField(),
                 updated_at: serverTimestamp(),
+            });
+            batch.set(doc(collection(db, 'history_logs')), {
+                doc_id: s.id, change_type: 'UPDATE',
+                before: '재원', after: leaveStatus,
+                google_login_id: 'auto-transition', timestamp: serverTimestamp(),
             });
             s.status = leaveStatus;
             delete s.scheduled_leave_status;
@@ -543,16 +559,27 @@ async function handleScheduledWithdrawals() {
                 pre_withdrawal_status: prevStatus,
                 updated_at: serverTimestamp(),
             });
+            batch.set(doc(collection(db, 'history_logs')), {
+                doc_id: s.id, change_type: 'UPDATE',
+                before: '퇴원', after: prevStatus,
+                google_login_id: 'auto-transition', timestamp: serverTimestamp(),
+            });
             s.pre_withdrawal_status = prevStatus;
             s.status = prevStatus;
             count++;
         }
         // 2) 예약된 퇴원일이 도래했으면 → 퇴원으로 전환
         else if (s.pre_withdrawal_status && s.withdrawal_date && s.withdrawal_date <= today) {
+            const beforeStatus = s.status;
             batch.update(doc(db, 'students', s.id), {
                 status: '퇴원',
                 pre_withdrawal_status: deleteField(),
                 updated_at: serverTimestamp(),
+            });
+            batch.set(doc(collection(db, 'history_logs')), {
+                doc_id: s.id, change_type: 'UPDATE',
+                before: beforeStatus, after: '퇴원',
+                google_login_id: 'auto-transition', timestamp: serverTimestamp(),
             });
             s.status = '퇴원';
             delete s.pre_withdrawal_status;

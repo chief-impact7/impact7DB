@@ -27,7 +27,9 @@ export async function finalize(lrRef, r) {
   if (stuSnap) stuSnap.forEach(d => allStudents.push({ id: d.id, ...d.data() }));
 
   await db.runTransaction(async tx => {
-    const stuDoc = await tx.get(studentRef);
+    const [lrDoc, stuDoc] = await Promise.all([tx.get(lrRef), tx.get(studentRef)]);
+    // retry: true 환경에서 중복 트리거 방어 — 외부 체크(index.js)만으로는 race 불완전
+    if (lrDoc.data()?.finalized_at) return;
     if (!stuDoc.exists) throw new Error(`student ${r.student_id} not found`);
     const stu = { id: stuDoc.id, ...stuDoc.data() };
     const beforeStatus = stu.status || '';
