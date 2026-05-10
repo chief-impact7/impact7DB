@@ -41,6 +41,7 @@ export const state = {
   currentSemester: null,
   currentFilteredStudents: null,
   leaveRequests: [],
+  currentSemesterByLevel: {},   // { '초등': '2026-Spring1', '중등': ..., '고등': ... }
 };
 
 // ── 구독 ────────────────────────────────────────────────────────────────
