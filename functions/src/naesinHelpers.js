@@ -6,7 +6,10 @@ export const NAESIN_OVERRIDE_EXCLUDE = '';
 
 export function branchFromStudent(s) {
     if (s.branch) return s.branch;
-    const cn = s.enrollments?.[0]?.class_number || '';
+    const regular = (s.enrollments || []).find(
+        e => e.class_type === '정규' || e.class_type === '자유학기'
+    );
+    const cn = regular?.class_number || '';
     const first = cn.trim()[0];
     if (first === '1') return '2단지';
     if (first === '2') return '10단지';

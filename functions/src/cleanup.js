@@ -69,24 +69,29 @@ export async function runClassCleanup(db, opts = {}) {
         return { deleted: 0, candidates: [] };
     }
 
-    const batch = db.batch();
-    const ts = FieldValue.serverTimestamp();
-    for (const { code, mode, cs } of candidates) {
-        batch.delete(db.doc(`class_settings/${code}`));
-        batch.set(db.collection('history_logs').doc(), {
-            doc_id: code,
-            change_type: 'DELETE',
-            before: JSON.stringify({
-                type: 'CLASS_AUTO_DELETE',
-                mode,
-                class_settings: cs,
-            }),
-            after: JSON.stringify({ deleted: true, mode, reason: 'scheduled-cleanup' }),
-            google_login_id: 'scheduled-cleanup',
-            timestamp: ts,
-        });
+    // delete + history_logs = 2 ops/건 → Firestore 배치 한도 500이므로 250건 단위로 청킹
+    const CHUNK_SIZE = 250;
+    for (let i = 0; i < candidates.length; i += CHUNK_SIZE) {
+        const chunk = candidates.slice(i, i + CHUNK_SIZE);
+        const batch = db.batch();
+        const ts = FieldValue.serverTimestamp();
+        for (const { code, mode, cs } of chunk) {
+            batch.delete(db.doc(`class_settings/${code}`));
+            batch.set(db.collection('history_logs').doc(), {
+                doc_id: code,
+                change_type: 'DELETE',
+                before: JSON.stringify({
+                    type: 'CLASS_AUTO_DELETE',
+                    mode,
+                    class_settings: cs,
+                }),
+                after: JSON.stringify({ deleted: true, mode, reason: 'scheduled-cleanup' }),
+                google_login_id: 'scheduled-cleanup',
+                timestamp: ts,
+            });
+        }
+        await batch.commit();
     }
-    await batch.commit();
 
     return { deleted: candidates.length, candidates: candidates.map(c => ({ code: c.code, mode: c.mode })) };
 }
