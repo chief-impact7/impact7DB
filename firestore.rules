@@ -300,10 +300,12 @@ service cloud.firestore {
       allow read: if isAuthorized();
 
       allow create, update: if isAuthorized()
+        && request.auth.token.email == email
         && hasOnlyAllowedUserSettingsFields()
         && withinFieldLimit(10);
 
-      allow delete: if isAuthorized();
+      allow delete: if isAuthorized()
+        && request.auth.token.email == email;
     }
 
     // =========================================================================

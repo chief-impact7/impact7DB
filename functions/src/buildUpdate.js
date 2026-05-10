@@ -4,6 +4,7 @@ import { deduplicateName } from './dedupName.js';
 
 const RETURN_TYPES = new Set(['복귀요청', '재등원요청']);
 const WITHDRAW_TYPES = new Set(['퇴원요청', '휴원→퇴원']);
+const LEAVE_TYPES = new Set(['휴원요청', '퇴원→휴원']);
 
 export function buildUpdate(r, student, classSettings, allStudents) {
   const today = todayKST();
@@ -37,6 +38,10 @@ export function buildUpdate(r, student, classSettings, allStudents) {
       studentUpdate.status = '퇴원';
     }
     return { studentUpdate, changeType: 'WITHDRAW' };
+  }
+
+  if (!LEAVE_TYPES.has(r.request_type)) {
+    throw new Error(`알 수 없는 request_type: ${r.request_type}`);
   }
 
   // 휴원요청 / 퇴원→휴원

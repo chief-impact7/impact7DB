@@ -120,6 +120,13 @@ describe('buildUpdate — 재등원/복귀요청', () => {
   });
 });
 
+describe('buildUpdate — 알 수 없는 request_type', () => {
+  it('정의되지 않은 타입은 throw', () => {
+    const r = { request_type: '알수없는타입' };
+    expect(() => buildUpdate(r, baseStu, {}, [])).toThrow('알 수 없는 request_type');
+  });
+});
+
 describe('buildUpdate — 퇴원요청', () => {
   it('withdrawal_date가 오늘 이하 → status=퇴원', () => {
     const r = { request_type: '퇴원요청', withdrawal_date: '2026-04-21' };

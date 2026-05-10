@@ -5973,9 +5973,9 @@ window.runPromotion = async () => {
     runBtn.textContent = '처리 중...';
     try {
         const prevYear = new Date().getFullYear() - 1;
-        const targets = allStudents.filter(s => s.grade);
+        const targets = allStudents.filter(s => s.status !== '퇴원' && s.grade);
         const promotions = targets.map(s => ({ s, p: getPromotedStudent(s) })).filter(r => r.p);
-        const BATCH_SIZE = 400;
+        const BATCH_SIZE = 200; // student update + history_logs = 2 ops → 400이면 한도(500) 초과
         for (let i = 0; i < promotions.length; i += BATCH_SIZE) {
             const chunk = promotions.slice(i, i + BATCH_SIZE);
             const b = writeBatch(db);
