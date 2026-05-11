@@ -655,7 +655,7 @@ function _refreshUIAfterMutation() {
 }
 
 // ---------------------------------------------------------------------------
-// 과거 학생(퇴원/종강) 검색 — 로컬 allStudents 캐시에서 필터링
+// 비원생(퇴원/종강) 검색 — 로컬 allStudents 캐시에서 필터링
 // ---------------------------------------------------------------------------
 const PAST_STUDENT_STATUSES = new Set(['퇴원', '종강']);
 function searchPastStudents(term) {
@@ -1027,7 +1027,7 @@ function applyFilterAndRender() {
     currentFilteredStudents = filtered;
     updateFilterChips();
 
-    // 과거 학생(퇴원/종강) — 로컬 캐시에서 동기 검색, 활성 목록과 중복 제외
+    // 비원생(퇴원/종강) — 로컬 캐시에서 동기 검색, 활성 목록과 중복 제외
     let pastResults = [];
     if (rawTerm.length >= 2) {
         const filteredIds = new Set(filtered.map(s => s.id));
@@ -1235,7 +1235,7 @@ function renderStudentList(students, pastResults) {
 
     if (groupViewMode !== 'none') {
         renderGroupedList(students, listContainer);
-        // 그룹 모드에서도 과거 학생 표시
+        // 그룹 모드에서도 비원생 표시
         if (hasPastResults) renderPastStudentResults(pastResults, listContainer);
         return;
     }
@@ -1365,7 +1365,7 @@ function renderPastStudentResults(pastStudents, container) {
     // 구분 헤더
     const header = document.createElement('div');
     header.className = 'group-header';
-    header.innerHTML = `<span class="group-label">과거 학생</span><span class="group-count">${pastStudents.length}명</span>`;
+    header.innerHTML = `<span class="group-label">비원생</span><span class="group-count">${pastStudents.length}명</span>`;
     container.appendChild(header);
 
     const visible = pastStudents.length <= PAST_LIMIT ? pastStudents : pastStudents.slice(0, PAST_LIMIT);
@@ -1381,7 +1381,7 @@ function renderPastStudentResults(pastStudents, container) {
         div.innerHTML = `
             <span class="material-symbols-outlined drag-icon" style="color:var(--text-sec)">person_off</span>
             <div class="item-main">
-                <span class="item-title">${esc(s.name || '—')}<span class="item-status st-contact">과거</span></span>
+                <span class="item-title">${esc(s.name || '—')}<span class="item-status st-contact">비원생</span></span>
                 <span class="item-desc">${esc(sub || '—')}</span>
             </div>
         `;
