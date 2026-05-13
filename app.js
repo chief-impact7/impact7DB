@@ -2020,6 +2020,14 @@ window.submitNewStudent = async () => {
             const newDays = [...new Set((studentData.enrollments || []).flatMap(e => normalizeDays(e.day)))];
             const afterStr = `상태:${studentData.status}, 반:${newCodes}, 요일:${displayDays(newDays)}`;
 
+            // status SoT: 변경 발생 시 학생 문서에 last-change 메타 + 별도 STATUS_CHANGE 이력 기록
+            const statusChanged = (oldStudent.status || '') !== (studentData.status || '');
+            if (statusChanged) {
+                studentData.status_changed_at = serverTimestamp();
+                studentData.status_changed_by = currentUser?.email || 'system';
+                studentData.status_previous = oldStudent.status || null;
+            }
+
             // 휴원/퇴원 → 재원 변경 시 DSC와 동일한 cleanup 수행
             const isReturnToActive = (LEAVE_STATUSES.includes(oldStudent.status) || oldStudent.status === '퇴원')
                 && studentData.status === '재원';
@@ -2070,6 +2078,18 @@ window.submitNewStudent = async () => {
                     google_login_id: currentUser?.email || 'system',
                     timestamp: serverTimestamp(),
                 }),
+                // STATUS_CHANGE: status가 바뀐 경우 별도 레코드(추후 status 이력만 빠르게 조회)
+                statusChanged
+                    ? addDoc(collection(db, 'history_logs'), {
+                          doc_id: docId,
+                          change_type: 'STATUS_CHANGE',
+                          before: JSON.stringify({ status: oldStudent.status || '' }),
+                          after: JSON.stringify({ status: studentData.status }),
+                          google_login_id: currentUser?.email || 'system',
+                          source: 'edit_form',
+                          timestamp: serverTimestamp(),
+                      })
+                    : Promise.resolve(),
             ]);
         } else {
             const docId = makeDocId(name, parentPhone1);
@@ -4595,7 +4615,10 @@ const _isWithdrawalType = (t) => t === '퇴원요청' || t === '휴원→퇴원'
 const _isReturnType = (t) => t === '복귀요청' || t === '재등원요청';
 const _isReEnrollType = (t) => t === '재등원요청';
 
-function _leaveRequestTypeBadge(r) {
+// 휴원 종류 표시는 SoT인 students.status(전달 인자 studentStatus)를 따른다.
+// 휴원·휴원연장·퇴원→휴원 요청서에서만 종류 부기. r.leave_sub_type은 신청 시점 기록이라
+// 표시에는 쓰지 않는다(과거 값 추적은 history_logs로).
+function _leaveRequestTypeBadge(r, studentStatus = '') {
     const typeMap = {
         '휴원요청': { label: '휴원', color: '#2563eb' },
         '휴원연장': { label: '연장', color: '#0891b2' },
@@ -4607,8 +4630,9 @@ function _leaveRequestTypeBadge(r) {
     };
     const t = typeMap[r.request_type] || { label: r.request_type, color: '#666' };
     let badge = `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#fff;background:${t.color};">${esc(t.label)}</span>`;
-    if (r.leave_sub_type) {
-        badge += `<span style="font-size:11px;color:var(--text-sec);margin-left:2px;">${esc(r.leave_sub_type)}</span>`;
+    const isLeaveRelated = r.request_type === '휴원요청' || r.request_type === '휴원연장' || r.request_type === '퇴원→휴원';
+    if (isLeaveRelated && LEAVE_STATUSES.includes(studentStatus)) {
+        badge += `<span style="font-size:11px;color:var(--text-sec);margin-left:2px;">${esc(studentStatus)}</span>`;
     }
     return badge;
 }
@@ -4632,7 +4656,7 @@ function _fmtTs(ts) {
     return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-function _renderLeaveRequestRow(r, studentId) {
+function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
     let dateStr = '';
     if (r.return_date) dateStr = `복귀일: ${r.return_date}`;
     else if (r.withdrawal_date) dateStr = `퇴원일: ${r.withdrawal_date}`;
@@ -4685,7 +4709,7 @@ function _renderLeaveRequestRow(r, studentId) {
     return `
         <div style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.querySelector('.lr-expand').style.display = this.querySelector('.lr-expand').style.display === 'none' ? 'block' : 'none'">
             <div style="display:flex;align-items:center;gap:6px;">
-                ${_leaveRequestTypeBadge(r)} ${_leaveRequestStatusBadge(r)}
+                ${_leaveRequestTypeBadge(r, studentStatus)} ${_leaveRequestStatusBadge(r)}
                 <span style="font-size:12px;color:var(--text-sec);margin-left:4px;">${esc(dateStr)}</span>
             </div>
             <div class="lr-expand" style="display:none;margin-top:6px;">
@@ -4762,7 +4786,7 @@ async function renderLeaveRequestCard(studentId) {
                 휴원요청서 <span style="font-size:12px;color:var(--text-sec);">(${leaveRecords.length}건)</span>
                 ${leaveBtn}
             </h3>
-            ${leaveRecords.map(r => _renderLeaveRequestRow(r, studentId)).join('')}
+            ${leaveRecords.map(r => _renderLeaveRequestRow(r, studentId, stuStatus)).join('')}
         </div>`;
     }
 
@@ -4778,7 +4802,7 @@ async function renderLeaveRequestCard(studentId) {
                 퇴원요청서 <span style="font-size:12px;color:var(--text-sec);">(${withdrawRecords.length}건)</span>
                 ${withdrawBtn}
             </h3>
-            ${withdrawRecords.map(r => _renderLeaveRequestRow(r, studentId)).join('')}
+            ${withdrawRecords.map(r => _renderLeaveRequestRow(r, studentId, stuStatus)).join('')}
         </div>`;
     }
 
