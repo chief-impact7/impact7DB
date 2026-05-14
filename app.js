@@ -1934,6 +1934,18 @@ window.submitNewStudent = async () => {
         // 수정 모드: 기본 정보 + 상태 + 동적 enrollment 카드에서 수집
         const oldStudent = allStudents.find(s => s.id === currentStudentId) || {};
         const editedEnrollments = collectEditEnrollments();
+
+        // 비활성(상담/퇴원/종강/휴원 등) → 활성(재원/등원예정) 전환 시,
+        // semester 선택을 놓친 enrollment는 student.level의 현재 학기로 자동 채움.
+        const ACTIVE_DEFAULT_SEMESTER_TARGETS = ['재원', '등원예정'];
+        const wasInactive = !ACTIVE_DEFAULT_SEMESTER_TARGETS.includes(oldStudent.status || '');
+        const isBecomingActive = ACTIVE_DEFAULT_SEMESTER_TARGETS.includes(f.status.value);
+        if (wasInactive && isBecomingActive) {
+            const fallbackSem = currentSemesterByLevel[level] || '';
+            if (fallbackSem) {
+                editedEnrollments.forEach(e => { if (!e.semester) e.semester = fallbackSem; });
+            }
+        }
         // 편집에서 제외된 다른 학기 enrollment 보존
         const editedSemesters = new Set(editedEnrollments.map(e => e.semester).filter(Boolean));
         const otherEnrollments = (oldStudent.enrollments || []).filter(e => {
@@ -3853,6 +3865,38 @@ async function loadHistory(studentId) {
     }
 }
 
+// JSON 문자열로 박힌 history before/after를 사람이 읽을 한 줄로 요약.
+// 우선순위: description > reason > 의미 있는 단일 필드 > enrollments 건수.
+// 파싱 실패하거나 의미 있는 키가 없으면 원문 반환.
+function _summarizeHistoryText(text) {
+    if (typeof text !== 'string') return '—';
+    const trimmed = text.trim();
+    if (!trimmed) return '—';
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return text;
+    try {
+        const obj = JSON.parse(trimmed);
+        if (Array.isArray(obj)) return `(배열 ${obj.length}건)`;
+        if (obj.description) {
+            return obj.reason ? `${obj.description} [${obj.reason}]` : obj.description;
+        }
+        if (obj.reason) return obj.reason;
+        if (typeof obj.status !== 'undefined') {
+            return `상태: ${obj.status || '(없음)'}`;
+        }
+        if (Array.isArray(obj.enrollments)) {
+            return `수업 ${obj.enrollments.length}건`;
+        }
+        // 간단한 평면 객체는 키=값 나열
+        const entries = Object.entries(obj).filter(([, v]) => typeof v !== 'object');
+        if (entries.length > 0 && entries.length <= 4) {
+            return entries.map(([k, v]) => `${k}: ${v}`).join(', ');
+        }
+        return text;
+    } catch {
+        return text;
+    }
+}
+
 function renderHistory(logs) {
     const container = document.getElementById('history-list');
     if (!container) return;
@@ -3863,7 +3907,11 @@ function renderHistory(logs) {
         return;
     }
 
-    const typeLabels = { ENROLL: '등록', UPDATE: '수정', WITHDRAW: '퇴원' };
+    const typeLabels = {
+        ENROLL: '등록', UPDATE: '수정', WITHDRAW: '퇴원',
+        RETURN: '복귀', RESTORE: '복구',
+        STATUS_CHANGE: '상태변경', LR_AMEND: '요청서정정',
+    };
     const typeClasses = { ENROLL: 'badge-enroll', UPDATE: 'badge-update', WITHDRAW: 'badge-withdraw' };
 
     logs.forEach(log => {
@@ -3875,7 +3923,9 @@ function renderHistory(logs) {
         const label = typeLabels[log.change_type] || log.change_type;
         const cls = typeClasses[log.change_type] || '';
 
-        const hasBefore = log.before && log.before !== '—';
+        const beforeText = _summarizeHistoryText(log.before);
+        const afterText = _summarizeHistoryText(log.after);
+        const hasBefore = beforeText && beforeText !== '—';
 
         const item = document.createElement('div');
         item.className = 'history-item';
@@ -3885,8 +3935,8 @@ function renderHistory(logs) {
                 <span class="history-date">${esc(dateStr)}</span>
                 <span class="history-author">${esc(log.google_login_id || '')}</span>
             </div>
-            ${hasBefore ? `<div class="history-row history-before"><span class="history-field-label">이전</span><span>${esc(log.before)}</span></div>` : ''}
-            <div class="history-row history-after"><span class="history-field-label">내용</span><span>${esc(log.after || '—')}</span></div>
+            ${hasBefore ? `<div class="history-row history-before"><span class="history-field-label">이전</span><span>${esc(beforeText)}</span></div>` : ''}
+            <div class="history-row history-after"><span class="history-field-label">내용</span><span>${esc(afterText || '—')}</span></div>
         `;
         container.appendChild(item);
     });
