@@ -2148,7 +2148,6 @@ window.submitNewStudent = async () => {
                           before: JSON.stringify({ status: oldStudent.status || '' }),
                           after: JSON.stringify({ status: studentData.status }),
                           google_login_id: currentUser?.email || 'system',
-                          source: 'edit_form',
                           timestamp: serverTimestamp(),
                       })
                     : Promise.resolve(),
