@@ -1770,6 +1770,11 @@ window.showNewStudentForm = () => {
     // 신규 등록 폼에 수업 정보 카드 표시 (static 필드 + 수업 추가 버튼).
     const enrollContainer = document.getElementById('enrollment-fields-container');
     if (enrollContainer) enrollContainer.style.display = '';
+    // 신규 등록 시 수업종류 '내신' 옵션은 가림 (정규/특강만). 수정 시 복원.
+    const naesinOpt = document.getElementById('opt-class-type-naesin');
+    if (naesinOpt) naesinOpt.style.display = 'none';
+    const classTypeSel = document.querySelector('#new-student-form [name="class_type"]');
+    if (classTypeSel && classTypeSel.value === '내신') classTypeSel.value = '정규';
     const pendingContainer = document.getElementById('form-pending-enrollments');
     if (pendingContainer) { pendingContainer.style.display = 'none'; pendingContainer.innerHTML = ''; }
     const addEnrollBtn = document.getElementById('form-add-enrollment-btn');
@@ -1816,6 +1821,9 @@ window.showEditForm = () => {
 
     pauseAlertTriggered = false;
     isEditMode = true;
+    // 수정 모드에서는 수업종류 '내신' 옵션 복원 (신규 등록 시 가림 → 여기서 되돌림)
+    const naesinOpt = document.getElementById('opt-class-type-naesin');
+    if (naesinOpt) naesinOpt.style.display = '';
     document.getElementById('detail-header').style.display = 'none';
     document.getElementById('form-header').style.display = 'flex';
     document.getElementById('detail-tab-bar').style.display = 'none';
@@ -2150,14 +2158,28 @@ window.submitNewStudent = async () => {
             const existingStudent = allStudents.find(s => s.id === docId);
 
             if (existingStudent) {
-                // 기존 학생 존재 (퇴원 등) — 기본 정보만 merge, status/enrollments 보존
+                // 기존 학생 존재 (퇴원 등) — 기본 정보 merge.
+                // 폼에 새 수업이 입력됐으면 enrollments에 append + status·branch 갱신
+                // (비원생을 "신규 등록"으로 다시 정규 등록하는 흐름 지원).
+                const mergeData = { ...studentData };
+                let appendNote = '';
+                if (_newEnrollmentsForCreate.length > 0) {
+                    mergeData.enrollments = [
+                        ...(existingStudent.enrollments || []),
+                        ..._newEnrollmentsForCreate,
+                    ];
+                    if (_newStatusForCreate) mergeData.status = _newStatusForCreate;
+                    const firstNewBranch = branchFromClassNumber(_newEnrollmentsForCreate[0].class_number);
+                    if (firstNewBranch) mergeData.branch = firstNewBranch;
+                    appendNote = ` + 수업 ${_newEnrollmentsForCreate.length}건 추가`;
+                }
                 await Promise.all([
-                    setDoc(doc(db, 'students', docId), studentData, { merge: true }),
+                    setDoc(doc(db, 'students', docId), mergeData, { merge: true }),
                     addDoc(collection(db, 'history_logs'), {
                         doc_id: docId,
                         change_type: 'UPDATE',
                         before: `상태: ${existingStudent.status || ''}`,
-                        after: `첫데이터 재입력: ${name}`,
+                        after: `첫데이터 재입력: ${name}${appendNote}`,
                         google_login_id: currentUser?.email || 'system',
                         timestamp: serverTimestamp(),
                     }),
@@ -2393,7 +2415,7 @@ function _rebuildEditEnrollmentCards() {
                 <div class="form-field">
                     <label class="field-label">학기</label>
                     <select class="field-select" data-field="semester" data-idx="${idx}">
-                        ${getSemesterOptions(studentLevel, e.semester || '')}
+                        ${getSemesterOptions(studentLevel, e.semester || currentSemesterByLevel[studentLevel] || '')}
                     </select>
                 </div>
             </div>
