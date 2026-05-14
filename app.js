@@ -2622,7 +2622,15 @@ window.saveEnrollment = async () => {
 
     if (!classNumber) { alert('반넘버를 입력하세요.'); return; }
 
-    const semester = form.enroll_semester?.value || '';
+    let semester = form.enroll_semester?.value || '';
+    if (!semester) {
+        // 학기 미선택 시 학부 현재 학기로 자동 채움 (사용자가 놓쳐도 합리적 기본값).
+        const ctx = modal?.dataset.context;
+        const level = ctx === 'form'
+            ? (document.getElementById('new-student-form')?.level?.value || '')
+            : (allStudents.find(s => s.id === currentStudentId)?.level || '');
+        semester = currentSemesterByLevel[level] || '';
+    }
     const enrollment = { class_type: classType, level_symbol: levelSymbol, class_number: classNumber, day: days, start_date: startDate, semester };
     if (classType !== '정규' && endDate) enrollment.end_date = endDate;
 
