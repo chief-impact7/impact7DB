@@ -17,6 +17,7 @@ export function buildUpdate(r, student, classSettings, allStudents) {
   }
 
   if (RETURN_TYPES.has(r.request_type)) {
+    // 정책: buildUpdate는 set만, 부속 필드 deleteField는 finalize.js가 담당.
     const studentUpdate = { status: '재원' };
     const dedup = deduplicateName(student.id, student.name || '', allStudents);
     if (dedup) studentUpdate.name = dedup;
@@ -30,6 +31,7 @@ export function buildUpdate(r, student, classSettings, allStudents) {
   }
   if (WITHDRAW_TYPES.has(r.request_type)) {
     const wDate = r.withdrawal_date || today;
+    // 정책: buildUpdate는 set만, pause_*/scheduled_leave_status deleteField는 finalize.js가 담당.
     const studentUpdate = { withdrawal_date: wDate };
     if (wDate > today) {
       // status 없는 레거시 문서는 재원으로 간주
@@ -45,6 +47,8 @@ export function buildUpdate(r, student, classSettings, allStudents) {
   }
 
   // 휴원요청 / 퇴원→휴원
+  // 정책: buildUpdate는 set만, withdrawal_date/pre_withdrawal_status/scheduled_leave_status
+  // 등 deleteField는 finalize.js의 UPDATE 분기가 담당.
   const subType = r.leave_sub_type || '실휴원';
   // leave_start_date가 없으면 오늘 시작으로 간주 → 즉시 상태 변경
   const start = r.leave_start_date || '';

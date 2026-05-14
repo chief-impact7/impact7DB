@@ -2,6 +2,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { buildUpdate } from './buildUpdate.js';
 
 const RETURN_TYPES = new Set(['복귀요청', '재등원요청']);
+const LEAVE_TYPES = new Set(['휴원요청', '퇴원→휴원']);
 
 // leave_request 승인 이벤트를 학생 문서·history_logs로 원자적 반영.
 export async function finalize(lrRef, r) {
@@ -50,6 +51,17 @@ export async function finalize(lrRef, r) {
       finalUpdate.pause_start_date = FieldValue.delete();
       finalUpdate.pause_end_date = FieldValue.delete();
       finalUpdate.scheduled_leave_status = FieldValue.delete();
+    } else if (changeType === 'UPDATE' && LEAVE_TYPES.has(r.request_type)) {
+      // 휴원요청 / 퇴원→휴원: 직전 퇴원 흐름의 잔존 필드 제거.
+      // 클라이언트 promoteWithdrawalDate가 withdrawal_date를 보고 다시 '퇴원'으로
+      // 강제 전환하던 silent override 사고(전은민 케이스) 차단.
+      finalUpdate.withdrawal_date = FieldValue.delete();
+      finalUpdate.pre_withdrawal_status = FieldValue.delete();
+      // status 전이가 있는 경우(즉시 휴원)는 예약 필드도 의미 없으므로 제거.
+      // 미래 시작 휴원은 buildUpdate가 scheduled_leave_status를 설정하므로 그대로 둠.
+      if (studentUpdate.status) {
+        finalUpdate.scheduled_leave_status = FieldValue.delete();
+      }
     }
     if (enrollments) finalUpdate.enrollments = enrollments;
     finalUpdate.updated_at = FieldValue.serverTimestamp();
