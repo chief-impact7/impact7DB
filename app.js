@@ -2161,14 +2161,15 @@ window.submitNewStudent = async () => {
                 // 기존 학생 존재 (퇴원 등) — 기본 정보 merge.
                 // 폼에 새 수업이 입력됐으면 enrollments에 append + status·branch 갱신
                 // (비원생을 "신규 등록"으로 다시 정규 등록하는 흐름 지원).
+                // 룰 안전망: enrollments/status는 항상 명시적으로 머지에 포함 — Firestore
+                // 룰의 hasRequiredStudentFields가 머지 후 키 존재를 요구하므로 보장.
                 const mergeData = { ...studentData };
+                mergeData.enrollments = _newEnrollmentsForCreate.length > 0
+                    ? [...(existingStudent.enrollments || []), ..._newEnrollmentsForCreate]
+                    : (existingStudent.enrollments || []);
+                mergeData.status = _newStatusForCreate || existingStudent.status || '상담';
                 let appendNote = '';
                 if (_newEnrollmentsForCreate.length > 0) {
-                    mergeData.enrollments = [
-                        ...(existingStudent.enrollments || []),
-                        ..._newEnrollmentsForCreate,
-                    ];
-                    if (_newStatusForCreate) mergeData.status = _newStatusForCreate;
                     const firstNewBranch = branchFromClassNumber(_newEnrollmentsForCreate[0].class_number);
                     if (firstNewBranch) mergeData.branch = firstNewBranch;
                     appendNote = ` + 수업 ${_newEnrollmentsForCreate.length}건 추가`;
