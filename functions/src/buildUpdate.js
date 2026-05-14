@@ -26,6 +26,7 @@ export function buildUpdate(r, student, classSettings, allStudents) {
       r.target_class_code || '',
       r.return_date || today,
       classSettings,
+      r.target_semester || '',
     );
     return { studentUpdate, enrollments, changeType: 'RETURN' };
   }

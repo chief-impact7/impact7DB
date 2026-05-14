@@ -2441,19 +2441,20 @@ function renderEnrollmentCards(studentData) {
 
     const enrollments = studentData.enrollments || [];
 
-    // 비원생(퇴원/종강)은 카드 비었을 때 "정규 등록(재등원)" 버튼을 같이 노출
-    // — 휴퇴원요청서 카드까지 스크롤하지 않고도 다음 액션이 명확하도록.
-    const isPastStudent = PAST_STUDENT_STATUSES.has(studentData.status);
-    const reEnrollBtn = isPastStudent
+    // 활성(재원·등원예정·실휴원·가휴원)이 아닌 학생은 카드 비었을 때 "정규 등록" 버튼 노출.
+    // 비원생(퇴원/종강) + 상담/신규 + 시험만 보고 이전 기록 없는 학생 모두 포함.
+    const ACTIVE_STATES = new Set(['재원', '등원예정', '실휴원', '가휴원']);
+    const canStartRegular = !ACTIVE_STATES.has(studentData.status);
+    const startRegularBtn = canStartRegular
         ? `<button class="btn-save" style="width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;"
               onclick="window.openReEnrollModal('${escAttr(studentData.id || currentStudentId)}')">
               <span class="material-symbols-outlined" style="font-size:18px;">person_add</span>
-              정규 등록 (재등원)
+              정규 등록
            </button>`
         : '';
 
     if (enrollments.length === 0) {
-        container.innerHTML = `<p style="color:var(--text-sec);font-size:0.85em;">수업 정보가 없습니다.</p>${reEnrollBtn}`;
+        container.innerHTML = `<p style="color:var(--text-sec);font-size:0.85em;">수업 정보가 없습니다.</p>${startRegularBtn}`;
         return;
     }
 
@@ -2463,7 +2464,7 @@ function renderEnrollmentCards(studentData) {
         : getActiveEnrollments(studentData);
 
     if (visibleEnrollments.length === 0) {
-        container.innerHTML = `<p style="color:var(--text-sec);font-size:0.85em;">해당 학기 수업 정보가 없습니다.</p>${reEnrollBtn}`;
+        container.innerHTML = `<p style="color:var(--text-sec);font-size:0.85em;">해당 학기 수업 정보가 없습니다.</p>${startRegularBtn}`;
         return;
     }
 
@@ -4997,6 +4998,10 @@ window.submitReturnFromLeave = async () => {
     const note = document.getElementById('rfl-consultation-note').value.trim();
 
     try {
+        // 재등원·복귀 시 finalize가 만들 정규 enrollment의 semester를
+        // 학생 학부의 현재 학기로 자동 결정 (사용자가 모달에서 학기를 입력하지 않음).
+        const targetSemester = currentSemesterByLevel[student.level] || '';
+
         const data = {
             student_id: _returnModalStudentId,
             student_name: student.name,
@@ -5005,6 +5010,7 @@ window.submitReturnFromLeave = async () => {
             request_type: _returnModalType,
             return_date: returnDate,
             target_class_code: targetClassCode,
+            target_semester: targetSemester,
             student_phone: student.student_phone || '',
             parent_phone_1: student.parent_phone_1 || '',
             consultation_note: note,
