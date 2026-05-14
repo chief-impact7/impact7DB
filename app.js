@@ -2440,8 +2440,20 @@ function renderEnrollmentCards(studentData) {
     container.innerHTML = '';
 
     const enrollments = studentData.enrollments || [];
+
+    // 비원생(퇴원/종강)은 카드 비었을 때 "정규 등록(재등원)" 버튼을 같이 노출
+    // — 휴퇴원요청서 카드까지 스크롤하지 않고도 다음 액션이 명확하도록.
+    const isPastStudent = PAST_STUDENT_STATUSES.has(studentData.status);
+    const reEnrollBtn = isPastStudent
+        ? `<button class="btn-save" style="width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;"
+              onclick="window.openReEnrollModal('${escAttr(studentData.id || currentStudentId)}')">
+              <span class="material-symbols-outlined" style="font-size:18px;">person_add</span>
+              정규 등록 (재등원)
+           </button>`
+        : '';
+
     if (enrollments.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.85em;">수업 정보가 없습니다.</p>';
+        container.innerHTML = `<p style="color:var(--text-sec);font-size:0.85em;">수업 정보가 없습니다.</p>${reEnrollBtn}`;
         return;
     }
 
@@ -2451,7 +2463,7 @@ function renderEnrollmentCards(studentData) {
         : getActiveEnrollments(studentData);
 
     if (visibleEnrollments.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.85em;">해당 학기 수업 정보가 없습니다.</p>';
+        container.innerHTML = `<p style="color:var(--text-sec);font-size:0.85em;">해당 학기 수업 정보가 없습니다.</p>${reEnrollBtn}`;
         return;
     }
 
