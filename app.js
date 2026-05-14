@@ -1767,8 +1767,21 @@ window.showNewStudentForm = () => {
     document.querySelector('[name="start_date"]').value = today;
 
     _pendingEnrollments = [];
+    // 신규 등록 폼에 수업 정보 카드 표시 (static 필드 + 수업 추가 버튼).
     const enrollContainer = document.getElementById('enrollment-fields-container');
-    if (enrollContainer) enrollContainer.style.display = 'none';
+    if (enrollContainer) enrollContainer.style.display = '';
+    const pendingContainer = document.getElementById('form-pending-enrollments');
+    if (pendingContainer) { pendingContainer.style.display = 'none'; pendingContainer.innerHTML = ''; }
+    const addEnrollBtn = document.getElementById('form-add-enrollment-btn');
+    if (addEnrollBtn) {
+        addEnrollBtn.style.display = 'flex';
+        addEnrollBtn.onclick = window.openFormEnrollmentModal;
+    }
+    // 학부 기본값에 맞춰 학기 드롭다운 채움 (학부 미선택 시 빈 옵션)
+    if (window.handleLevelChange) {
+        const f = document.getElementById('new-student-form');
+        window.handleLevelChange(f?.level?.value || '');
+    }
 };
 
 // 학부 변경 시 학기 드롭다운 갱신
@@ -2017,6 +2030,35 @@ window.submitNewStudent = async () => {
         };
     }
 
+    // 신규 등록 폼의 수업 정보 수집: static 필드(첫 수업) + _pendingEnrollments(추가 수업)
+    // _newEnrollmentsForCreate는 try 블록의 신규 분기에서 사용.
+    let _newEnrollmentsForCreate = [];
+    let _newStatusForCreate = '';
+    if (!isEditMode) {
+        const staticLevelSymbol = (f.level_symbol?.value || '').trim();
+        const staticClassNumber = (f.class_number?.value || '').trim();
+        if (staticLevelSymbol || staticClassNumber) {
+            const staticDays = Array.from(f.querySelectorAll('input[name="day"]:checked')).map(cb => cb.value);
+            const staticClassType = f.class_type?.value || '정규';
+            const staticStartDate = f.start_date?.value || '';
+            const staticSemester = f.initial_semester?.value || currentSemesterByLevel[level] || '';
+            const staticEnrollment = {
+                class_type: staticClassType,
+                level_symbol: staticLevelSymbol,
+                class_number: staticClassNumber,
+                day: staticDays,
+                start_date: staticStartDate,
+            };
+            if (staticSemester) staticEnrollment.semester = staticSemester;
+            _newEnrollmentsForCreate.push(staticEnrollment);
+        }
+        _newEnrollmentsForCreate.push(..._pendingEnrollments);
+        // 수업이 하나라도 있으면 폼의 status(기본 '재원')을, 없으면 '상담'으로.
+        _newStatusForCreate = _newEnrollmentsForCreate.length > 0
+            ? (f.status?.value || '재원')
+            : '상담';
+    }
+
     const saveBtn = document.getElementById('save-btn');
     saveBtn.disabled = true;
     saveBtn.textContent = '저장 중...';
@@ -2121,12 +2163,16 @@ window.submitNewStudent = async () => {
                     }),
                 ]);
             } else {
-                // 완전 신규 — '상담' 상태로 생성
+                // 완전 신규 — 폼에 입력한 수업이 있으면 그 status·enrollments·branch로 생성,
+                // 없으면 기존처럼 '상담' 상태로만 생성.
+                const newBranch = _newEnrollmentsForCreate.length > 0
+                    ? (branchFromClassNumber(_newEnrollmentsForCreate[0].class_number) || '')
+                    : '';
                 const newStudentData = {
                     ...studentData,
-                    branch: '',
-                    status: '상담',
-                    enrollments: [],
+                    branch: newBranch,
+                    status: _newStatusForCreate || '상담',
+                    enrollments: _newEnrollmentsForCreate,
                 };
                 studentData = newStudentData;
                 await Promise.all([
