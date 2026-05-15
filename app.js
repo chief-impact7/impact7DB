@@ -109,6 +109,34 @@ let leaveRequests = []; // leave_requests 컬렉션 캐시
 let _statsGeneratedDate = null; // daily stats 중복 생성 방지 (날짜 기반)
 let _memoSubcollectionCache = {}; // studentId → memo[] (서브컬렉션 읽기 결과 캐시)
 
+// 활성 상태 집합 — past-history.js 와 동기. 비활성이면 우측 패널을 과거이력 뷰로 교체.
+const ACTIVE_STUDENT_STATUSES = new Set(['재원', '등원예정', '실휴원', '가휴원']);
+const isActiveStudentStatus = (status) => ACTIVE_STUDENT_STATUSES.has(status || '');
+
+// 과거이력 뷰 토글: 새 모듈이 채우는 #past-history-view 의 표시만 제어.
+const setPastHistoryViewVisible = (visible) => {
+    const el = document.getElementById('past-history-view');
+    if (!el) return;
+    el.style.display = visible ? 'block' : 'none';
+    if (!visible) el.innerHTML = '';
+};
+
+// 비활성 학생의 우측 패널을 과거이력 단일 뷰로 교체. selectStudent/hideForm 공용.
+const showPastHistoryPanel = (student) => {
+    document.getElementById('detail-tab-bar').style.display = 'none';
+    document.getElementById('detail-view').style.display = 'none';
+    document.getElementById('history-view').style.display = 'none';
+    if (window.renderPastHistory) {
+        window.renderPastHistory(student);
+    } else {
+        const el = document.getElementById('past-history-view');
+        if (el) {
+            el.style.display = 'block';
+            el.innerHTML = '<p style="padding:24px;color:var(--text-sec);">과거이력 모듈 로딩 실패</p>';
+        }
+    }
+};
+
 // HTML 이스케이프 — 사용자 입력을 innerHTML에 삽입할 때 XSS 방지
 const esc = (str) => {
     const d = document.createElement('div');
@@ -119,7 +147,7 @@ const esc = (str) => {
 const escAttr = (str) => (str ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 // enrollment 코드 = level_symbol + class_number (예: HA + 101 = HA101)
-const enrollmentCode = (e) => `${e.level_symbol || ''}${e.class_number || ''}`;
+export const enrollmentCode = (e) => `${e.level_symbol || ''}${e.class_number || ''}`;
 
 // 두 enrollment의 시기(start_date~end_date)가 겹치는지 확인 — end_date 비어있으면 무한대 간주
 function _enrollmentsTimeOverlap(a, b) {
@@ -343,7 +371,7 @@ const setFormCardTitles = (basic, contact, classInfo) => {
     setFormCardTitle(document.getElementById('form-card-title-class'), classInfo);
 };
 
-const formatDate = (dateStr) => {
+export const formatDate = (dateStr) => {
     if (!dateStr || dateStr === '?') return '—';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
@@ -1655,6 +1683,7 @@ _searchClearBtn?.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------------------
 window.selectStudent = (studentId, studentData, targetElement) => {
     currentStudentId = studentId;
+    storeUpdate({ currentStudentId: studentId });
 
     // 모바일: 디테일 패널 오버레이 표시
     document.querySelector('.detail-panel').classList.add('active');
@@ -1664,7 +1693,19 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     document.getElementById('form-header').style.display = 'none';
     document.getElementById('detail-form').style.display = 'none';
     document.getElementById('detail-header').style.display = 'flex';
+
+    // 학생상태 분기: 비활성(퇴원/종강/상담 등) → 과거이력 뷰만 표시
+    // 활성(재원/등원예정/실휴원/가휴원) → 기존 학생상세 뷰 그대로
+    if (!isActiveStudentStatus(studentData.status)) {
+        document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
+        if (targetElement) targetElement.classList.add('active');
+        showPastHistoryPanel({ id: studentId, ...studentData });
+        return;
+    }
+
+    // 활성 학생: 기존 학생상세 뷰
     document.getElementById('detail-tab-bar').style.display = 'flex';
+    setPastHistoryViewVisible(false);
     switchDetailTab('info');
 
     document.getElementById('profile-initial').textContent = studentData.name?.[0] || 'S';
@@ -1750,6 +1791,7 @@ window.showNewStudentForm = () => {
     setFormCardTitles('기본 정보', '연락처', '수업 정보');
     document.getElementById('detail-view').style.display = 'none';
     document.getElementById('history-view').style.display = 'none';
+    setPastHistoryViewVisible(false);
     document.getElementById('detail-form').style.display = 'block';
     document.getElementById('new-student-form').reset();
     document.getElementById('opt-withdraw').style.display = 'none';
@@ -1833,6 +1875,7 @@ window.showEditForm = () => {
     setFormCardTitles('기본정보 변경', '연락처 변경', '수업 정보 추가 및 변경');
     document.getElementById('detail-view').style.display = 'none';
     document.getElementById('history-view').style.display = 'none';
+    setPastHistoryViewVisible(false);
     document.getElementById('detail-form').style.display = 'block';
 
     const f = document.getElementById('new-student-form');
@@ -1881,7 +1924,6 @@ window.hideForm = () => {
     isEditMode = false;
     document.getElementById('form-header').style.display = 'none';
     document.getElementById('detail-header').style.display = 'flex';
-    document.getElementById('detail-tab-bar').style.display = 'flex';
     document.getElementById('detail-form').style.display = 'none';
     // 동적 enrollment 목록 초기화
     const editEnrollList = document.getElementById('edit-enrollment-list');
@@ -1892,7 +1934,15 @@ window.hideForm = () => {
     if (staticFields) staticFields.style.display = 'block';
     // 카드 타이틀 초기화
     setFormCardTitles('기본 정보', '연락처', '수업 정보');
-    switchDetailTab('info');
+
+    // 현재 학생이 비활성이면 과거이력 뷰로 복귀, 활성이면 기본정보 탭으로
+    const cur = currentStudentId ? allStudents.find(s => s.id === currentStudentId) : null;
+    if (cur && !isActiveStudentStatus(cur.status)) {
+        showPastHistoryPanel(cur);
+    } else {
+        document.getElementById('detail-tab-bar').style.display = 'flex';
+        switchDetailTab('info');
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -3908,6 +3958,8 @@ function switchDetailTab(tab) {
     const histView = document.getElementById('history-view');
     const tabBtns = document.querySelectorAll('.tab-btn');
 
+    // 활성 학생용 탭이므로 과거이력 뷰는 항상 닫는다
+    setPastHistoryViewVisible(false);
     tabBtns.forEach(b => b.classList.remove('active'));
 
     if (tab === 'history') {
@@ -3957,7 +4009,7 @@ async function loadHistory(studentId) {
 // JSON 문자열로 박힌 history before/after를 사람이 읽을 한 줄로 요약.
 // 우선순위: description > reason > 의미 있는 단일 필드 > enrollments 건수.
 // 파싱 실패하거나 의미 있는 키가 없으면 원문 반환.
-function _summarizeHistoryText(text) {
+export function _summarizeHistoryText(text) {
     if (typeof text !== 'string') return '—';
     const trimmed = text.trim();
     if (!trimmed) return '—';
@@ -4082,6 +4134,7 @@ function showBulkEditPanel() {
     document.getElementById('detail-tab-bar').style.display = 'none';
     document.getElementById('detail-view').style.display = 'none';
     document.getElementById('history-view').style.display = 'none';
+    setPastHistoryViewVisible(false);
     document.getElementById('detail-form').style.display = 'none';
     document.getElementById('form-header').style.display = 'none';
     document.getElementById('bulk-edit-view').style.display = 'flex';
@@ -4916,7 +4969,7 @@ window._retryFinalize = async (docId) => {
 };
 
 // 학생 상세 패널용: leave_requests 전체(승인완료 포함)를 student_id로 직접 조회
-async function fetchStudentLeaveRequests(studentId) {
+export async function fetchStudentLeaveRequests(studentId) {
     try {
         const snap = await getDocs(query(
             collection(db, 'leave_requests'),

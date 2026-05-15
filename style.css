@@ -2981,3 +2981,251 @@ summary.menu-l2 .material-symbols-outlined {
 .promo-stat { font-size: 13px; color: var(--text-main); }
 .promo-detail { font-size: 12px; color: var(--text-sec); margin-left: 6px; }
 .admin-promo-desc { font-size: 13px; color: var(--text-sec); line-height: 1.5; margin: 0 0 12px; }
+
+/* ── Past History View (이전 학원생활) ─────────────────────────────────── */
+#past-history-view {
+    padding: 0;
+    overflow-y: auto;
+}
+.past-history-content {
+    padding: 24px 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.past-history-loading {
+    padding: 40px 0;
+    text-align: center;
+    color: var(--text-sec);
+    font-size: 14px;
+}
+.past-history-empty {
+    padding: 20px 0;
+    text-align: center;
+    color: var(--text-sec);
+    font-size: 13px;
+}
+.past-history-muted {
+    color: var(--text-sec);
+}
+
+/* 헤더 */
+.past-history-header {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+.past-history-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--sbux-light, #e6f4ea);
+    color: var(--sbux-green, #137333);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+.past-history-header-meta {
+    flex: 1;
+    min-width: 0;
+}
+.past-history-name {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+}
+.past-history-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.past-history-status-tag {
+    background: #fce8e6;
+    color: #c5221f;
+    font-weight: 600;
+}
+.past-history-meta-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-sec);
+}
+.past-history-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.past-history-meta-item .material-symbols-outlined {
+    font-size: 14px;
+}
+
+/* 섹션 */
+.past-history-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+}
+.past-history-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-main);
+    margin: 0 0 12px;
+    font-family: var(--font-heading, inherit);
+}
+.past-history-section-title .material-symbols-outlined {
+    font-size: 18px;
+    color: var(--sbux-green, #137333);
+}
+
+/* 과거 수업 카드 */
+.past-enrollment-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.past-enrollment-card {
+    background: var(--bg-light, #f8f9fa);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+.past-enrollment-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+.past-enrollment-code {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--text-main);
+    letter-spacing: 0.3px;
+}
+.past-enrollment-type {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 100px;
+    background: var(--primary-light, #e8f0fe);
+    color: var(--primary, #1a73e8);
+}
+.past-enrollment-type-정규 {
+    background: var(--sbux-light, #e6f4ea);
+    color: var(--sbux-green, #137333);
+}
+.past-enrollment-type-내신 {
+    background: #fef3c7;
+    color: #b45309;
+}
+.past-enrollment-type-특강 {
+    background: #ede9fe;
+    color: #6d28d9;
+}
+.past-enrollment-source {
+    font-size: 10px;
+    color: var(--text-sec);
+    background: var(--surface-hover, #f1f3f4);
+    padding: 1px 6px;
+    border-radius: 4px;
+    cursor: help;
+}
+.past-enrollment-semester {
+    font-size: 12px;
+    color: var(--text-sec);
+    margin-left: auto;
+}
+.past-enrollment-card-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-main);
+}
+.past-enrollment-period,
+.past-enrollment-teacher {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.past-enrollment-period .material-symbols-outlined,
+.past-enrollment-teacher .material-symbols-outlined {
+    font-size: 14px;
+    color: var(--text-sec);
+}
+
+/* 휴원/퇴원 사이클 카드 */
+.past-cycle-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.past-cycle-card {
+    background: var(--bg-light, #f8f9fa);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+.past-cycle-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.past-cycle-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 100px;
+    letter-spacing: 0.3px;
+}
+.past-cycle-period {
+    font-size: 13px;
+    color: var(--text-main);
+}
+.past-cycle-note {
+    margin-top: 6px;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-main);
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+.past-cycle-details {
+    margin-top: 6px;
+}
+.past-cycle-details > summary {
+    font-size: 11px;
+    color: var(--text-sec);
+    cursor: pointer;
+    padding: 2px 0;
+}
+.past-cycle-req-list {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0 0 0 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.past-cycle-req-list li {
+    display: flex;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-sec);
+}
+.past-cycle-req-type { color: var(--text-main); font-weight: 500; }
+.past-cycle-req-date { font-variant-numeric: tabular-nums; }
+.past-cycle-req-status { margin-left: auto; }
