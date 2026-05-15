@@ -3986,6 +3986,44 @@ function _summarizeHistoryText(text) {
     }
 }
 
+// 수업이력은 7개 카테고리(첫등록/전반/휴원/퇴원/내신/자유학기/특강)만 노출.
+function _categorizeHistoryLog(log) {
+    const t = log.change_type;
+    const beforeText = typeof log.before === 'string' ? log.before : '';
+    const afterText = typeof log.after === 'string' ? log.after : '';
+    const combined = `${beforeText} ${afterText}`;
+
+    // 첫등록: first_registered 필드가 비어 있다가 처음 세팅된 경우만
+    if (combined.includes('first_registered')) {
+        const prev = beforeText.match(/first_registered\s*:\s*([^,]*)/)?.[1].trim() || '';
+        if (!prev || prev === '—') return { label: '첫등록', cls: 'badge-enroll' };
+    }
+
+    if (t === 'WITHDRAW' || t === 'RESTORE') return { label: '퇴원', cls: 'badge-withdraw' };
+    if (t === 'RETURN' || t === 'LR_AMEND') return { label: '휴원', cls: 'badge-update' };
+
+    if (t === 'STATUS_CHANGE') {
+        try {
+            const status = JSON.parse(afterText)?.status;
+            if (status === '실휴원' || status === '가휴원') return { label: '휴원', cls: 'badge-update' };
+            if (status === '퇴원') return { label: '퇴원', cls: 'badge-withdraw' };
+        } catch { /* JSON 아닐 때 무시 */ }
+        return null;
+    }
+
+    if (t === 'ENROLL' || t === 'UPDATE') {
+        if (combined.includes('내신')) return { label: '내신', cls: 'badge-enroll' };
+        if (combined.includes('자유학기')) return { label: '자유학기', cls: 'badge-enroll' };
+        if (combined.includes('특강')) return { label: '특강', cls: 'badge-enroll' };
+        // 정규(전반): 명시적 키워드 또는 enrollment code(반:..., 추가:...) 변경
+        const regularKeywords = ['정규', '신규 등록', '종강 처리', '반:', '추가:'];
+        if (regularKeywords.some(k => combined.includes(k))) return { label: '전반', cls: 'badge-enroll' };
+        return null;
+    }
+
+    return null;
+}
+
 function renderHistory(logs) {
     const container = document.getElementById('history-list');
     if (!container) return;
@@ -3996,21 +4034,20 @@ function renderHistory(logs) {
         return;
     }
 
-    const typeLabels = {
-        ENROLL: '등록', UPDATE: '수정', WITHDRAW: '퇴원',
-        RETURN: '복귀', RESTORE: '복구',
-        STATUS_CHANGE: '상태변경', LR_AMEND: '요청서정정',
-    };
-    const typeClasses = { ENROLL: 'badge-enroll', UPDATE: 'badge-update', WITHDRAW: 'badge-withdraw' };
+    const filtered = logs
+        .map(log => ({ log, cat: _categorizeHistoryLog(log) }))
+        .filter(x => x.cat);
 
-    logs.forEach(log => {
+    if (filtered.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.9em;padding:8px 0;">표시할 수업 이력이 없습니다.</p>';
+        return;
+    }
+
+    filtered.forEach(({ log, cat }) => {
         const ts = log.timestamp?.toDate ? log.timestamp.toDate() : null;
         const dateStr = ts
             ? ts.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
             : '—';
-
-        const label = typeLabels[log.change_type] || log.change_type;
-        const cls = typeClasses[log.change_type] || '';
 
         const beforeText = _summarizeHistoryText(log.before);
         const afterText = _summarizeHistoryText(log.after);
@@ -4020,7 +4057,7 @@ function renderHistory(logs) {
         item.className = 'history-item';
         item.innerHTML = `
             <div class="history-item-header">
-                <span class="history-badge ${cls}">${esc(label)}</span>
+                <span class="history-badge ${cat.cls}">${esc(cat.label)}</span>
                 <span class="history-date">${esc(dateStr)}</span>
                 <span class="history-author">${esc(log.google_login_id || '')}</span>
             </div>
