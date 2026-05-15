@@ -9,7 +9,7 @@ import { cleanSchoolName, levelShortName } from './school-normalizer.js';
 
 const LEVEL_MAX_GRADE = { '초등': 6, '중등': 3, '고등': 3 };
 const NEXT_LEVEL = { '초등': '중등', '중등': '고등' };
-const NAESIN_DAYS = ['월', '화', '수', '목', '금', '토'];
+const NAESIN_DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const NAESIN_ACTIVE_STATUSES = new Set(['재원', '등원예정']);
 
 const esc = (str) => {
