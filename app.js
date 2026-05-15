@@ -109,12 +109,41 @@ let leaveRequests = []; // leave_requests 컬렉션 캐시
 let _statsGeneratedDate = null; // daily stats 중복 생성 방지 (날짜 기반)
 let _memoSubcollectionCache = {}; // studentId → memo[] (서브컬렉션 읽기 결과 캐시)
 
+// 활성 상태 집합 — 비활성(퇴원/종강/상담)일 때만 "재등록" 버튼 노출.
+const ACTIVE_STUDENT_STATUSES = new Set(['재원', '등원예정', '실휴원', '가휴원']);
+const isActiveStudentStatus = (status) => ACTIVE_STUDENT_STATUSES.has(status || '');
+
 // #past-history-view 컨테이너는 보존하되 항상 숨김. (단독 뷰 진입 분기 폐기로 미사용)
 const setPastHistoryViewVisible = (visible) => {
     const el = document.getElementById('past-history-view');
     if (!el) return;
     el.style.display = visible ? 'block' : 'none';
     if (!visible) el.innerHTML = '';
+};
+
+// 비활성 학생의 정보를 신규등록 폼에 자동채움. detail-header 의 "재등록" 버튼에서 호출.
+const _prefillNewStudentForm = (s) => {
+    window.showNewStudentForm();
+    setTimeout(() => {
+        const f = document.getElementById('new-student-form');
+        if (!f) return;
+        f.name.value = s.name || '';
+        if (s.level) f.level.value = s.level;
+        if (s.school) f.school.value = s.school;
+        if (s.grade) f.grade.value = s.grade;
+        if (s.student_phone) f.student_phone.value = s.student_phone;
+        if (s.parent_phone_1) f.parent_phone_1.value = s.parent_phone_1;
+        if (s.parent_phone_2) f.parent_phone_2.value = s.parent_phone_2;
+        if (s.level && window.handleLevelChange) window.handleLevelChange(s.level);
+    }, 50);
+};
+
+// detail-header 의 "재등록" 버튼에서 호출 — 현재 선택된 학생을 자동채움해 폼 열기.
+window.reenrollCurrentStudent = () => {
+    if (!currentStudentId) return;
+    const s = allStudents.find(x => x.id === currentStudentId);
+    if (!s) return;
+    _prefillNewStudentForm(s);
 };
 
 // HTML 이스케이프 — 사용자 입력을 innerHTML에 삽입할 때 XSS 방지
@@ -1393,22 +1422,8 @@ function renderPastStudentResults(pastStudents, container) {
                 <span class="item-desc">${esc(sub || '—')}</span>
             </div>
         `;
-        div.addEventListener('click', () => {
-            // 등록 폼에 자동채움
-            window.showNewStudentForm();
-            setTimeout(() => {
-                const f = document.getElementById('new-student-form');
-                if (!f) return;
-                f.name.value = s.name || '';
-                if (s.level) f.level.value = s.level;
-                if (s.school) f.school.value = s.school;
-                if (s.grade) f.grade.value = s.grade;
-                if (s.student_phone) f.student_phone.value = s.student_phone;
-                if (s.parent_phone_1) f.parent_phone_1.value = s.parent_phone_1;
-                if (s.parent_phone_2) f.parent_phone_2.value = s.parent_phone_2;
-                if (s.level && window.handleLevelChange) window.handleLevelChange(s.level);
-            }, 50);
-        });
+        // 학생 상세 뷰로 진입. 신규등록 폼 자동채움은 헤더의 "재등록" 버튼에서 처리.
+        div.addEventListener('click', () => selectStudent(s.id, s, div));
         return div;
     };
 
@@ -1677,6 +1692,10 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     document.getElementById('detail-tab-bar').style.display = 'flex';
     setPastHistoryViewVisible(false);
     switchDetailTab('info');
+
+    // 비활성 학생(퇴원/종강/상담)일 때만 "재등록" 버튼 노출.
+    const reenrollBtn = document.getElementById('reenroll-btn');
+    if (reenrollBtn) reenrollBtn.style.display = isActiveStudentStatus(studentData.status) ? 'none' : '';
 
     document.getElementById('profile-initial').textContent = studentData.name?.[0] || 'S';
     document.getElementById('profile-name').textContent = studentData.name || studentId;
