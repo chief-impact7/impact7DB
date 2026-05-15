@@ -109,32 +109,12 @@ let leaveRequests = []; // leave_requests 컬렉션 캐시
 let _statsGeneratedDate = null; // daily stats 중복 생성 방지 (날짜 기반)
 let _memoSubcollectionCache = {}; // studentId → memo[] (서브컬렉션 읽기 결과 캐시)
 
-// 활성 상태 집합 — past-history.js 와 동기. 비활성이면 우측 패널을 과거이력 뷰로 교체.
-const ACTIVE_STUDENT_STATUSES = new Set(['재원', '등원예정', '실휴원', '가휴원']);
-const isActiveStudentStatus = (status) => ACTIVE_STUDENT_STATUSES.has(status || '');
-
-// 과거이력 뷰 토글: 새 모듈이 채우는 #past-history-view 의 표시만 제어.
+// #past-history-view 컨테이너는 보존하되 항상 숨김. (단독 뷰 진입 분기 폐기로 미사용)
 const setPastHistoryViewVisible = (visible) => {
     const el = document.getElementById('past-history-view');
     if (!el) return;
     el.style.display = visible ? 'block' : 'none';
     if (!visible) el.innerHTML = '';
-};
-
-// 비활성 학생의 우측 패널을 과거이력 단일 뷰로 교체. selectStudent/hideForm 공용.
-const showPastHistoryPanel = (student) => {
-    document.getElementById('detail-tab-bar').style.display = 'none';
-    document.getElementById('detail-view').style.display = 'none';
-    document.getElementById('history-view').style.display = 'none';
-    if (window.renderPastHistory) {
-        window.renderPastHistory(student);
-    } else {
-        const el = document.getElementById('past-history-view');
-        if (el) {
-            el.style.display = 'block';
-            el.innerHTML = '<p style="padding:24px;color:var(--text-sec);">과거이력 모듈 로딩 실패</p>';
-        }
-    }
 };
 
 // HTML 이스케이프 — 사용자 입력을 innerHTML에 삽입할 때 XSS 방지
@@ -1694,16 +1674,6 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     document.getElementById('detail-form').style.display = 'none';
     document.getElementById('detail-header').style.display = 'flex';
 
-    // 학생상태 분기: 비활성(퇴원/종강/상담 등) → 과거이력 뷰만 표시
-    // 활성(재원/등원예정/실휴원/가휴원) → 기존 학생상세 뷰 그대로
-    if (!isActiveStudentStatus(studentData.status)) {
-        document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
-        if (targetElement) targetElement.classList.add('active');
-        showPastHistoryPanel({ id: studentId, ...studentData });
-        return;
-    }
-
-    // 활성 학생: 기존 학생상세 뷰
     document.getElementById('detail-tab-bar').style.display = 'flex';
     setPastHistoryViewVisible(false);
     switchDetailTab('info');
@@ -1935,14 +1905,8 @@ window.hideForm = () => {
     // 카드 타이틀 초기화
     setFormCardTitles('기본 정보', '연락처', '수업 정보');
 
-    // 현재 학생이 비활성이면 과거이력 뷰로 복귀, 활성이면 기본정보 탭으로
-    const cur = currentStudentId ? allStudents.find(s => s.id === currentStudentId) : null;
-    if (cur && !isActiveStudentStatus(cur.status)) {
-        showPastHistoryPanel(cur);
-    } else {
-        document.getElementById('detail-tab-bar').style.display = 'flex';
-        switchDetailTab('info');
-    }
+    document.getElementById('detail-tab-bar').style.display = 'flex';
+    switchDetailTab('info');
 };
 
 // ---------------------------------------------------------------------------
