@@ -100,6 +100,35 @@ body {
     outline-offset: 2px;
 }
 
+/* 헤더 액션용 강조 chip 버튼 — 비활성 학생의 "재등록"처럼 눈에 띄어야 하는 액션 */
+.action-chip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 999px;
+    background: var(--primary);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+    box-shadow: 0 1px 3px rgba(0, 117, 74, 0.35);
+}
+.action-chip-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0, 117, 74, 0.45);
+    background: #00633e;
+}
+.action-chip-btn .material-symbols-outlined {
+    font-size: 18px;
+}
+.action-chip-btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
 /* App bar에서만 흰색 아이콘 (짙은 녹색 배경) */
 .app-bar .icon-btn {
     color: rgba(255,255,255,0.87);

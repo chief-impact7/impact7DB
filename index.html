@@ -379,8 +379,11 @@
                 <div class="panel-header" id="detail-header">
                     <span class="material-symbols-outlined icon-btn" role="button" tabindex="0" aria-label="뒤로가기" onclick="document.querySelector('.detail-panel').classList.remove('active')">arrow_back</span>
                     <div class="actions">
-                        <span class="material-symbols-outlined icon-btn" id="reenroll-btn" title="재등록 (자동채움)" style="display:none"
-                            onclick="window.reenrollCurrentStudent()" role="button" tabindex="0" aria-label="재등록">person_add</span>
+                        <button class="action-chip-btn" id="reenroll-btn" style="display:none"
+                            onclick="window.reenrollCurrentStudent()" title="재등록 (자동채움)" aria-label="재등록">
+                            <span class="material-symbols-outlined">person_add</span>
+                            <span>재등록</span>
+                        </button>
                         <span class="material-symbols-outlined icon-btn" title="Edit"
                             onclick="window.showEditForm()" role="button" tabindex="0" aria-label="수정">edit</span>
                         <span class="material-symbols-outlined icon-btn" title="Print" role="button" tabindex="0" aria-label="인쇄">print</span>
