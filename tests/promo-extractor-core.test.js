@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRealLevelGrade, pickPrimaryPhone } from '../promo-extractor-core.js';
+import { normalizeRealLevelGrade, pickPrimaryPhone, gridKeyFor } from '../promo-extractor-core.js';
 
 test('정상 데이터: 초3 → 초3', () => {
     assert.deepEqual(
@@ -111,5 +111,27 @@ test('공백만 있는 번호는 무시', () => {
     assert.equal(
         pickPrimaryPhone({ parent_phone_1: '   ', student_phone: '010-9' }),
         '010-9'
+    );
+});
+
+test('일반 학생 키: 학부+학년', () => {
+    assert.equal(
+        gridKeyFor({ level: '초등', grade: 3, graduated: false }),
+        '초등3'
+    );
+    assert.equal(
+        gridKeyFor({ level: '고등', grade: 1, graduated: false }),
+        '고등1'
+    );
+});
+
+test('졸업 학생 키: grade 무관 "졸업"', () => {
+    assert.equal(
+        gridKeyFor({ level: '졸업', grade: 1, graduated: true }),
+        '졸업'
+    );
+    assert.equal(
+        gridKeyFor({ level: '졸업', grade: 5, graduated: true }),
+        '졸업'
     );
 });

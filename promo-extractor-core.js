@@ -22,3 +22,8 @@ export function pickPrimaryPhone(s) {
     }
     return null;
 }
+
+export function gridKeyFor(normalized) {
+    if (normalized.graduated) return '졸업';
+    return `${normalized.level}${normalized.grade}`;
+}
