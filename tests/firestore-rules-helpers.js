@@ -1,13 +1,17 @@
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 const PROJECT_ID = 'impact7db-rules-test';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const RULES_PATH = join(__dirname, '..', 'firestore.rules');
 
 export async function createTestEnv() {
   return await initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
-      rules: fs.readFileSync('firestore.rules', 'utf8'),
+      rules: fs.readFileSync(RULES_PATH, 'utf8'),
       host: '127.0.0.1',
       port: 8080,
     },
