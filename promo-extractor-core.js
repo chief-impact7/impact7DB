@@ -15,10 +15,10 @@ export function normalizeRealLevelGrade(s) {
     return { level: '졸업', grade: cumulative - 12, graduated: true };
 }
 
-export function pickPrimaryPhone(s) {
-    const candidates = [s.parent_phone_1, s.student_phone, s.parent_phone_2];
-    for (const phone of candidates) {
-        if (phone && String(phone).trim()) return String(phone).trim();
+export function pickPrimaryPhone(s, fields = ['parent_phone_1', 'student_phone', 'parent_phone_2']) {
+    for (const field of fields) {
+        const v = s[field];
+        if (v && String(v).trim()) return String(v).trim();
     }
     return null;
 }

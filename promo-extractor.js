@@ -1,14 +1,14 @@
 /**
- * promo-extractor.js — 홍보 수신자 추출 모달
+ * promo-extractor.js — Analytics 인라인 뷰
  *
- * 좌측 사이드바 "홍보 추출" 버튼에서 진입.
- * 상태 + 학부×학년 그리드 필터로 학생을 추려 대표번호 추출.
- * 비원생은 normalizeRealLevelGrade로 현재 실제 학년으로 변환.
+ * 사이드바 최하단 "Analytics"에서 진입. list-panel을 통째로 차지.
+ * 상태 + 학부×학년 그리드로 학생을 필터링하고, 비원생은
+ * normalizeRealLevelGrade로 현재 실제 학년 환산. 결과는 클립보드 복사
+ * 또는 Google Sheets로 내보낼 수 있다.
  */
 import { state } from './store.js';
 import {
     normalizeRealLevelGrade,
-    pickPrimaryPhone,
     gridKeyFor,
     mergeByPhone,
 } from './promo-extractor-core.js';
@@ -16,37 +16,121 @@ import { createGoogleSheet } from './sheet-export.js';
 
 const PAST_STATUSES = new Set(['퇴원', '종강']);
 const ACTIVE_STATUSES = new Set(['등원예정', '재원', '실휴원', '가휴원']);
+const LEVEL_SHORT = { '초등': '초', '중등': '중', '고등': '고', '졸업': '졸업' };
 
-// 그리드 정의
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function cleanSchool(name) {
+    if (!name) return '';
+    return String(name).replace(/(초등학교|중학교|고등학교|학교)$/, '').trim();
+}
+
+function buildSchoolGradeStr(school, norm) {
+    const s = cleanSchool(school);
+    const lv = LEVEL_SHORT[norm.level] || '';
+    if (norm.graduated) {
+        return s ? `${s}(졸업+${norm.grade})` : `졸업+${norm.grade}`;
+    }
+    if (!norm.grade) return s + lv;
+    return `${s}${lv}${norm.grade}`;
+}
+
+function enrollCode(e) {
+    return `${e?.level_symbol || ''}${e?.class_number || ''}`;
+}
+
+function pickActiveCodes(s) {
+    const today = todayStr();
+    const active = (s.enrollments || []).filter(e => !e.end_date || e.end_date >= today);
+    const codes = active.map(enrollCode).filter(Boolean);
+    return [...new Set(codes)].join(', ');
+}
+
+function pickLastCode(s) {
+    if (!s.enrollments || s.enrollments.length === 0) return '';
+    const sorted = [...s.enrollments].sort((a, b) =>
+        (b.end_date || b.start_date || '').localeCompare(a.end_date || a.start_date || ''));
+    return enrollCode(sorted[0]);
+}
+
+// 그리드 정의 (초1~3은 비활성, 졸업 제거)
 const GRID_ROWS = [
-    { level: '초등', grades: [1, 2, 3, 4, 5, 6] },
+    { level: '초등', grades: [4, 5, 6] },
     { level: '중등', grades: [1, 2, 3] },
     { level: '고등', grades: [1, 2, 3] },
-    { level: '졸업', grades: null }, // 단일 셀
 ];
+
+// 전화 필드 → 표시 라벨
+const PHONE_LABELS = {
+    parent_phone_1: '학부모1',
+    student_phone:  '학생',
+    parent_phone_2: '학부모2',
+};
+// 일관된 우선순위 순서 (UI 체크 순서와 무관하게 항상 이 순서로 정렬)
+const PHONE_ORDER = ['parent_phone_1', 'student_phone', 'parent_phone_2'];
 
 // 모달 상태
 let currentStatusFilter = 'active'; // 'all' | 'active' | 'past'
-let selectedGridKeys = new Set();   // 예: {'초등3','중등1','졸업'}
+let selectedGridKeys = new Set();   // 예: {'초등3','중등1'}
+let selectedPhoneFields = ['parent_phone_1']; // 우선순위 순서대로
 let mergePhones = true;
+let sortState = { col: null, dir: 'asc' };
 let lastRenderedRows = [];          // 마지막 렌더된 행(체크박스 토글용)
 
-// ─── 진입점 ─────────────────────────────────────────────────────────
-window.openPromoExtractModal = function () {
-    const modal = document.getElementById('promo-extract-modal');
-    if (!modal) return;
-    modal.style.display = 'flex';
-    initModal();
+// ─── 진입점 (인라인 뷰 — daily-stats 패턴) ───────────────────────────
+let _autoHideBound = false;
+
+window.openPromoExtractView = function () {
+    const view = document.getElementById('promo-extract-view');
+    const listPanel = document.querySelector('.list-panel');
+    if (!view || !listPanel) return;
+
+    // 다른 뷰 모두 숨김
+    const homeView = document.getElementById('home-view');
+    const statsView = document.getElementById('daily-stats-view');
+    if (homeView) homeView.style.display = 'none';
+    if (statsView) statsView.style.display = 'none';
+
+    // panel-header / bulk-bar / list-items 숨김
+    const panelHeader = listPanel.querySelector('.panel-header');
+    const bulkBar = document.getElementById('bulk-action-bar');
+    const listItems = listPanel.querySelector('.list-items');
+    if (panelHeader) panelHeader.style.display = 'none';
+    if (bulkBar) bulkBar.style.display = 'none';
+    if (listItems) listItems.style.display = 'none';
+
+    view.style.display = 'flex';
+    initView();
+    bindAutoHide();
 };
 
-window.closePromoExtractModal = function () {
-    // overlay 클릭 / 닫기 버튼 둘 다 단순 닫기.
-    // (modal-content에 event.stopPropagation()이 있어 내부 클릭은 여기로 안 옴)
-    document.getElementById('promo-extract-modal').style.display = 'none';
+window.hidePromoExtractView = function () {
+    const view = document.getElementById('promo-extract-view');
+    const listPanel = document.querySelector('.list-panel');
+    if (!view || !listPanel) return;
+
+    view.style.display = 'none';
+    const panelHeader = listPanel.querySelector('.panel-header');
+    const listItems = listPanel.querySelector('.list-items');
+    if (panelHeader) panelHeader.style.display = '';
+    if (listItems) listItems.style.display = '';
 };
 
-// ─── 초기화 ─────────────────────────────────────────────────────────
-function initModal() {
+// 사이드바 L1/필터 항목 클릭 시 Analytics 뷰 자동 hide (한 번만 등록)
+function bindAutoHide() {
+    if (_autoHideBound) return;
+    _autoHideBound = true;
+    const hideIfShown = () => {
+        if (document.getElementById('promo-extract-view').style.display !== 'none') {
+            window.hidePromoExtractView();
+        }
+    };
+    document
+        .querySelectorAll('.sidebar > details.l1-group > summary, .sidebar .nav-item[data-filter-type]')
+        .forEach(el => el.addEventListener('click', hideIfShown));
+}
+
+function initView() {
     buildGrid();
     bindFilterEvents();
     bindActionEvents();
@@ -63,23 +147,15 @@ function buildGrid() {
         labelTd.textContent = row.level;
         tr.appendChild(labelTd);
 
-        if (row.grades === null) {
-            // 졸업: 1~6 셀 자리에 colspan, 단일 체크박스
-            const cell = document.createElement('td');
-            cell.colSpan = 6;
-            cell.innerHTML = `<input type="checkbox" class="promo-grid-cell" data-key="졸업" checked>`;
-            tr.appendChild(cell);
-        } else {
-            for (let g = 1; g <= 6; g++) {
-                const td = document.createElement('td');
-                if (row.grades.includes(g)) {
-                    td.innerHTML = `<input type="checkbox" class="promo-grid-cell" data-key="${row.level}${g}" checked>`;
-                } else {
-                    td.classList.add('disabled');
-                    td.textContent = '–';
-                }
-                tr.appendChild(td);
+        for (let g = 1; g <= 6; g++) {
+            const td = document.createElement('td');
+            if (row.grades.includes(g)) {
+                td.innerHTML = `<input type="checkbox" class="promo-grid-cell" data-key="${row.level}${g}" checked>`;
+            } else {
+                td.classList.add('disabled');
+                td.textContent = '–';
             }
+            tr.appendChild(td);
         }
 
         // 행 전체 토글
@@ -149,16 +225,28 @@ function bindFilterEvents() {
         refresh();
     };
 
+    // 전화번호 선택 — 체크 변경 시 PHONE_ORDER 기준으로 정렬된 배열 유지
+    document.querySelectorAll('.promo-phone-cb').forEach(cb => {
+        cb.onchange = () => {
+            const checked = new Set(
+                [...document.querySelectorAll('.promo-phone-cb:checked')].map(el => el.dataset.phone)
+            );
+            selectedPhoneFields = PHONE_ORDER.filter(f => checked.has(f));
+            refresh();
+        };
+    });
+
     // 병합 토글
     document.getElementById('promo-merge-phones').onchange = (e) => {
         mergePhones = e.target.checked;
         refresh();
     };
+
+    // 헤더 정렬은 refresh() 안에서 동적 헤더 만들 때 같이 바인딩
 }
 
 function syncRowToggles() {
     for (const row of GRID_ROWS) {
-        if (row.grades === null) continue;
         const cells = document.querySelectorAll(`.promo-grid-cell[data-key^="${row.level}"]`);
         const allChecked = [...cells].every(c => c.checked);
         const toggle = document.querySelector(`.promo-grid-row-toggle[data-level="${row.level}"]`);
@@ -192,16 +280,25 @@ function buildRows() {
         const key = gridKeyFor(norm);
         if (!selectedGridKeys.has(key)) continue;
 
-        const phone = pickPrimaryPhone(s);
-        if (!phone) { phoneMissing++; continue; }
+        // 선택된 필드들의 번호를 모두 수집 — 하나라도 있으면 통과
+        const phones = {};
+        let anyPhone = null;
+        for (const f of selectedPhoneFields) {
+            const v = s[f];
+            const trimmed = v ? String(v).trim() : '';
+            phones[f] = trimmed;
+            if (trimmed && !anyPhone) anyPhone = trimmed;
+        }
+        if (!anyPhone) { phoneMissing++; continue; }
 
+        const isPast = PAST_STATUSES.has(s.status);
         rows.push({
             id: s.id,
             name: s.name || '',
-            level: norm.level,
-            grade: norm.graduated ? `졸업+${norm.grade}` : String(norm.grade),
-            school: s.school || '',
-            phone,
+            schoolGrade: buildSchoolGradeStr(s.school, norm),
+            classCode: isPast ? pickLastCode(s) : pickActiveCodes(s),
+            phone: anyPhone, // 정렬·병합 키 (선택 중 가장 우선순위 높은 번호)
+            phones,          // { parent_phone_1: '010-1', student_phone: '' ... }
             status: s.status || '',
         });
     }
@@ -215,6 +312,20 @@ function buildRows() {
         mergedCount = before - finalRows.length;
     } else {
         finalRows = rows.map(r => ({ ...r, mergedNames: [r.name] }));
+    }
+
+    // 4. 정렬 (col이 'phones.parent_phone_1' 식이면 중첩 키 추출)
+    if (sortState.col) {
+        const col = sortState.col;
+        const dir = sortState.dir === 'asc' ? 1 : -1;
+        const getVal = (row) => {
+            if (col.startsWith('phones.')) {
+                const f = col.slice('phones.'.length);
+                return String(row.phones?.[f] ?? '');
+            }
+            return String(row[col] ?? '');
+        };
+        finalRows = [...finalRows].sort((a, b) => getVal(a).localeCompare(getVal(b), 'ko') * dir);
     }
 
     return { rows: finalRows, phoneMissing, mergedCount };
@@ -231,11 +342,41 @@ function refresh() {
     if (mergedCount > 0) parts.push(`중복 ${mergedCount}건 병합`);
     document.getElementById('promo-summary').textContent = parts.join(' · ');
 
-    // 테이블
+    // 헤더 동적 생성 (전화번호 컬럼이 선택에 따라 가변)
+    const thead = document.getElementById('promo-table-head');
+    const phoneHeaderCells = selectedPhoneFields.map(f =>
+        `<th class="promo-sortable" data-col="phones.${f}">${PHONE_LABELS[f]} <span class="promo-sort-icon"></span></th>`
+    ).join('');
+    thead.innerHTML = `
+        <tr>
+            <th></th>
+            <th class="promo-sortable" data-col="name">이름 <span class="promo-sort-icon"></span></th>
+            <th class="promo-sortable" data-col="schoolGrade">학교학년 <span class="promo-sort-icon"></span></th>
+            <th class="promo-sortable" data-col="classCode">반 <span class="promo-sort-icon"></span></th>
+            ${phoneHeaderCells}
+            <th class="promo-sortable" data-col="status">상태 <span class="promo-sort-icon"></span></th>
+        </tr>
+    `;
+    // 헤더 클릭 정렬 — 매 렌더마다 재바인딩(동적 컬럼)
+    thead.querySelectorAll('.promo-sortable').forEach(th => {
+        th.onclick = () => {
+            const col = th.dataset.col;
+            if (sortState.col !== col)        sortState = { col, dir: 'asc' };
+            else if (sortState.dir === 'asc') sortState = { col, dir: 'desc' };
+            else                              sortState = { col: null, dir: 'asc' };
+            refresh();
+        };
+        const icon = th.querySelector('.promo-sort-icon');
+        if (icon) icon.textContent =
+            th.dataset.col === sortState.col ? (sortState.dir === 'asc' ? '▲' : '▼') : '';
+    });
+
+    // 테이블 body
     const tbody = document.getElementById('promo-table-body');
     tbody.innerHTML = '';
+    const colCount = 5 + selectedPhoneFields.length; // checkbox+name+schoolGrade+classCode+status + phones
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="promo-empty">조건에 맞는 학생이 없습니다</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colCount}" class="promo-empty">조건에 맞는 학생이 없습니다</td></tr>`;
         document.getElementById('promo-select-all').checked = false;
         return;
     }
@@ -244,13 +385,15 @@ function refresh() {
         const r = rows[i];
         const tr = document.createElement('tr');
         const displayName = r.mergedNames.length > 1 ? r.mergedNames.join(', ') : r.name;
+        const phoneCells = selectedPhoneFields.map(f =>
+            `<td class="promo-phone-cell">${escapeHtml(r.phones[f] || '')}</td>`
+        ).join('');
         tr.innerHTML = `
             <td><input type="checkbox" class="promo-row-check" data-idx="${i}" checked></td>
             <td>${escapeHtml(displayName)}</td>
-            <td>${escapeHtml(r.level)}</td>
-            <td>${escapeHtml(r.grade)}</td>
-            <td>${escapeHtml(r.school)}</td>
-            <td>${escapeHtml(r.phone)}</td>
+            <td>${escapeHtml(r.schoolGrade)}</td>
+            <td>${escapeHtml(r.classCode)}</td>
+            ${phoneCells}
             <td>${escapeHtml(r.status)}</td>
         `;
         tbody.appendChild(tr);
@@ -285,7 +428,14 @@ async function handleCopy() {
         alert('선택된 행이 없습니다.');
         return;
     }
-    const text = rows.map(r => r.phone).join(',');
+    // 선택된 모든 전화 필드의 번호를 평탄화 (공란 제외, 전체 중복 제거)
+    const all = [];
+    for (const r of rows) {
+        for (const f of selectedPhoneFields) {
+            if (r.phones[f]) all.push(r.phones[f]);
+        }
+    }
+    const text = [...new Set(all)].join(',');
 
     try {
         await navigator.clipboard.writeText(text);
@@ -316,13 +466,15 @@ async function handleSheetExport() {
         return;
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     const filterSummary = buildFilterSummary();
     const title = `홍보수신자_${today}${filterSummary ? '_' + filterSummary : ''}`;
-    const headers = ['이름', '학부', '학년', '학교', '대표번호', '상태'];
+    const phoneHeaders = selectedPhoneFields.map(f => PHONE_LABELS[f]);
+    const headers = ['이름', '학교학년', '반', ...phoneHeaders, '상태'];
     const sheetRows = rows.map(r => {
         const displayName = r.mergedNames.length > 1 ? r.mergedNames.join(', ') : r.name;
-        return [displayName, r.level, r.grade, r.school, r.phone, r.status];
+        const phoneCells = selectedPhoneFields.map(f => r.phones[f] || '');
+        return [displayName, r.schoolGrade, r.classCode, ...phoneCells, r.status];
     });
 
     await createGoogleSheet(title, headers, sheetRows);
@@ -333,7 +485,9 @@ function buildFilterSummary() {
     if (currentStatusFilter === 'active') parts.push('재원');
     else if (currentStatusFilter === 'past') parts.push('비원');
 
+    // 그리드 부분 선택일 때만 파일명에 키 표기 (전체 선택이면 생략)
+    const totalCells = GRID_ROWS.reduce((sum, r) => sum + r.grades.length, 0);
     const keys = [...selectedGridKeys].sort();
-    if (keys.length > 0 && keys.length < 13) parts.push(keys.join('·'));
+    if (keys.length > 0 && keys.length < totalCells) parts.push(keys.join('·'));
     return parts.join('_');
 }

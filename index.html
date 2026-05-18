@@ -46,11 +46,6 @@
                 Registration
             </button>
 
-            <button class="compose-btn promo-extract-btn" onclick="window.openPromoExtractModal()">
-                <span class="material-symbols-outlined">campaign</span>
-                홍보 추출
-            </button>
-
             <!-- L1: All Students (필터 + L2 토글) -->
             <details class="l1-group">
                 <summary class="menu-l1 nav-item" data-filter-type="all">
@@ -223,6 +218,13 @@
                     <span class="material-symbols-outlined">bar_chart</span>Daily Stats
                 </div>
             </div>
+
+            <!-- L1: Analytics — 학생 인원현황 분석/추출 (필터 메뉴와 분리된 도구) -->
+            <div class="l1-group analytics-nav-item">
+                <div class="menu-l1 nav-item" onclick="window.openPromoExtractView()">
+                    <span class="material-symbols-outlined">analytics</span>Analytics
+                </div>
+            </div>
         </nav>
 
         <!-- Main Content -->
@@ -275,6 +277,101 @@
                     </div>
                     <div id="stats-content" class="stats-content"></div>
                 </div>
+                <!-- 홍보 추출 인라인 뷰 -->
+                <div id="promo-extract-view" class="promo-extract-view" style="display:none;">
+                    <div class="promo-view-header">
+                        <button class="btn-cancel stats-back-btn" onclick="window.hidePromoExtractView()">
+                            <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+                            목록으로
+                        </button>
+                        <h3 class="promo-view-title">
+                            <span class="material-symbols-outlined">analytics</span>
+                            Analytics
+                        </h3>
+                    </div>
+
+                    <div class="promo-view-body">
+                        <!-- 상태 필터 -->
+                        <div class="promo-filter-row">
+                            <label class="promo-filter-label">상태</label>
+                            <div class="promo-status-chips" id="promo-status-chips">
+                                <button class="promo-chip" data-status="all">All</button>
+                                <button class="promo-chip active" data-status="active">재원</button>
+                                <button class="promo-chip" data-status="past">비원</button>
+                            </div>
+                        </div>
+
+                        <!-- 학부×학년 그리드 -->
+                        <div class="promo-filter-row">
+                            <label class="promo-filter-label">학부×학년</label>
+                            <table class="promo-grid">
+                                <thead>
+                                    <tr>
+                                        <th></th>
+                                        <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th>
+                                        <th class="promo-grid-toggle-col">
+                                            <input type="checkbox" id="promo-grid-all" checked aria-label="전체 토글">
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="promo-grid-body"></tbody>
+                            </table>
+                        </div>
+
+                        <!-- 전화번호 선택 -->
+                        <div class="promo-filter-row">
+                            <label class="promo-filter-label">전화번호</label>
+                            <div class="promo-phone-checks" id="promo-phone-checks">
+                                <label class="promo-checkbox-label">
+                                    <input type="checkbox" class="promo-phone-cb" data-phone="parent_phone_1" checked>
+                                    학부모1
+                                </label>
+                                <label class="promo-checkbox-label">
+                                    <input type="checkbox" class="promo-phone-cb" data-phone="student_phone">
+                                    학생
+                                </label>
+                                <label class="promo-checkbox-label">
+                                    <input type="checkbox" class="promo-phone-cb" data-phone="parent_phone_2">
+                                    학부모2
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="promo-filter-row">
+                            <label class="promo-checkbox-label">
+                                <input type="checkbox" id="promo-merge-phones" checked>
+                                동일 번호 자동 병합
+                            </label>
+                        </div>
+
+                        <div class="promo-summary" id="promo-summary">조회 중…</div>
+
+                        <div class="promo-actions">
+                            <label class="promo-checkbox-label">
+                                <input type="checkbox" id="promo-select-all">
+                                전체 선택
+                            </label>
+                            <div class="promo-action-buttons">
+                                <button class="btn-cancel" id="promo-copy-btn">
+                                    <span class="material-symbols-outlined" style="font-size:16px;">content_copy</span>
+                                    선택 복사
+                                </button>
+                                <button class="btn-save" id="promo-sheet-btn">
+                                    <span class="material-symbols-outlined" style="font-size:16px;">download</span>
+                                    구글시트 다운로드
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="promo-table-wrap">
+                            <table class="promo-table">
+                                <thead id="promo-table-head"></thead>
+                                <tbody id="promo-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="list-items">
                     <p style="padding:16px;color:var(--text-sec)">Please log in to view students.</p>
                 </div>
@@ -1012,90 +1109,6 @@
             <div class="modal-actions">
                 <button class="btn-cancel" onclick="window.closeGrammarSpecial()">닫기</button>
                 <button class="btn-save" id="gs-save-btn" onclick="window.saveGrammarSpecial()">저장</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- 홍보 추출 모달 -->
-    <div id="promo-extract-modal" class="modal-overlay" onclick="window.closePromoExtractModal(event)" style="display:none;">
-        <div class="modal-content promo-extract-modal-content" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h3 style="margin:0;font-size:16px;">홍보 수신자 추출</h3>
-                <button class="btn-icon" onclick="window.closePromoExtractModal()" aria-label="닫기">
-                    <span class="material-symbols-outlined">close</span>
-                </button>
-            </div>
-
-            <div class="modal-body" style="padding:16px 20px;">
-                <!-- 상태 필터 -->
-                <div class="promo-filter-row">
-                    <label class="promo-filter-label">상태</label>
-                    <div class="promo-status-chips" id="promo-status-chips">
-                        <button class="promo-chip" data-status="all">All</button>
-                        <button class="promo-chip active" data-status="active">재원</button>
-                        <button class="promo-chip" data-status="past">비원</button>
-                    </div>
-                </div>
-
-                <!-- 학부×학년 그리드 -->
-                <div class="promo-filter-row">
-                    <label class="promo-filter-label">학부×학년</label>
-                    <table class="promo-grid">
-                        <thead>
-                            <tr>
-                                <th></th>
-                                <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th>
-                                <th class="promo-grid-toggle-col">
-                                    <input type="checkbox" id="promo-grid-all" checked aria-label="전체 토글">
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody id="promo-grid-body">
-                            <!-- 동적 생성 -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="promo-filter-row">
-                    <label class="promo-checkbox-label">
-                        <input type="checkbox" id="promo-merge-phones" checked>
-                        동일 번호 자동 병합
-                    </label>
-                </div>
-
-                <!-- 카운트 + 액션 -->
-                <div class="promo-summary" id="promo-summary">조회 중…</div>
-
-                <div class="promo-actions">
-                    <label class="promo-checkbox-label">
-                        <input type="checkbox" id="promo-select-all">
-                        전체 선택
-                    </label>
-                    <div class="promo-action-buttons">
-                        <button class="btn-primary" id="promo-copy-btn">선택 복사</button>
-                        <button class="btn-secondary" id="promo-sheet-btn">구글시트 다운로드</button>
-                    </div>
-                </div>
-
-                <!-- 결과 테이블 -->
-                <div class="promo-table-wrap">
-                    <table class="promo-table">
-                        <thead>
-                            <tr>
-                                <th></th>
-                                <th>이름</th>
-                                <th>학부</th>
-                                <th>학년</th>
-                                <th>학교</th>
-                                <th>대표번호</th>
-                                <th>상태</th>
-                            </tr>
-                        </thead>
-                        <tbody id="promo-table-body">
-                            <!-- 동적 생성 -->
-                        </tbody>
-                    </table>
-                </div>
             </div>
         </div>
     </div>
