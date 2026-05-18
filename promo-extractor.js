@@ -310,6 +310,30 @@ async function handleCopy() {
 }
 
 async function handleSheetExport() {
-    // Task 11에서 구현
-    alert('Task 11에서 구현 예정');
+    const rows = getCheckedRows();
+    if (rows.length === 0) {
+        alert('선택된 행이 없습니다.');
+        return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const filterSummary = buildFilterSummary();
+    const title = `홍보수신자_${today}${filterSummary ? '_' + filterSummary : ''}`;
+    const headers = ['이름', '학부', '학년', '학교', '대표번호', '상태'];
+    const sheetRows = rows.map(r => {
+        const displayName = r.mergedNames.length > 1 ? r.mergedNames.join(', ') : r.name;
+        return [displayName, r.level, r.grade, r.school, r.phone, r.status];
+    });
+
+    await createGoogleSheet(title, headers, sheetRows);
+}
+
+function buildFilterSummary() {
+    const parts = [];
+    if (currentStatusFilter === 'active') parts.push('재원');
+    else if (currentStatusFilter === 'past') parts.push('비원');
+
+    const keys = [...selectedGridKeys].sort();
+    if (keys.length > 0 && keys.length < 13) parts.push(keys.join('·'));
+    return parts.join('_');
 }
