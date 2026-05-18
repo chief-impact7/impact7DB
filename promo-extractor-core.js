@@ -14,3 +14,11 @@ export function normalizeRealLevelGrade(s) {
     if (cumulative <= 12) return { level: '고등', grade: cumulative - 9,    graduated: false };
     return { level: '졸업', grade: cumulative - 12, graduated: true };
 }
+
+export function pickPrimaryPhone(s) {
+    const candidates = [s.parent_phone_1, s.student_phone, s.parent_phone_2];
+    for (const phone of candidates) {
+        if (phone && String(phone).trim()) return String(phone).trim();
+    }
+    return null;
+}
