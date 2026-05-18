@@ -27,3 +27,22 @@ export function gridKeyFor(normalized) {
     if (normalized.graduated) return '졸업';
     return `${normalized.level}${normalized.grade}`;
 }
+
+export function mergeByPhone(rows) {
+    const byPhone = new Map();
+    const result = [];
+    for (const row of rows) {
+        if (!row.phone) {
+            result.push({ ...row, mergedNames: [row.name] });
+            continue;
+        }
+        if (byPhone.has(row.phone)) {
+            byPhone.get(row.phone).mergedNames.push(row.name);
+        } else {
+            const merged = { ...row, mergedNames: [row.name] };
+            byPhone.set(row.phone, merged);
+            result.push(merged);
+        }
+    }
+    return result;
+}

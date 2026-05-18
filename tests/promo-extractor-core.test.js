@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRealLevelGrade, pickPrimaryPhone, gridKeyFor } from '../promo-extractor-core.js';
+import { normalizeRealLevelGrade, pickPrimaryPhone, gridKeyFor, mergeByPhone } from '../promo-extractor-core.js';
 
 test('정상 데이터: 초3 → 초3', () => {
     assert.deepEqual(
@@ -134,4 +134,38 @@ test('졸업 학생 키: grade 무관 "졸업"', () => {
         gridKeyFor({ level: '졸업', grade: 5, graduated: true }),
         '졸업'
     );
+});
+
+test('빈 배열은 빈 배열', () => {
+    assert.deepEqual(mergeByPhone([]), []);
+});
+
+test('중복 없으면 그대로', () => {
+    const rows = [
+        { name: '김지유', phone: '010-1', level: '초등', grade: 3 },
+        { name: '이서연', phone: '010-2', level: '초등', grade: 4 },
+    ];
+    const merged = mergeByPhone(rows);
+    assert.equal(merged.length, 2);
+    assert.deepEqual(merged[0].mergedNames, ['김지유']);
+});
+
+test('같은 번호 2건 → 1건 병합, 이름 합치기', () => {
+    const rows = [
+        { name: '김지유', phone: '010-1', level: '초등', grade: 3 },
+        { name: '김지윤', phone: '010-1', level: '초등', grade: 5 },
+    ];
+    const merged = mergeByPhone(rows);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0].phone, '010-1');
+    assert.deepEqual(merged[0].mergedNames, ['김지유', '김지윤']);
+});
+
+test('번호 null인 행은 병합 대상에서 제외(그대로 보존)', () => {
+    const rows = [
+        { name: '김지유', phone: null, level: '초등', grade: 3 },
+        { name: '이서연', phone: null, level: '초등', grade: 4 },
+    ];
+    const merged = mergeByPhone(rows);
+    assert.equal(merged.length, 2);
 });
