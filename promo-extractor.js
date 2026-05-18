@@ -280,8 +280,33 @@ function getCheckedRows() {
 }
 
 async function handleCopy() {
-    // Task 10에서 구현
-    alert('Task 10에서 구현 예정');
+    const rows = getCheckedRows();
+    if (rows.length === 0) {
+        alert('선택된 행이 없습니다.');
+        return;
+    }
+    const text = rows.map(r => r.phone).join(',');
+
+    try {
+        await navigator.clipboard.writeText(text);
+        alert(`${rows.length}개 번호를 복사했습니다.`);
+    } catch (e) {
+        // fallback: textarea + execCommand
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+            document.execCommand('copy');
+            alert(`${rows.length}개 번호를 복사했습니다.`);
+        } catch (fallbackErr) {
+            alert('복사 실패: ' + fallbackErr.message);
+        } finally {
+            document.body.removeChild(ta);
+        }
+    }
 }
 
 async function handleSheetExport() {
