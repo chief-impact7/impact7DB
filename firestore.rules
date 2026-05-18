@@ -1037,6 +1037,24 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // [공통] 상담 AI 산출물 (서버 전용 쓰기, 클라이언트 읽기만)
+    // =========================================================================
+    match /consultation_summaries/{studentId} {
+      allow read: if isAuthorized();
+      allow write: if false;
+    }
+
+    match /consultation_briefings/{studentId} {
+      allow read: if isAuthorized();
+      allow write: if false;
+    }
+
+    match /consultation_trends/{periodKey} {
+      allow read: if isAuthorized();
+      allow write: if false;
+    }
+
+    // =========================================================================
     // 기본 거부: 위에 매칭되지 않는 모든 경로 차단
     // =========================================================================
     match /{document=**} {
