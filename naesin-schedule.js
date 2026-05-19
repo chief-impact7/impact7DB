@@ -291,7 +291,8 @@ window.saveNaesinSchedule = async () => {
 
     const studentMap = new Map(state.allStudents.map(s => [s.id, s]));
     const writes = [];
-    const warnings = [];
+    const dayWarnings = [];
+    const timeWarnings = [];
 
     for (const [, g] of Object.entries(groups)) {
         for (const sg of g.subgroups) {
@@ -299,9 +300,15 @@ window.saveNaesinSchedule = async () => {
                 const override = g.overrides[id];
                 const days = override ? override.days : sg.days;
                 const time = override ? override.time : sg.time;
+                const name = studentMap.get(id)?.name || id;
 
                 if (days.length === 0) {
-                    warnings.push(studentMap.get(id)?.name || id);
+                    dayWarnings.push(name);
+                    continue;
+                }
+                // 등원시간 누락 시 학생 카드에 정확한 시간이 안 보임 → 등원지연/혼선 원인.
+                if (!time || !/^\d{1,2}:\d{2}$/.test(time)) {
+                    timeWarnings.push(name);
                     continue;
                 }
                 writes.push({ studentId: id, days, time });
@@ -309,8 +316,12 @@ window.saveNaesinSchedule = async () => {
         }
     }
 
-    if (warnings.length > 0) {
-        alert(`요일 미설정 학생이 있습니다:\n${warnings.join(', ')}\n\n요일을 설정하거나 서브그룹에서 제외해주세요.`);
+    if (dayWarnings.length > 0) {
+        alert(`요일 미설정 학생이 있습니다:\n${dayWarnings.join(', ')}\n\n요일을 설정하거나 서브그룹에서 제외해주세요.`);
+        return;
+    }
+    if (timeWarnings.length > 0) {
+        alert(`등원시간 미입력 학생이 있습니다:\n${timeWarnings.join(', ')}\n\n해당 서브그룹의 시간을 입력하거나 학생을 제외해주세요.`);
         return;
     }
 

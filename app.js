@@ -1989,6 +1989,12 @@ window.submitNewStudent = async () => {
         const oldStudent = allStudents.find(s => s.id === currentStudentId) || {};
         const editedEnrollments = collectEditEnrollments();
 
+        // 정합성 가드 — saveEnrollment(별도 모달)와 동일 규칙. 카드 직접 편집 경로도 통과 차단.
+        for (const e of editedEnrollments) {
+            const err = _validateEnrollmentFields(e);
+            if (err) { alert(err); return; }
+        }
+
         // 비활성(상담/퇴원/종강/휴원 등) → 활성(재원/등원예정) 전환 시,
         // semester 선택을 놓친 enrollment는 student.level의 현재 학기로 자동 채움.
         const ACTIVE_DEFAULT_SEMESTER_TARGETS = ['재원', '등원예정'];
@@ -2723,6 +2729,30 @@ window.handleEnrollClassTypeChange = () => {
     applyDateConstraints(startInput, endInput);
 };
 
+// enrollment 정합성 검증 (반편성도우미·CSV import 규칙과 동일).
+// 통과: null. 실패: 사용자에게 보여줄 한 줄 메시지.
+// 호출처: saveEnrollment(추가 모달) + submitNewStudent isEditMode 분기(편집 카드).
+function _validateEnrollmentFields(e) {
+    const codeLabel = `${e.level_symbol||''}${e.class_number||''}` || '(코드 없음)';
+    const ct = e.class_type;
+    if (ct === '내신' && (e.level_symbol || e.class_number)) {
+        return `내신 enrollment는 레벨기호/반넘버를 비워야 합니다 (csKey 별도 관리). [${codeLabel}]`;
+    }
+    if ((ct === '정규' || ct === '자유학기') && (!e.level_symbol || !e.class_number)) {
+        return `${ct}는 레벨기호와 반넘버를 모두 입력해야 합니다. [${codeLabel}]`;
+    }
+    if (ct === '특강' && !e.class_number) {
+        return `특강은 반넘버(반 이름)를 입력해야 합니다. [${codeLabel}]`;
+    }
+    if (!(e.day && e.day.length > 0)) {
+        return `수업 요일을 1개 이상 선택하세요. [${ct || '정규'} ${codeLabel}]`;
+    }
+    if (!e.start_date) {
+        return `시작일을 입력하세요. [${ct || '정규'} ${codeLabel}]`;
+    }
+    return null;
+}
+
 window.saveEnrollment = async () => {
     if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
     const modal = document.getElementById('enrollment-modal');
@@ -2734,7 +2764,16 @@ window.saveEnrollment = async () => {
     const startDate = form.enroll_start_date.value;
     const endDate = form.enroll_end_date?.value || '';
 
-    if (!classNumber) { alert('반넘버를 입력하세요.'); return; }
+    // 정합성 가드 — 추가 모달은 내신 자체 차단(반편성도우미만), 나머지는 공통 헬퍼.
+    if (classType === '내신') {
+        alert('내신 enrollment는 이 모달로 추가할 수 없습니다.\n반편성도우미(DSC 앱)를 사용하세요. 내신은 정규의 일시 override 형태로 csKey 별도 관리됩니다.');
+        return;
+    }
+    const _vErr = _validateEnrollmentFields({
+        class_type: classType, level_symbol: levelSymbol, class_number: classNumber,
+        day: days, start_date: startDate
+    });
+    if (_vErr) { alert(_vErr); return; }
 
     let semester = form.enroll_semester?.value || '';
     if (!semester) {
