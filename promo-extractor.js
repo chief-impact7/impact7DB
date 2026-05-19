@@ -11,6 +11,7 @@ import {
     normalizeRealLevelGrade,
     gridKeyFor,
     mergeByPhone,
+    branchFromStudent,
 } from './promo-extractor-core.js';
 import { createGoogleSheet } from './sheet-export.js';
 
@@ -71,6 +72,7 @@ const PHONE_ORDER = ['parent_phone_1', 'student_phone', 'parent_phone_2'];
 
 // 모달 상태
 let currentStatusFilter = 'active'; // 'all' | 'active' | 'past'
+let currentBranchFilter = 'all';    // 'all' | '2단지' | '10단지' | '무소속'
 let selectedGridKeys = new Set();   // 예: {'초등3','중등1'}
 let selectedPhoneFields = ['parent_phone_1']; // 우선순위 순서대로
 let mergePhones = true;
@@ -184,6 +186,16 @@ function bindFilterEvents() {
         };
     });
 
+    // 소속 chips
+    document.querySelectorAll('#promo-branch-chips .promo-chip').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('#promo-branch-chips .promo-chip').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentBranchFilter = btn.dataset.branch;
+            refresh();
+        };
+    });
+
     // 그리드 셀
     document.querySelectorAll('.promo-grid-cell').forEach(cb => {
         cb.onchange = () => {
@@ -272,13 +284,16 @@ function buildRows() {
         return false;
     });
 
-    // 2. 정규화 + 그리드 매칭 + 전화 추출
+    // 2. 정규화 + 그리드 매칭 + 소속 매칭 + 전화 추출
     let phoneMissing = 0;
     const rows = [];
     for (const s of statusFiltered) {
         const norm = normalizeRealLevelGrade(s);
         const key = gridKeyFor(norm);
         if (!selectedGridKeys.has(key)) continue;
+
+        const branch = branchFromStudent(s);
+        if (currentBranchFilter !== 'all' && branch !== currentBranchFilter) continue;
 
         // 선택된 필드들의 번호를 모두 수집 — 하나라도 있으면 통과
         const phones = {};
@@ -295,6 +310,7 @@ function buildRows() {
         rows.push({
             id: s.id,
             name: s.name || '',
+            branch,
             schoolGrade: buildSchoolGradeStr(s.school, norm),
             classCode: isPast ? pickLastCode(s) : pickActiveCodes(s),
             phone: anyPhone, // 정렬·병합 키 (선택 중 가장 우선순위 높은 번호)
@@ -351,6 +367,7 @@ function refresh() {
         <tr>
             <th></th>
             <th class="promo-sortable" data-col="name">이름 <span class="promo-sort-icon"></span></th>
+            <th class="promo-sortable" data-col="branch">소속 <span class="promo-sort-icon"></span></th>
             <th class="promo-sortable" data-col="schoolGrade">학교학년 <span class="promo-sort-icon"></span></th>
             <th class="promo-sortable" data-col="classCode">반 <span class="promo-sort-icon"></span></th>
             ${phoneHeaderCells}
@@ -374,7 +391,7 @@ function refresh() {
     // 테이블 body
     const tbody = document.getElementById('promo-table-body');
     tbody.innerHTML = '';
-    const colCount = 5 + selectedPhoneFields.length; // checkbox+name+schoolGrade+classCode+status + phones
+    const colCount = 6 + selectedPhoneFields.length; // checkbox+name+branch+schoolGrade+classCode+status + phones
     if (rows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="${colCount}" class="promo-empty">조건에 맞는 학생이 없습니다</td></tr>`;
         document.getElementById('promo-select-all').checked = false;
@@ -391,6 +408,7 @@ function refresh() {
         tr.innerHTML = `
             <td><input type="checkbox" class="promo-row-check" data-idx="${i}" checked></td>
             <td>${escapeHtml(displayName)}</td>
+            <td>${escapeHtml(r.branch)}</td>
             <td>${escapeHtml(r.schoolGrade)}</td>
             <td>${escapeHtml(r.classCode)}</td>
             ${phoneCells}
@@ -470,11 +488,11 @@ async function handleSheetExport() {
     const filterSummary = buildFilterSummary();
     const title = `홍보수신자_${today}${filterSummary ? '_' + filterSummary : ''}`;
     const phoneHeaders = selectedPhoneFields.map(f => PHONE_LABELS[f]);
-    const headers = ['이름', '학교학년', '반', ...phoneHeaders, '상태'];
+    const headers = ['이름', '소속', '학교학년', '반', ...phoneHeaders, '상태'];
     const sheetRows = rows.map(r => {
         const displayName = r.mergedNames.length > 1 ? r.mergedNames.join(', ') : r.name;
         const phoneCells = selectedPhoneFields.map(f => r.phones[f] || '');
-        return [displayName, r.schoolGrade, r.classCode, ...phoneCells, r.status];
+        return [displayName, r.branch, r.schoolGrade, r.classCode, ...phoneCells, r.status];
     });
 
     await createGoogleSheet(title, headers, sheetRows);
@@ -484,6 +502,8 @@ function buildFilterSummary() {
     const parts = [];
     if (currentStatusFilter === 'active') parts.push('재원');
     else if (currentStatusFilter === 'past') parts.push('비원');
+
+    if (currentBranchFilter !== 'all') parts.push(currentBranchFilter);
 
     // 그리드 부분 선택일 때만 파일명에 키 표기 (전체 선택이면 생략)
     const totalCells = GRID_ROWS.reduce((sum, r) => sum + r.grades.length, 0);
