@@ -28,6 +28,21 @@ export function gridKeyFor(normalized) {
     return `${normalized.level}${normalized.grade}`;
 }
 
+// class_number 첫 숫자로 단지 파생: '1xx' → '2단지', '2xx' → '10단지'
+export function branchFromClassNumber(num) {
+    const first = String(num ?? '').trim().charAt(0);
+    if (first === '1') return '2단지';
+    if (first === '2') return '10단지';
+    return '';
+}
+
+// 학생의 단일 소속: branch 필드 우선, 없으면 첫 enrollment의 class_number에서 파생.
+// 매칭되는 단지가 없으면 '무소속'.
+export function branchFromStudent(s) {
+    if (s.branch === '2단지' || s.branch === '10단지') return s.branch;
+    return branchFromClassNumber(s.enrollments?.[0]?.class_number) || '무소속';
+}
+
 export function mergeByPhone(rows) {
     const byPhone = new Map();
     const result = [];

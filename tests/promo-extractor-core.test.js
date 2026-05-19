@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRealLevelGrade, pickPrimaryPhone, gridKeyFor, mergeByPhone } from '../promo-extractor-core.js';
+import { normalizeRealLevelGrade, pickPrimaryPhone, gridKeyFor, mergeByPhone, branchFromClassNumber, branchFromStudent } from '../promo-extractor-core.js';
 
 test('정상 데이터: 초3 → 초3', () => {
     assert.deepEqual(
@@ -168,4 +168,53 @@ test('번호 null인 행은 병합 대상에서 제외(그대로 보존)', () =>
     ];
     const merged = mergeByPhone(rows);
     assert.equal(merged.length, 2);
+});
+
+// ─── branchFromClassNumber ────────────────────────────────────────────
+test('class_number 1xx → 2단지', () => {
+    assert.equal(branchFromClassNumber('103'), '2단지');
+    assert.equal(branchFromClassNumber('1'), '2단지');
+});
+
+test('class_number 2xx → 10단지', () => {
+    assert.equal(branchFromClassNumber('205'), '10단지');
+    assert.equal(branchFromClassNumber('2'), '10단지');
+});
+
+test('class_number 3xx 이상 또는 빈 값 → 빈 문자열', () => {
+    assert.equal(branchFromClassNumber('301'), '');
+    assert.equal(branchFromClassNumber(''), '');
+    assert.equal(branchFromClassNumber(null), '');
+    assert.equal(branchFromClassNumber(undefined), '');
+});
+
+// ─── branchFromStudent ────────────────────────────────────────────────
+test('branch 필드가 2단지면 그대로 반환', () => {
+    assert.equal(branchFromStudent({ branch: '2단지', enrollments: [{ class_number: '205' }] }), '2단지');
+});
+
+test('branch 필드가 10단지면 그대로 반환', () => {
+    assert.equal(branchFromStudent({ branch: '10단지', enrollments: [{ class_number: '103' }] }), '10단지');
+});
+
+test('branch 필드 없고 첫 enrollment 1xx → 2단지', () => {
+    assert.equal(branchFromStudent({ enrollments: [{ class_number: '103' }, { class_number: '205' }] }), '2단지');
+});
+
+test('branch 필드 없고 첫 enrollment 2xx → 10단지', () => {
+    assert.equal(branchFromStudent({ enrollments: [{ class_number: '205' }] }), '10단지');
+});
+
+test('branch도 enrollment도 없으면 무소속', () => {
+    assert.equal(branchFromStudent({}), '무소속');
+    assert.equal(branchFromStudent({ enrollments: [] }), '무소속');
+});
+
+test('첫 enrollment의 class_number가 단지로 환산 안 되면 무소속', () => {
+    assert.equal(branchFromStudent({ enrollments: [{ class_number: '999' }] }), '무소속');
+});
+
+test('branch 필드가 의외값("미지정")이면 enrollment로 폴백', () => {
+    assert.equal(branchFromStudent({ branch: '미지정', enrollments: [{ class_number: '103' }] }), '2단지');
+    assert.equal(branchFromStudent({ branch: '미지정' }), '무소속');
 });
