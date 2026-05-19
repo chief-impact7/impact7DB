@@ -1,7 +1,7 @@
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, getDocs, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
 import { auth, db } from './firebase-config.js';
-import { signInWithGoogle, logout, getGoogleAccessToken } from './auth.js';
+import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
 import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import './naesin-schedule.js';
@@ -3049,7 +3049,7 @@ window.handleSheetExport = async () => {
         alert('내보낼 데이터가 없습니다.');
         return;
     }
-    const token = getGoogleAccessToken();
+    const token = await ensureGoogleAccessToken();
     if (!token) {
         alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
         return;
@@ -3162,7 +3162,7 @@ window.handleSheetUrlUpload = () => {
 };
 
 window.handleSheetTemplate = async () => {
-    const token = getGoogleAccessToken();
+    const token = await ensureGoogleAccessToken();
     if (!token) {
         alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
         return;
@@ -3250,7 +3250,8 @@ function loadPickerApi() {
 }
 
 window.handleSheetPicker = async () => {
-    if (!getGoogleAccessToken()) {
+    const token = await ensureGoogleAccessToken();
+    if (!token) {
         alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
         return;
     }
@@ -3263,7 +3264,7 @@ window.handleSheetPicker = async () => {
             new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
                 .setMode(google.picker.DocsViewMode.LIST)
         )
-        .setOAuthToken(getGoogleAccessToken())
+        .setOAuthToken(token)
         .setCallback(async (data) => {
             if (data.action !== google.picker.Action.PICKED) return;
             const sheetId = data.docs[0].id;
@@ -3277,7 +3278,7 @@ window.handleSheetPicker = async () => {
 
 async function importFromSheetId(sheetId, sheetName) {
     try {
-        const token = getGoogleAccessToken();
+        const token = await ensureGoogleAccessToken();
         if (!token) { alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.'); return; }
 
         // 시트 탭 목록 조회

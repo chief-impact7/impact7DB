@@ -489,7 +489,7 @@ async function handleSheetExport() {
 
     const today = todayStr();
     const filterSummary = buildFilterSummary();
-    const title = `홍보수신자_${today}${filterSummary ? '_' + filterSummary : ''}`;
+    const title = `인원현황_${today}${filterSummary ? '_' + filterSummary : ''}`;
     const phoneHeaders = selectedPhoneFields.map(f => PHONE_LABELS[f]);
     const headers = ['이름', '소속', '학교학년', '반', ...phoneHeaders, '상태'];
     const sheetRows = rows.map(r => {

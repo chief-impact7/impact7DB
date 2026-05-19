@@ -9,10 +9,10 @@
  * OAuth 토큰은 auth.js의 getGoogleAccessToken에서 가져온다.
  * 토큰 없으면 alert 후 null 반환.
  */
-import { getGoogleAccessToken } from './auth.js';
+import { ensureGoogleAccessToken } from './auth.js';
 
 export async function createGoogleSheet(title, headers, rows) {
-    const token = getGoogleAccessToken();
+    const token = await ensureGoogleAccessToken();
     if (!token) {
         alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
         return null;
