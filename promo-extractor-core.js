@@ -37,10 +37,10 @@ export function branchFromClassNumber(num) {
 }
 
 // 학생의 단일 소속: branch 필드 우선, 없으면 첫 enrollment의 class_number에서 파생.
-// 매칭되는 단지가 없으면 '무소속'.
+// 매칭되는 단지가 없으면 빈 문자열.
 export function branchFromStudent(s) {
     if (s.branch === '2단지' || s.branch === '10단지') return s.branch;
-    return branchFromClassNumber(s.enrollments?.[0]?.class_number) || '무소속';
+    return branchFromClassNumber(s.enrollments?.[0]?.class_number);
 }
 
 export function mergeByPhone(rows) {

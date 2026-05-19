@@ -205,16 +205,16 @@ test('branch 필드 없고 첫 enrollment 2xx → 10단지', () => {
     assert.equal(branchFromStudent({ enrollments: [{ class_number: '205' }] }), '10단지');
 });
 
-test('branch도 enrollment도 없으면 무소속', () => {
-    assert.equal(branchFromStudent({}), '무소속');
-    assert.equal(branchFromStudent({ enrollments: [] }), '무소속');
+test('branch도 enrollment도 없으면 빈 문자열', () => {
+    assert.equal(branchFromStudent({}), '');
+    assert.equal(branchFromStudent({ enrollments: [] }), '');
 });
 
-test('첫 enrollment의 class_number가 단지로 환산 안 되면 무소속', () => {
-    assert.equal(branchFromStudent({ enrollments: [{ class_number: '999' }] }), '무소속');
+test('첫 enrollment의 class_number가 단지로 환산 안 되면 빈 문자열', () => {
+    assert.equal(branchFromStudent({ enrollments: [{ class_number: '999' }] }), '');
 });
 
 test('branch 필드가 의외값("미지정")이면 enrollment로 폴백', () => {
     assert.equal(branchFromStudent({ branch: '미지정', enrollments: [{ class_number: '103' }] }), '2단지');
-    assert.equal(branchFromStudent({ branch: '미지정' }), '무소속');
+    assert.equal(branchFromStudent({ branch: '미지정' }), '');
 });

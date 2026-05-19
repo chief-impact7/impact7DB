@@ -72,7 +72,7 @@ const PHONE_ORDER = ['parent_phone_1', 'student_phone', 'parent_phone_2'];
 
 // 모달 상태
 let currentStatusFilter = 'active'; // 'all' | 'active' | 'past'
-let currentBranchFilter = 'all';    // 'all' | '2단지' | '10단지' | '무소속'
+let currentBranchFilter = 'all';    // 'all' | '2단지' | '10단지' | '소속없음'
 let selectedGridKeys = new Set();   // 예: {'초등3','중등1'}
 let selectedPhoneFields = ['parent_phone_1']; // 우선순위 순서대로
 let mergePhones = true;
@@ -292,8 +292,11 @@ function buildRows() {
         const key = gridKeyFor(norm);
         if (!selectedGridKeys.has(key)) continue;
 
-        const branch = branchFromStudent(s);
-        if (currentBranchFilter !== 'all' && branch !== currentBranchFilter) continue;
+        const branch = branchFromStudent(s); // '2단지' | '10단지' | ''
+        if (currentBranchFilter !== 'all') {
+            const expected = currentBranchFilter === '소속없음' ? '' : currentBranchFilter;
+            if (branch !== expected) continue;
+        }
 
         // 선택된 필드들의 번호를 모두 수집 — 하나라도 있으면 통과
         const phones = {};
