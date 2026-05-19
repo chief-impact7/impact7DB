@@ -271,6 +271,29 @@ async function upsertStudents() {
         const hasData = enrollment.level_symbol || enrollment.class_number
             || enrollment.start_date || dayArr.length > 0;
         if (hasData) {
+            // 정합성 가드: class-setup.js(반편성도우미) 규칙과 동일.
+            //   - 정규/자유학기: level_symbol+class_number 둘 다 필요 (빈 코드 정규는 사실상 잘못 들어간 내신)
+            //   - 내신: 반대로 코드 비어야 함 (csKey 별도 관리)
+            //   - 특강: class_number 필요
+            // 위반 시 throw로 import 전체 중단 (CSV class_type 칼럼 누락 사고 방지).
+            const ct = enrollment.class_type;
+            if ((ct === '정규' || ct === '자유학기') &&
+                (!enrollment.level_symbol || !enrollment.class_number)) {
+                throw new Error(
+                    `[${name}] class_type=${ct}인데 level_symbol/class_number가 비었습니다. ` +
+                    `CSV에 class_type 칼럼이 누락되어 내신/특강 데이터가 '정규'로 잘못 들어왔는지 확인하세요. ` +
+                    `(day=${JSON.stringify(dayArr)}, start_time=${enrollment.start_time||''}, start_date=${enrollment.start_date||''})`
+                );
+            }
+            if (ct === '내신' && (enrollment.level_symbol || enrollment.class_number)) {
+                throw new Error(
+                    `[${name}] class_type=내신인데 level_symbol/class_number가 채워졌습니다. ` +
+                    `내신 enrollment는 빈 코드여야 합니다 (csKey 별도 관리).`
+                );
+            }
+            if (ct === '특강' && !enrollment.class_number) {
+                throw new Error(`[${name}] class_type=특강인데 class_number가 비었습니다.`);
+            }
             studentMap[docId].enrollments.push(enrollment);
         }
     }
