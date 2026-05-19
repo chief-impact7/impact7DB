@@ -24,6 +24,7 @@
     "firebase": "^12.9.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "firebase-admin": "^13.6.1",
     "vite": "^7.3.1"
   }
