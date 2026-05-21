@@ -1,5 +1,29 @@
 # Claude Code - impact7DB 프로젝트 설정
 
+## 공유 Firebase 규칙 — Storage (SSoT: 이 프로젝트)
+
+이 프로젝트는 **Firebase Storage 규칙의 단일 진실 원천(SSoT)** 이다.
+5개 앱(DB/newDSC/HR/exam/qbank)이 동일한 Storage 버킷을 공유하므로 규칙 배포는 반드시 여기서만 한다.
+
+### Storage 규칙 배포 절차
+1. `storage.rules` 수정 (앱 추가 시 새 경로 블록 append)
+2. `firebase deploy --only storage --project impact7db`
+3. 변경된 `storage.rules`를 모든 프로젝트에 복사 (동기화)
+
+### 절대 금지
+- `firebase deploy --only storage` (또는 `firebase deploy`)를 **impact7exam, impact7HR 등 다른 프로젝트에서 실행하지 마라**
+- 그 프로젝트들의 `firebase.json`에는 storage 배포 설정이 없으므로 실수로 배포할 수 없음
+
+### 현재 등록된 Storage 경로
+| 경로 | 앱 | 설명 |
+|------|----|------|
+| `exam-papers/` | impact7exam | 시험지·답안지 이미지 |
+| `scans/` | impact7exam | OCR 스캔·외부 성적표 이미지 |
+| `staff/` | impact7HR | 직원 문서 |
+| `contracts/` | impact7HR | 계약서 PDF |
+| `expenses/` | impact7HR | 경비 영수증 |
+| `signatures/` | impact7HR | 서명 이미지 |
+
 ## 코드 품질 관리
 - 빌드 완성 후 커밋 전에 `/simplify`를 실행하여 코드를 정리한다
 - 큰 변경(여러 파일, 인증/보안 관련) 시 푸시 전에 `/code-review` 실행을 권장한다
