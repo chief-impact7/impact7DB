@@ -5,7 +5,7 @@ import { writeLog } from './notifyLog.js';
 const DEFAULT_MODEL = 'gemini-3.5-flash';
 const ALLOWED_MODELS = new Set([
   'gemini-3.5-flash',
-  'gemini-3.1-pro-preview',
+  'gemini-2.5-pro',
 ]);
 const MAX_PROMPT_CHARS = 50000;
 
