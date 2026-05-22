@@ -20,6 +20,21 @@ async function safeLog(entry) {
   }
 }
 
+// Vertex/SDK 에러를 호출자가 재시도 판정할 수 있는 HttpsError code로 매핑.
+// @google/genai ApiError는 status(숫자) 또는 메시지에 상태코드를 담는다.
+function classifyLlmError(err) {
+  const status = err?.status ?? err?.code;
+  const msg = String(err?.message || err);
+  const is = (n) => status === n || new RegExp(`\\b${n}\\b`).test(msg);
+  if (is(429) || /RESOURCE_EXHAUSTED|quota/i.test(msg)) {
+    return new HttpsError('resource-exhausted', 'AI 사용량 한도 초과');
+  }
+  if (is(503) || is(502) || is(504) || /UNAVAILABLE/i.test(msg)) {
+    return new HttpsError('unavailable', 'AI 일시적 사용 불가');
+  }
+  return new HttpsError('internal', 'AI 생성 실패');
+}
+
 export async function handleLlmGenerate(request) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -42,6 +57,6 @@ export async function handleLlmGenerate(request) {
     return { text, model: useModel };
   } catch (err) {
     await safeLog({ channel: 'llm', uid: request.auth.uid, model: useModel, ok: false, error: String(err?.message || err) });
-    throw new HttpsError('internal', 'AI 생성 실패');
+    throw classifyLlmError(err);
   }
 }

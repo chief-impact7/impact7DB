@@ -88,4 +88,30 @@ describe('handleLlmGenerate', () => {
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
+
+  it('maps status 429 to resource-exhausted and logs ok:false', async () => {
+    generateTextMock.mockRejectedValue(
+      Object.assign(new Error('rate limited'), { status: 429 }),
+    );
+    await expect(handleLlmGenerate(authReq({ prompt: 'hi' }))).rejects.toMatchObject({
+      code: 'resource-exhausted',
+    });
+    expect(writeLogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'llm', uid: 'u1', ok: false }),
+    );
+  });
+
+  it('maps a 503 status message to unavailable', async () => {
+    generateTextMock.mockRejectedValue(new Error('got status: 503 Service Unavailable'));
+    await expect(handleLlmGenerate(authReq({ prompt: 'hi' }))).rejects.toMatchObject({
+      code: 'unavailable',
+    });
+  });
+
+  it('maps a generic error to internal', async () => {
+    generateTextMock.mockRejectedValue(new Error('something odd'));
+    await expect(handleLlmGenerate(authReq({ prompt: 'hi' }))).rejects.toMatchObject({
+      code: 'internal',
+    });
+  });
 });
