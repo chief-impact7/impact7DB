@@ -2,12 +2,10 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { generateText } from './vertex.js';
 import { writeLog } from './notifyLog.js';
 
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.5-flash';
 const ALLOWED_MODELS = new Set([
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
   'gemini-3.5-flash',
-  'gemini-3-flash-preview',
+  'gemini-2.5-pro',
 ]);
 const MAX_PROMPT_CHARS = 50000;
 

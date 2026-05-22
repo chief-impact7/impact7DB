@@ -53,10 +53,10 @@ describe('handleLlmGenerate', () => {
     ).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 
-  it('falls back to gemini-2.5-flash for a disallowed model', async () => {
+  it('falls back to gemini-3.5-flash for a disallowed model', async () => {
     const result = await handleLlmGenerate(authReq({ prompt: 'hi', model: 'gpt-4' }));
-    expect(generateTextMock).toHaveBeenCalledWith('gemini-2.5-flash', 'hi', {});
-    expect(result.model).toBe('gemini-2.5-flash');
+    expect(generateTextMock).toHaveBeenCalledWith('gemini-3.5-flash', 'hi', {});
+    expect(result.model).toBe('gemini-3.5-flash');
   });
 
   it('returns { text, model } and logs ok:true on success', async () => {
@@ -84,7 +84,7 @@ describe('handleLlmGenerate', () => {
     writeLogMock.mockRejectedValue(new Error('firestore down'));
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const result = await handleLlmGenerate(authReq({ prompt: 'hi' }));
-    expect(result).toEqual({ text: 'generated', model: 'gemini-2.5-flash' });
+    expect(result).toEqual({ text: 'generated', model: 'gemini-3.5-flash' });
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
