@@ -15,7 +15,7 @@ AI 호출을 **서버 + Vertex AI + ADC**로 통일. **하이브리드 경로**(
 - **게이트웨이**: `functions-shared/llmGenerate` (onCall, asia-northeast3) **배포됨**. `@google/genai` vertex 모드, ADC. `request.auth` 필수, enforceAppCheck=false(DSC App Check 미설정), 호출당 `notification_logs` 기록. 에러는 resource-exhausted/unavailable/internal로 분류해 호출자 재시도 지원.
 - **exam**: 자체 Next.js 서버에서 `@google-cloud/vertexai` 직접 호출(게이트웨이 미경유). 4모듈 전환 — `gemini.ts`/`vision.ts`/`growth-report/commentary.ts`/`analyses/generate.ts`. API 키 제거(ADC). App Hosting(exam-app-kr, asia-east1) 런타임 SA에 aiplatform.user 부여, 빌드·배포 SUCCESS.
 - **DSC**: 클라 `firebase/ai`(VertexAIBackend) 제거 → `llmGenerate` Callable 경유 어댑터. gemini-queue/parent-message/consultation-ai 호환. hosting 배포됨(impact7dsc.web.app).
-- **모델(전부 Vertex global 200 확인)**: 텍스트 gemini-3-flash-preview, 비전/커멘터리/분석 gemini-2.5-pro, 폴백 gemini-2.5-flash, DSC gemini-3.5-flash. 모델명 변경 없음.
+- **모델 (2026-05-22 통일):** 텍스트·모든 폴백·게이트웨이 기본 = **gemini-3.5-flash**(GA). 비전/커멘터리/분석 PRIMARY = **gemini-2.5-pro** 유지. DSC = gemini-3.5-flash. 게이트웨이 ALLOWED_MODELS=[3.5-flash, 2.5-pro]. 전부 Vertex global 200 확인.
 
 **조직 정책 완화 (중요):** gw.impact7.kr 조직의 `iam.allowedPolicyMemberDomains`가 allUsers를 막아 Callable/HTTP 함수의 public invoker 설정이 불가했음. **impact7db 프로젝트에만** 이 정책을 `allValues: ALLOW`로 override → public Cloud Functions/Run 가능. **향후 카카오 sendKakao(Callable)·결제 paymentHook(웹훅)도 이 완화 전제로 동작.** (함수는 request.auth/서명검증으로 보호; public invoker는 엔드포인트 도달만 허용.)
 
