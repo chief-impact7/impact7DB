@@ -1,0 +1,14 @@
+{
+  "name": "impact7-functions-shared",
+  "engines": { "node": "22" },
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "deploy": "firebase deploy --only functions:shared --project impact7db"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^7.0.0"
+  },
+  "private": true
+}

@@ -21,6 +21,12 @@
       "codebase": "leave-request",
       "runtime": "nodejs22",
       "ignore": ["node_modules", ".git", "*.log"]
+    },
+    {
+      "source": "functions-shared",
+      "codebase": "shared",
+      "runtime": "nodejs22",
+      "ignore": ["node_modules", ".git", "*.log"]
     }
   ]
 }
