@@ -61,12 +61,12 @@ describe('handleLlmGenerate', () => {
 
   it('returns { text, model } and logs ok:true on success', async () => {
     const result = await handleLlmGenerate(
-      authReq({ prompt: 'hi', model: 'gemini-2.5-pro' }),
+      authReq({ prompt: 'hi', model: 'gemini-3.1-pro-preview' }),
     );
-    expect(result).toEqual({ text: 'generated', model: 'gemini-2.5-pro' });
-    expect(generateTextMock).toHaveBeenCalledWith('gemini-2.5-pro', 'hi', {});
+    expect(result).toEqual({ text: 'generated', model: 'gemini-3.1-pro-preview' });
+    expect(generateTextMock).toHaveBeenCalledWith('gemini-3.1-pro-preview', 'hi', {});
     expect(writeLogMock).toHaveBeenCalledWith(
-      expect.objectContaining({ channel: 'llm', uid: 'u1', model: 'gemini-2.5-pro', ok: true }),
+      expect.objectContaining({ channel: 'llm', uid: 'u1', model: 'gemini-3.1-pro-preview', ok: true }),
     );
   });
 
