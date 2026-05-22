@@ -64,7 +64,7 @@ DB/DSC/HR/exam이 공유할 **횡단 백엔드 서비스**(카카오 알림톡·
 | codebase | 소스 | 용도 |
 |----------|------|------|
 | `leave-request` | `functions/` | 휴·퇴원 요청 자동화, 내신 기간 동기화, 클래스 정리 |
-| `shared` | `functions-shared/` | 카카오 발송, 결제 웹훅, 출결 알림 (2026 하반기 구현 예정) |
+| `shared` | `functions-shared/` | **AI 게이트웨이 `llmGenerate`(배포됨, DSC가 호출)** + 카카오/결제/출결 골격(미배포, 하반기) |
 
 ### 배포 절차
 ```bash
@@ -79,6 +79,11 @@ firebase deploy --only functions:shared --project impact7db
 - `functions/index.js`(leave-request)에 카카오·결제 코드 추가 금지
 - HR `functions/` 는 codebase 미지정(`default`) — impact7DB에서 `firebase deploy --only functions` 실행 시 HR default 함수와 충돌 없음 (codebase 다름), 그러나 주의 필요
 
+### 조직 정책 — public 함수 (2026-05-22 완화)
+- gw.impact7.kr 조직의 `iam.allowedPolicyMemberDomains`가 `allUsers`를 막아 Callable/HTTP 함수의 public invoker 설정이 불가했음.
+- **impact7db 프로젝트에만** 이 정책을 `allValues: ALLOW`로 override 완료 → public Cloud Functions/Run 가능.
+- 향후 `sendKakao`(Callable)·`paymentHook`(결제 웹훅)도 이 완화 전제로 동작. 함수는 `request.auth`/서명검증으로 보호.
+
 ### Secret Manager 위치 (향후 키 발급 시)
 - 경로: `projects/impact7db/secrets/<name>`
 - 카카오 API 키: `kakao-api-key`
@@ -92,7 +97,7 @@ firebase deploy --only functions:shared --project impact7db
 | `paymentHook` | HTTP 웹훅 | PG 결제 결과 수신·서명검증·멱등처리 |
 | `onAttendance` | `onDocumentWritten` | 출결 Firestore 변경 → 카톡 알림 |
 
-**지금은 `healthCheck` no-op만 존재. 실함수 추가 전까지 배포하지 않는다.**
+**현재 배포 상태 (2026-05-22):** `llmGenerate`(AI 게이트웨이, Callable) **배포됨** — DSC가 호출, exam은 자체 서버에서 Vertex 직접(`@google-cloud/vertexai`). 카카오/결제/출결(`sendKakao`/`paymentHook`/`onAttendance`)은 골격만 작성, **미배포**(실 로직 시 배포). 상세: `.memory/project_shared_backend_foundation.md`.
 
 ## 메모리 (계정 공유)
 
