@@ -31,4 +31,4 @@
 - [app.js 점진적 모듈 분리 규칙](feedback_module_separation.md) — 새 기능은 별도 모듈, 기존 코드는 수정 시 분리. 공유 상태 의존성 분석 포함 (2026-04-12)
 - [SA 키 단일화 정책](feedback_sa_key_management.md) — firebase-adminsdk 키는 단일 영구키, 새 키 발급 시 4곳(로컬 + DB/DSC/HR GH Secret) 동시 갱신 (2026-04-25 사고)
 - [내신 중 정규반 태그 빈칸은 의도](feedback_naesin_blank_class_tag.md) — 내신 기간엔 정규반 숨김(빈칸), naesin_class_override로 채우지 말 것. 버그 아님 (2026-05-26)
-- [수업이력 분류기 DB↔DSC 동기화](feedback_history_classifier_sync.md) — _classifyHistory 7종은 DB·DSC 비원생 이력에서 동일 유지, 한쪽 수정 시 양쪽 같이 (2026-05-26)
+- [수업이력 분류기 공유 모듈](feedback_history_classifier_sync.md) — 7종 분류기는 @impact7/shared/history 단일 소스, DB·DSC가 import. 로직 수정은 공유 repo에서만 (2026-05-26)
