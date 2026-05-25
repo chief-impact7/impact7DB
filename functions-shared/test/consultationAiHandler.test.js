@@ -23,8 +23,8 @@ function makeFirestore() {
     },
   };
   const consultations = [
-    { id: 'c1', data: () => ({ student_id: 's1', date: '2026-04-01', text: '학습 태도 상담', consultation_type: '정기' }) },
     { id: 'c2', data: () => ({ student_id: 's1', date: '2026-05-01', text: '숙제 관리 필요', consultation_type: '학부모요청' }) },
+    { id: 'c1', data: () => ({ student_id: 's1', date: '2026-04-01', text: '학습 태도 상담', consultation_type: '정기' }) },
   ];
   const firestore = {
     collection(name) {

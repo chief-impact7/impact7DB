@@ -103,9 +103,10 @@ async function fetchStudentAndConsultations(firestore, studentId) {
   const consultationSnap = await firestore
     .collection('consultations')
     .where('student_id', '==', studentId)
-    .orderBy('date', 'asc')
     .get();
-  const allConsultations = consultationSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const allConsultations = consultationSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
   if (allConsultations.length === 0) {
     throw new HttpsError('failed-precondition', '상담 이력이 없습니다.');
   }
@@ -166,10 +167,10 @@ export async function handleGenerateStudentConsultationAi(request, deps = {}) {
 
   const firestore = deps.firestore || getFirestore();
   const generate = deps.generateText || generateText;
-  const fetched = await fetchStudentAndConsultations(firestore, studentId);
-  const { student, allConsultations, consultations, latest } = fetched;
 
   try {
+    const fetched = await fetchStudentAndConsultations(firestore, studentId);
+    const { student, allConsultations, consultations, latest } = fetched;
     const prompt = buildPrompt({ student, consultations });
     const parsed = extractJson(await generate(MODEL, prompt, { temperature: 0.2 }));
     const ai = normalizeAiResult(parsed);
