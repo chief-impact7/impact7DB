@@ -2107,6 +2107,17 @@ window.submitNewStudent = async () => {
             : '상담';
     }
 
+    // 재원·등원예정은 반배정(정규/특강) 필수 — 상담만 받는 경우는 status를 '상담'으로 둔다.
+    {
+        const finalStatus = isEditMode ? studentData.status : (f.status?.value || _newStatusForCreate);
+        const finalEnrolls = isEditMode ? (studentData.enrollments || []) : _newEnrollmentsForCreate;
+        const hasClass = finalEnrolls.some(e => e && (e.level_symbol || e.class_number));
+        if ((finalStatus === '재원' || finalStatus === '등원예정') && !hasClass) {
+            alert('재원·등원예정 상태로 저장하려면 정규반 또는 특강을 최소 1개 입력하세요.\n상담만 받는 경우 상태를 "상담"으로 두세요.');
+            return;
+        }
+    }
+
     const saveBtn = document.getElementById('save-btn');
     saveBtn.disabled = true;
     saveBtn.textContent = '저장 중...';
@@ -2619,10 +2630,10 @@ function renderStayStats(studentData) {
         return;
     }
 
-    // ── 재원기간 ──
+    // ── 재원기간 (활성 상태일 때만 — 상담/퇴원/종강은 비원생이라 재원기간 표시 안 함) ──
     const startDates = enrollments.map(e => e.start_date).filter(d => d && d !== '?' && /^\d{4}-/.test(d)).sort();
-    let periodHtml = '—';
-    if (startDates.length) {
+    let periodHtml = '';
+    if (isActiveStudentStatus(studentData.status) && startDates.length) {
         const isPast = startDates[0] <= getTodayDateStr();
         const [sy, sm] = startDates[0].split('-').map(Number);
         const nowKST = new Date(getTodayDateStr() + 'T00:00:00+09:00');
@@ -2668,10 +2679,10 @@ function renderStayStats(studentData) {
         }).join('');
 
     container.innerHTML = `
-        <div class="form-field">
+        ${periodHtml ? `<div class="form-field">
             <span class="field-label">재원기간</span>
             <div class="field-value">${periodHtml}</div>
-        </div>
+        </div>` : ''}
         ${levelRows ? `<div class="form-field">
             <span class="field-label">레벨 이력</span>
             <div class="stay-level-list">${levelRows}</div>
