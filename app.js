@@ -4029,72 +4029,70 @@ async function loadHistory(studentId) {
     }
 }
 
-// JSON 문자열로 박힌 history before/after를 사람이 읽을 한 줄로 요약.
-// 우선순위: description > reason > 의미 있는 단일 필드 > enrollments 건수.
-// 파싱 실패하거나 의미 있는 키가 없으면 원문 반환.
-export function _summarizeHistoryText(text) {
-    if (typeof text !== 'string') return '—';
-    const trimmed = text.trim();
-    if (!trimmed) return '—';
-    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return text;
-    try {
-        const obj = JSON.parse(trimmed);
-        if (Array.isArray(obj)) return `(배열 ${obj.length}건)`;
-        if (obj.description) {
-            return obj.reason ? `${obj.description} [${obj.reason}]` : obj.description;
-        }
-        if (obj.reason) return obj.reason;
-        if (typeof obj.status !== 'undefined') {
-            return `상태: ${obj.status || '(없음)'}`;
-        }
-        if (Array.isArray(obj.enrollments)) {
-            return `수업 ${obj.enrollments.length}건`;
-        }
-        // 간단한 평면 객체는 키=값 나열
-        const entries = Object.entries(obj).filter(([, v]) => typeof v !== 'object');
-        if (entries.length > 0 && entries.length <= 4) {
-            return entries.map(([k, v]) => `${k}: ${v}`).join(', ');
-        }
-        return text;
-    } catch {
-        return text;
+// history before/after에서 상태와 반코드를 best-effort로 추출.
+// 형태: "상태:재원, 반:A101, 요일:월,금" | {"status":"재원"} | 단독 상태문자열("재원").
+function _parseStatusClass(text) {
+    if (typeof text !== 'string') return { status: '', classes: '' };
+    const t = text.trim();
+    if (!t || t === '—') return { status: '', classes: '' };
+    if (t.startsWith('{')) {
+        try { return { status: JSON.parse(t).status || '', classes: '' }; }
+        catch { /* JSON 아니면 아래 파싱 */ }
     }
+    const STATUSES = ['상담', '등원예정', '재원', '실휴원', '가휴원', '퇴원'];
+    const mStatus = t.match(/상태[:\s]*([^,]+)/);
+    if (mStatus) {
+        const cls = (t.match(/반[:\s]*([^,]*?)(?:,\s*요일|$)/)?.[1] || '').trim();
+        return { status: mStatus[1].trim(), classes: cls === '—' ? '' : cls };
+    }
+    if (STATUSES.includes(t)) return { status: t, classes: '' };
+    return { status: '', classes: '' };
 }
 
-// 수업이력은 7개 카테고리(첫등록/전반/휴원/퇴원/내신/자유학기/특강)만 노출.
-function _categorizeHistoryLog(log) {
+// 작성자 표시: 이메일은 @ 앞부분만, 자동전환·시스템·미상은 'system'.
+function _shortAuthor(id) {
+    return typeof id === 'string' && id.includes('@') ? id.split('@')[0] : 'system';
+}
+
+// 종류별 뱃지 색 (초록=긍정, 파랑=중립 변경, 빨강=퇴원)
+const HISTORY_BADGE = {
+    '신규': 'badge-enroll', '복귀': 'badge-enroll', '재등원': 'badge-enroll',
+    '전반': 'badge-update', '휴원': 'badge-update', '퇴원': 'badge-withdraw',
+};
+
+// 수업이력을 6종(신규/휴원/복귀/퇴원/재등원/전반)으로만 분류 — 일선 교사용.
+// 상태 전이와 반 이동만 노출하고 그 외(내신·특강·요일변경·자동활성화 등)는 숨김.
+// STATUS_CHANGE는 UPDATE와 쌍으로 기록되는 중복 로그이므로 무시.
+function _classifyHistory(log) {
     const t = log.change_type;
-    const beforeText = typeof log.before === 'string' ? log.before : '';
-    const afterText = typeof log.after === 'string' ? log.after : '';
-    const combined = `${beforeText} ${afterText}`;
+    if (t === 'STATUS_CHANGE' || t === 'DELETE' || t === 'PROMOTION') return null;
 
-    // 첫등록: first_registered 필드가 비어 있다가 처음 세팅된 경우만
-    if (combined.includes('first_registered')) {
-        const prev = beforeText.match(/first_registered\s*:\s*([^,]*)/)?.[1].trim() || '';
-        if (!prev || prev === '—') return { label: '첫등록', cls: 'badge-enroll' };
+    const { status: bS, classes: bC } = _parseStatusClass(log.before);
+    const { status: aS, classes: aC } = _parseStatusClass(log.after);
+    const LEAVE = ['실휴원', '가휴원'];
+    const combined = `${typeof log.before === 'string' ? log.before : ''} ${typeof log.after === 'string' ? log.after : ''}`;
+
+    // 신규 등록
+    if (t === 'ENROLL') return { label: '신규', from: '', to: aS || '등원예정' };
+    // 퇴원생 "첫데이터 재입력 + 수업 추가" = 재등원 (수업 추가 없는 단순 재입력은 상태 불변이므로 숨김)
+    if (bS === '퇴원' && combined.includes('재입력') && combined.includes('수업') && combined.includes('추가')) {
+        return { label: '재등원', from: '퇴원', to: '재원' };
     }
 
-    if (t === 'WITHDRAW' || t === 'RESTORE') return { label: '퇴원', cls: 'badge-withdraw' };
-    if (t === 'RETURN' || t === 'LR_AMEND') return { label: '휴원', cls: 'badge-update' };
+    // 퇴원 (WITHDRAW: status JSON 또는 "종강→퇴원" 서술형 모두 포함)
+    if (t === 'WITHDRAW') return { label: '퇴원', from: bS || '재원', to: '퇴원' };
 
-    if (t === 'STATUS_CHANGE') {
-        try {
-            const status = JSON.parse(afterText)?.status;
-            if (status === '실휴원' || status === '가휴원') return { label: '휴원', cls: 'badge-update' };
-            if (status === '퇴원') return { label: '퇴원', cls: 'badge-withdraw' };
-        } catch { /* JSON 아닐 때 무시 */ }
-        return null;
+    // 상태 전이 기반
+    if (aS) {
+        if (bS === '퇴원' && (aS === '재원' || aS === '등원예정')) return { label: '재등원', from: '퇴원', to: aS };
+        if (LEAVE.includes(bS) && aS === '재원') return { label: '복귀', from: bS, to: '재원' };
+        if (LEAVE.includes(aS) && !LEAVE.includes(bS)) return { label: '휴원', from: bS || '재원', to: aS };
+        if (aS === '퇴원' && bS !== '퇴원') return { label: '퇴원', from: bS || '재원', to: '퇴원' };
+        if ((bS === '' || bS === '상담') && (aS === '등원예정' || aS === '재원')) return { label: '신규', from: '', to: aS };
     }
 
-    if (t === 'ENROLL' || t === 'UPDATE') {
-        if (combined.includes('내신')) return { label: '내신', cls: 'badge-enroll' };
-        if (combined.includes('자유학기')) return { label: '자유학기', cls: 'badge-enroll' };
-        if (combined.includes('특강')) return { label: '특강', cls: 'badge-enroll' };
-        // 정규(전반): 명시적 키워드 또는 enrollment code(반:..., 추가:...) 변경
-        const regularKeywords = ['정규', '신규 등록', '종강 처리', '반:', '추가:'];
-        if (regularKeywords.some(k => combined.includes(k))) return { label: '전반', cls: 'badge-enroll' };
-        return null;
-    }
+    // 전반: 상태 변화 없이 반코드 변경
+    if (bC && aC && bC !== aC) return { label: '전반', from: bC, to: aC };
 
     return null;
 }
@@ -4110,8 +4108,13 @@ function renderHistory(logs) {
     }
 
     const filtered = logs
-        .map(log => ({ log, cat: _categorizeHistoryLog(log) }))
-        .filter(x => x.cat);
+        .map(log => ({ log, cat: _classifyHistory(log) }))
+        .filter(x => x.cat)
+        // 연속된 동일 전이(같은 종류·이전·다음)는 중복 로그이므로 한 건으로 합침
+        .filter((x, i, arr) => {
+            const p = arr[i - 1]?.cat;
+            return !(p && p.label === x.cat.label && p.from === x.cat.from && p.to === x.cat.to);
+        });
 
     if (filtered.length === 0) {
         container.innerHTML = '<p style="color:var(--text-sec);font-size:0.9em;padding:8px 0;">표시할 수업 이력이 없습니다.</p>';
@@ -4121,23 +4124,16 @@ function renderHistory(logs) {
     filtered.forEach(({ log, cat }) => {
         const ts = log.timestamp?.toDate ? log.timestamp.toDate() : null;
         const dateStr = ts
-            ? ts.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+            ? `${String(ts.getMonth() + 1).padStart(2, '0')}/${String(ts.getDate()).padStart(2, '0')}`
             : '—';
-
-        const beforeText = _summarizeHistoryText(log.before);
-        const afterText = _summarizeHistoryText(log.after);
-        const hasBefore = beforeText && beforeText !== '—';
+        const change = cat.from ? `${cat.from} → ${cat.to}` : `→ ${cat.to}`;
 
         const item = document.createElement('div');
         item.className = 'history-item';
         item.innerHTML = `
-            <div class="history-item-header">
-                <span class="history-badge ${cat.cls}">${esc(cat.label)}</span>
-                <span class="history-date">${esc(dateStr)}</span>
-                <span class="history-author">${esc(log.google_login_id || '')}</span>
-            </div>
-            ${hasBefore ? `<div class="history-row history-before"><span class="history-field-label">이전</span><span>${esc(beforeText)}</span></div>` : ''}
-            <div class="history-row history-after"><span class="history-field-label">내용</span><span>${esc(afterText || '—')}</span></div>
+            <span class="history-badge ${HISTORY_BADGE[cat.label]}">${esc(cat.label)}</span>
+            <span class="history-change">${esc(change)}</span>
+            <span class="history-meta">${esc(dateStr)} · ${esc(_shortAuthor(log.google_login_id))}</span>
         `;
         container.appendChild(item);
     });

@@ -14,7 +14,7 @@
  * 모듈 분리 규칙(AGENTS.md):
  *   - 공유 상태는 store.js 에서만 import (직접 mutate 금지)
  *   - 헬퍼는 app.js 의 export 재사용 (enrollmentCode, formatDate,
- *     _summarizeHistoryText, fetchStudentLeaveRequests)
+ *     fetchStudentLeaveRequests)
  */
 
 import { state } from './store.js';
@@ -23,7 +23,6 @@ import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebas
 import {
     enrollmentCode,
     formatDate,
-    _summarizeHistoryText,
     fetchStudentLeaveRequests,
 } from './app.js';
 

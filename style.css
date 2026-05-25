@@ -1450,17 +1450,12 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .history-item {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 16px;
-}
-
-.history-item-header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
+    gap: 8px;
+    padding: 7px 4px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
 }
 
 .history-badge {
@@ -1488,47 +1483,20 @@ summary.menu-l2 .material-symbols-outlined {
     color: #c5221f;
 }
 
-.history-date {
-    font-size: 13px;
-    color: var(--text-sec);
-}
-
-.history-author {
-    margin-left: auto;
-    font-size: 12px;
-    color: #999;
+.history-change {
+    flex: 1;
+    min-width: 0;
+    color: var(--text-main);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 160px;
 }
 
-.history-row {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    font-size: 13px;
-    padding: 3px 0;
-    line-height: 1.5;
-}
-
-.history-before {
-    color: #999;
-    text-decoration: line-through;
-}
-
-.history-after {
-    color: var(--text-main);
-}
-
-.history-field-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-sec);
-    background: var(--surface-hover);
-    padding: 1px 6px;
-    border-radius: 4px;
+.history-meta {
     flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-sec);
+    white-space: nowrap;
 }
 
 /* ── Group View ─────────────────────────────────────────────────────────── */
