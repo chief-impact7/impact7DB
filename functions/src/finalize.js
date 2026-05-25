@@ -91,7 +91,8 @@ export async function finalize(lrRef, r) {
         pause_end_date: changeType === 'UPDATE' ? (studentUpdate.pause_end_date || '') : '',
         ...(changeType === 'RETURN' && enrollments ? { enrollments } : {}),
       }),
-      google_login_id: r.approved_by || r.teacher_approved_by || 'cloud-function',
+      // 수업이력 담당자: 요청자(작성자) > 교수부 > 행정부 승인자 순 (요청서 기반 휴/퇴원)
+      google_login_id: r.requested_by || r.teacher_approved_by || r.approved_by || 'cloud-function',
       timestamp: FieldValue.serverTimestamp(),
     });
   });
