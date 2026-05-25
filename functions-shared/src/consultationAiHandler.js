@@ -96,6 +96,58 @@ function normalizeAiResult(parsed) {
   };
 }
 
+async function fetchStudentAndConsultations(firestore, studentId) {
+  const studentSnap = await firestore.collection('students').doc(studentId).get();
+  if (!studentSnap.exists) throw new HttpsError('not-found', '학생을 찾을 수 없습니다.');
+
+  const consultationSnap = await firestore
+    .collection('consultations')
+    .where('student_id', '==', studentId)
+    .orderBy('date', 'asc')
+    .get();
+  const allConsultations = consultationSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (allConsultations.length === 0) {
+    throw new HttpsError('failed-precondition', '상담 이력이 없습니다.');
+  }
+  return {
+    student: { student_id: studentId, ...studentSnap.data() },
+    allConsultations,
+    consultations: allConsultations.slice(-MAX_CONSULTATIONS),
+    latest: allConsultations[allConsultations.length - 1],
+  };
+}
+
+async function writeAiArtifacts(firestore, { studentId, student, allConsultations, consultations, latest, ai, auth }) {
+  const base = {
+    student_id: studentId,
+    student_name: student.name || '',
+    source_consultation_count: allConsultations.length,
+    analyzed_consultation_count: consultations.length,
+    latest_consultation_date: latest.date || null,
+    generated_by: auth.uid,
+    generated_by_email: auth.token?.email || '',
+    generation_source: 'student_manual',
+    generated_at: FieldValue.serverTimestamp(),
+  };
+  const batch = firestore.batch();
+  batch.set(firestore.collection('consultation_summaries').doc(studentId), {
+    ...base,
+    summary_markdown: ai.summary_markdown,
+    priority: ai.priority,
+    consultation_count: allConsultations.length,
+    notable_topics: ai.notable_topics,
+  });
+  batch.set(firestore.collection('consultation_briefings').doc(studentId), {
+    ...base,
+    briefing_markdown: ai.briefing_markdown,
+    priority: ai.priority,
+    recommended_next_actions: ai.recommended_next_actions,
+    notable_topics: ai.notable_topics,
+    next_consultation_scheduled: null,
+  });
+  await batch.commit();
+}
+
 async function safeLog(entry) {
   try {
     await writeLog(entry);
@@ -114,59 +166,15 @@ export async function handleGenerateStudentConsultationAi(request, deps = {}) {
 
   const firestore = deps.firestore || getFirestore();
   const generate = deps.generateText || generateText;
-  const studentSnap = await firestore.collection('students').doc(studentId).get();
-  if (!studentSnap.exists) throw new HttpsError('not-found', '학생을 찾을 수 없습니다.');
-
-  const consultationSnap = await firestore
-    .collection('consultations')
-    .where('student_id', '==', studentId)
-    .orderBy('date', 'asc')
-    .get();
-  const allConsultations = consultationSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  if (allConsultations.length === 0) {
-    throw new HttpsError('failed-precondition', '상담 이력이 없습니다.');
-  }
-  const consultations = allConsultations.slice(-MAX_CONSULTATIONS);
-  const latest = allConsultations[allConsultations.length - 1];
-  const student = { student_id: studentId, ...studentSnap.data() };
+  const fetched = await fetchStudentAndConsultations(firestore, studentId);
+  const { student, allConsultations, consultations, latest } = fetched;
 
   try {
     const prompt = buildPrompt({ student, consultations });
     const parsed = extractJson(await generate(MODEL, prompt, { temperature: 0.2 }));
     const ai = normalizeAiResult(parsed);
-    const generatedBy = request.auth.uid;
-    const generatedByEmail = email;
-    const base = {
-      student_id: studentId,
-      student_name: student.name || '',
-      source_consultation_count: allConsultations.length,
-      analyzed_consultation_count: consultations.length,
-      latest_consultation_date: latest.date || null,
-      generated_by: generatedBy,
-      generated_by_email: generatedByEmail,
-      generation_source: 'student_manual',
-      generated_at: FieldValue.serverTimestamp(),
-    };
-    const summaryData = {
-      ...base,
-      summary_markdown: ai.summary_markdown,
-      priority: ai.priority,
-      consultation_count: allConsultations.length,
-      notable_topics: ai.notable_topics,
-    };
-    const briefingData = {
-      ...base,
-      briefing_markdown: ai.briefing_markdown,
-      priority: ai.priority,
-      recommended_next_actions: ai.recommended_next_actions,
-      notable_topics: ai.notable_topics,
-      next_consultation_scheduled: null,
-    };
-    const batch = firestore.batch();
-    batch.set(firestore.collection('consultation_summaries').doc(studentId), summaryData);
-    batch.set(firestore.collection('consultation_briefings').doc(studentId), briefingData);
-    await batch.commit();
-    await safeLog({ channel: 'consultation_ai', uid: generatedBy, model: MODEL, ok: true, student_id: studentId });
+    await writeAiArtifacts(firestore, { studentId, student, allConsultations, consultations, latest, ai, auth: request.auth });
+    await safeLog({ channel: 'consultation_ai', uid: request.auth.uid, model: MODEL, ok: true, student_id: studentId });
     return {
       ok: true,
       student_id: studentId,
