@@ -2107,14 +2107,20 @@ window.submitNewStudent = async () => {
             : '상담';
     }
 
-    // 재원·등원예정은 반배정(정규/특강) 필수 — 상담만 받는 경우는 status를 '상담'으로 둔다.
+    // 상태↔반배정 정합성: 비활성(퇴원/상담/종강)은 enrollment 0으로, 재원·등원예정은 반 ≥1 강제.
     {
         const finalStatus = isEditMode ? studentData.status : (f.status?.value || _newStatusForCreate);
-        const finalEnrolls = isEditMode ? (studentData.enrollments || []) : _newEnrollmentsForCreate;
-        const hasClass = finalEnrolls.some(e => e && (e.level_symbol || e.class_number));
-        if ((finalStatus === '재원' || finalStatus === '등원예정') && !hasClass) {
-            alert('재원·등원예정 상태로 저장하려면 정규반 또는 특강을 최소 1개 입력하세요.\n상담만 받는 경우 상태를 "상담"으로 두세요.');
-            return;
+        if (['퇴원', '상담', '종강'].includes(finalStatus)) {
+            // 비활성 학생은 정규반을 갖지 않는다 (stale 재발 방지)
+            if (isEditMode) studentData.enrollments = [];
+            else _newEnrollmentsForCreate = [];
+        } else if (finalStatus === '재원' || finalStatus === '등원예정') {
+            const finalEnrolls = isEditMode ? (studentData.enrollments || []) : _newEnrollmentsForCreate;
+            const hasClass = finalEnrolls.some(e => e && (e.level_symbol || e.class_number));
+            if (!hasClass) {
+                alert('재원·등원예정 상태로 저장하려면 정규반 또는 특강을 최소 1개 입력하세요.\n상담만 받는 경우 상태를 "상담"으로 두세요.');
+                return;
+            }
         }
     }
 
@@ -3556,8 +3562,13 @@ async function runUpsertFromRows(rows, sourceName) {
                 if (newVal && newVal !== oldVal) infoDiff[f] = { old: oldVal, new: newVal };
             }
 
+            // 비활성(퇴원/상담/종강) 학생은 import로 정규반을 되살리지 않는다 (stale 재발 방지).
+            // 파일이 재원/등원예정으로 재활성화하는 경우에만 enrollment 반영.
+            const _resultStatus = infoDiff.status?.new || ex.status || '';
+            const incomingEnrollments = ['퇴원', '상담', '종강'].includes(_resultStatus) ? [] : incoming.enrollments;
+
             // ACCUMULATE enrollments by semester
-            const incomingSemesters = new Set(incoming.enrollments.map(e => e.semester).filter(Boolean));
+            const incomingSemesters = new Set(incomingEnrollments.map(e => e.semester).filter(Boolean));
             const hasSemesterData = incomingSemesters.size > 0;
             const keptEnrolls = hasSemesterData
                 ? (ex.enrollments || []).filter(e => !incomingSemesters.has(e.semester))
@@ -3568,7 +3579,7 @@ async function runUpsertFromRows(rows, sourceName) {
             const newBucket = [];
             const enrollAdded = [], enrollChanged2 = [];
             const matchedExisting = new Set();
-            for (const inc of incoming.enrollments) {
+            for (const inc of incomingEnrollments) {
                 const key = enrollmentCode(inc);
                 const match = hasSemesterData
                     ? sameExisting.find(e => enrollmentCode(e) === key && e.semester === inc.semester)

@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { finalize } from './src/finalize.js';
@@ -33,6 +33,38 @@ export const onScheduleClassCleanup = onSchedule(
       console.error('[onScheduleClassCleanup] 실패:', err);
       throw err;
     }
+  }
+);
+
+// 퇴원 불변식: status가 '퇴원'인데 정규반(enrollments)이 남아 있으면 자동으로 비운다.
+// import 재유입·편집 누락 등 어떤 경로로 stale 정규반이 생겨도 잡는 마지막 안전망 (재발 방지).
+// 상담은 제외(실제 재원일 수 있어 자동삭제 위험) — 상담은 import/편집 폼(A/B)에서 처리.
+export const onStudentWithdrawnClearEnrollments = onDocumentWritten(
+  { document: 'students/{studentId}', retry: false },
+  async (event) => {
+    const after = event.data?.after?.data();
+    if (!after) return null;                            // 삭제됨
+    if (after.status !== '퇴원') return null;            // 퇴원만
+    const enr = after.enrollments;
+    if (!Array.isArray(enr) || enr.length === 0) return null;  // 이미 0 → 무한루프 방지
+
+    const db = getFirestore();
+    await event.data.after.ref.update({
+      enrollments: [],
+      enrollments_cleared_at: FieldValue.serverTimestamp(),
+      enrollments_cleared_by: 'fn-withdrawn-invariant',
+    });
+    await db.collection('history_logs').add({
+      doc_id: event.params.studentId,
+      change_type: 'UPDATE',
+      before: JSON.stringify({ status: '퇴원', enrollments: enr }),
+      after: '정규반 자동정리 (퇴원 불변식: 퇴원생 정규반 0)',
+      reason: 'fn-withdrawn-invariant',
+      google_login_id: 'fn-withdrawn-invariant',
+      timestamp: FieldValue.serverTimestamp(),
+    });
+    console.log(`[withdrawn-invariant] ${event.params.studentId} 정규반 ${enr.length}건 자동정리`);
+    return null;
   }
 );
 
