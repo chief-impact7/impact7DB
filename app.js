@@ -2275,7 +2275,7 @@ window.submitNewStudent = async () => {
                         doc_id: docId,
                         change_type: 'ENROLL',
                         before: '—',
-                        after: `신규 등록 (첫데이터): ${name}`,
+                        after: `신규 등록: ${name} (${_newEnrollmentsForCreate.map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '수업없음'})`,
                         google_login_id: currentUser?.email || 'system',
                         timestamp: serverTimestamp(),
                     }),
