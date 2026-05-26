@@ -2599,9 +2599,14 @@ function renderEnrollmentCards(studentData) {
     }
 
     // 학기 필터 있으면 해당 학기만, 없으면 활성 enrollment만
+    // 등원예정 학생은 아직 시작 안 한 미래 enrollment도 표시 (만료만 제외) — "예정" 태그로 구분
+    const _validDate = (d) => d && /^\d{4}-/.test(d);
+    const _today = getTodayDateStr();
     const visibleEnrollments = activeFilters.semester
         ? enrollments.filter(e => e.semester === activeFilters.semester)
-        : getActiveEnrollments(studentData);
+        : studentData.status === '등원예정'
+            ? enrollments.filter(e => !(_validDate(e.end_date) && e.end_date < _today))
+            : getActiveEnrollments(studentData);
 
     if (visibleEnrollments.length === 0) {
         container.innerHTML = `<p style="color:var(--text-sec);font-size:0.85em;">해당 학기 수업 정보가 없습니다.</p>${startRegularBtn}`;
@@ -2620,12 +2625,15 @@ function _renderEnrollmentCard(container, e, idx, isHistory) {
     const ct = e.class_type || '정규';
     const isRegular = ct === '정규';
     const semLabel = e.semester || '';
+    // 아직 시작 안 한(start_date 미래) enrollment는 "예정" 태그로 명시
+    const notStarted = e.start_date && /^\d{4}-/.test(e.start_date) && e.start_date > getTodayDateStr();
     const card = document.createElement('div');
     card.className = `enrollment-card${isHistory ? ' enrollment-history' : ''}`;
     card.innerHTML = `
         <div class="enrollment-card-header">
             <span class="enrollment-tag">${esc(code)}</span>
             <span class="enrollment-type">${esc(ct)}</span>
+            ${notStarted ? '<span class="enrollment-pending">예정</span>' : ''}
             ${semLabel ? `<span class="enrollment-semester">${esc(semLabel)}</span>` : ''}
             ${!isRegular && !isHistory ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리">종강처리</button>` : ''}
         </div>
