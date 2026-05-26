@@ -91,7 +91,7 @@ let currentUserRole = null; // 'admin' | 'teacher' | null
 let currentStudentId = null;
 let allStudents = [];
 // 타입별 독립 필터 — 다른 타입끼리 AND 복합 적용
-let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null, class_code: null, leave: null, semester: null, grade: null };
+let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null, class_code: null, leave: null, semester: null, grade: null, this_semester: null };
 let isEditMode = false;
 let groupViewMode = 'none'; // 'none' | 'branch' | 'class'
 let _pendingEnrollments = []; // 신규등록 시 추가 수업 목록
@@ -1030,6 +1030,23 @@ function applyFilterAndRender() {
     if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
     if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
     if (activeFilters.grade) filtered = filtered.filter(s => studentGradeKey(s) === activeFilters.grade);
+    if (activeFilters.this_semester) {
+        const cutoffs = {};
+        for (const lv of LEVELS) {
+            const sem = currentSemesterByLevel[lv];
+            if (sem) cutoffs[lv] = semesterSettings[semesterToSettingsKey(lv, sem)]?.start_date || null;
+        }
+        filtered = filtered.filter(s => {
+            const st = s.status || '재원';
+            if (ACTIVE_STUDENT_STATUSES.has(st)) return true;
+            const cutoff = cutoffs[s.level];
+            if (!cutoff) return false;
+            if (st === '퇴원') return s.withdrawal_date && s.withdrawal_date >= cutoff;
+            // 상담/종강: updated_at 기준
+            const updatedStr = s.updated_at?.toDate?.()?.toISOString?.()?.slice(0, 10);
+            return updatedStr ? updatedStr >= cutoff : false;
+        });
+    }
     // 휴원 필터 활성 시에는 학기 필터를 건너뜀 (휴원생은 현재 학기 enrollment이 없을 수 있음)
     if (activeFilters.semester && !activeFilters.leave) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
     if (activeFilters.leave) {
