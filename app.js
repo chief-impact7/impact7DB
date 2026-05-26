@@ -91,7 +91,7 @@ let currentUserRole = null; // 'admin' | 'teacher' | null
 let currentStudentId = null;
 let allStudents = [];
 // 타입별 독립 필터 — 다른 타입끼리 AND 복합 적용
-let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null, class_code: null, leave: null, semester: null, grade: null, this_semester: null };
+let activeFilters = { level: null, branch: null, day: null, status: null, class_type: null, class_code: null, leave: null, semester: null, grade: null };
 let isEditMode = false;
 let groupViewMode = 'none'; // 'none' | 'branch' | 'class'
 let _pendingEnrollments = []; // 신규등록 시 추가 수업 목록
@@ -1017,20 +1017,9 @@ function applyFilterAndRender() {
 
     let filtered = allStudents;
 
-    // 필터가 아무것도 활성화되지 않은 상태(All Students 기본) → 퇴원 제외
+    // 필터가 아무것도 활성화되지 않은 상태(All Students 기본) → 이번 학기 누적 뷰
+    // 재원/휴원은 항상 포함, 퇴원/상담/종강은 학기 시작일 이후만 포함
     if (!hasNonSemesterFilter()) {
-        filtered = filtered.filter(s => s.status !== '퇴원');
-    }
-
-    // 각 타입별로 AND 조건 적용
-    if (activeFilters.level) filtered = filtered.filter(s => s.level === activeFilters.level);
-    if (activeFilters.branch) filtered = filtered.filter(s => activeBranchesFromStudent(s).includes(activeFilters.branch));
-    if (activeFilters.day) filtered = filtered.filter(s => activeDays(s).includes(activeFilters.day));
-    if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
-    if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
-    if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
-    if (activeFilters.grade) filtered = filtered.filter(s => studentGradeKey(s) === activeFilters.grade);
-    if (activeFilters.this_semester) {
         const cutoffs = {};
         for (const lv of LEVELS) {
             const sem = currentSemesterByLevel[lv];
@@ -1047,6 +1036,15 @@ function applyFilterAndRender() {
             return updatedStr ? updatedStr >= cutoff : false;
         });
     }
+
+    // 각 타입별로 AND 조건 적용
+    if (activeFilters.level) filtered = filtered.filter(s => s.level === activeFilters.level);
+    if (activeFilters.branch) filtered = filtered.filter(s => activeBranchesFromStudent(s).includes(activeFilters.branch));
+    if (activeFilters.day) filtered = filtered.filter(s => activeDays(s).includes(activeFilters.day));
+    if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
+    if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
+    if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
+    if (activeFilters.grade) filtered = filtered.filter(s => studentGradeKey(s) === activeFilters.grade);
     // 휴원 필터 활성 시에는 학기 필터를 건너뜀 (휴원생은 현재 학기 enrollment이 없을 수 있음)
     if (activeFilters.semester && !activeFilters.leave) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
     if (activeFilters.leave) {
