@@ -32,3 +32,5 @@
 - [SA 키 단일화 정책](feedback_sa_key_management.md) — firebase-adminsdk 키는 단일 영구키, 새 키 발급 시 4곳(로컬 + DB/DSC/HR GH Secret) 동시 갱신 (2026-04-25 사고)
 - [내신 중 정규반 태그 빈칸은 의도](feedback_naesin_blank_class_tag.md) — 내신 기간엔 정규반 숨김(빈칸), naesin_class_override로 채우지 말 것. 버그 아님 (2026-05-26)
 - [수업이력 분류기 공유 모듈](feedback_history_classifier_sync.md) — 7종 분류기는 @impact7/shared/history 단일 소스, DB·DSC가 import. 로직 수정은 공유 repo에서만 (2026-05-26)
+- [혼합 line ending 파일 Edit 함정](feedback_line_ending_edit.md) — CRLF/LF 혼합 파일(DSC daily-ops.css 등) Edit 시 대량 가짜 diff, 바이트 치환으로 보존 (2026-05-27)
+- [enrollment↔status 정합성 단일소스](feedback_enrollment_status_consistency.md) — 재원계열만 enrollment 보유. @impact7/shared/enrollment-status + firestore.rules 3겹 강제, 수정은 공유repo+Rules 동시 (2026-05-27)
