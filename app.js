@@ -5,8 +5,9 @@ import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken
 import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor } from '@impact7/shared/history';
-import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE } from '@impact7/shared/enrollment-status';
+import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
+import { deriveStudentNumber } from '@impact7/shared/student-number';
 import './naesin-schedule.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -504,6 +505,7 @@ async function loadStudentList() {
         await promoteEnrollPending();
         await handleScheduledLeaves();
         await handleScheduledWithdrawals();
+        await backfillStudentNumbers();
         invalidateSemesterPool();
         buildSiblingMap();
         buildClassFilterSidebar();
@@ -532,6 +534,34 @@ async function promoteEnrollPending() {
             console.log(`[promoteEnrollPending] ${promoted.length}명 등원예정→재원 전환:`, promoted.map(s => s.name));
     } catch (err) {
         console.error('[promoteEnrollPending] 전환 실패:', err);
+    }
+}
+
+async function backfillStudentNumbers() {
+    const targets = allStudents.filter(s => ENROLLABLE_STATUSES.has(s.status) && !s.studentNumber);
+    if (targets.length === 0) return;
+    const batch = writeBatch(db);
+    const pending = [];
+    for (const s of targets) {
+        const { studentNumber, source } = deriveStudentNumber(s);
+        if (!studentNumber) continue;
+        batch.update(doc(db, 'students', s.id), {
+            studentNumber,
+            studentNumberSource: source,
+            studentNumberIssuedAt: serverTimestamp(),
+        });
+        pending.push({ s, studentNumber, source });
+    }
+    if (pending.length === 0) return;
+    try {
+        await batch.commit();
+        for (const { s, studentNumber, source } of pending) {
+            s.studentNumber = studentNumber;
+            s.studentNumberSource = source;
+        }
+        console.log(`[backfillStudentNumbers] ${pending.length}명 학생번호 발급`);
+    } catch (err) {
+        console.error('[backfillStudentNumbers] 실패:', err);
     }
 }
 
@@ -1737,6 +1767,11 @@ window.selectStudent = (studentId, studentData, targetElement) => {
 
     document.getElementById('profile-initial').textContent = studentData.name?.[0] || 'S';
     document.getElementById('profile-name').textContent = studentData.name || studentId;
+    const snEl = document.getElementById('profile-student-number');
+    if (snEl) {
+        snEl.textContent = studentData.studentNumber ? `#${studentData.studentNumber}` : '';
+        snEl.style.display = studentData.studentNumber ? '' : 'none';
+    }
     const branch = activeBranchesFromStudent(studentData).join(', ') || branchFromStudent(studentData);
     const schoolShort = abbreviateSchool(studentData);
     document.getElementById('profile-school').textContent = branch && schoolShort !== '—'
@@ -2191,6 +2226,16 @@ window.submitNewStudent = async () => {
             const docId = currentStudentId;
             const oldStudent = allStudents.find(s => s.id === docId) || {};
 
+            // studentNumber가 없으면 이번 저장에서 함께 발급
+            if (!oldStudent.studentNumber) {
+                const { studentNumber, source } = deriveStudentNumber(studentData);
+                if (studentNumber) {
+                    studentData.studentNumber = studentNumber;
+                    studentData.studentNumberSource = source;
+                    studentData.studentNumberIssuedAt = serverTimestamp();
+                }
+            }
+
             const oldCodes = allClassCodes(oldStudent).join(', ') || '—';
             const newCodes = (studentData.enrollments || []).map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '—';
             const beforeStr = `상태:${oldStudent.status || ''}, 반:${oldCodes}, 요일:${displayDays(combinedDays(oldStudent))}`;
@@ -2282,6 +2327,14 @@ window.submitNewStudent = async () => {
                     ? [...(existingStudent.enrollments || []), ..._newEnrollmentsForCreate]
                     : (existingStudent.enrollments || []);
                 mergeData.status = _newStatusForCreate || existingStudent.status || '상담';
+                if (!existingStudent.studentNumber) {
+                    const { studentNumber, source } = deriveStudentNumber(mergeData);
+                    if (studentNumber) {
+                        mergeData.studentNumber = studentNumber;
+                        mergeData.studentNumberSource = source;
+                        mergeData.studentNumberIssuedAt = serverTimestamp();
+                    }
+                }
                 let appendNote = '';
                 if (_newEnrollmentsForCreate.length > 0) {
                     const firstNewBranch = branchFromClassNumber(_newEnrollmentsForCreate[0].class_number);
@@ -2311,6 +2364,12 @@ window.submitNewStudent = async () => {
                     status: _newStatusForCreate || '상담',
                     enrollments: _newEnrollmentsForCreate,
                 };
+                const { studentNumber, source } = deriveStudentNumber(newStudentData);
+                if (studentNumber) {
+                    newStudentData.studentNumber = studentNumber;
+                    newStudentData.studentNumberSource = source;
+                    newStudentData.studentNumberIssuedAt = serverTimestamp();
+                }
                 studentData = newStudentData;
                 await Promise.all([
                     setDoc(doc(db, 'students', docId), newStudentData),
