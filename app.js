@@ -537,14 +537,26 @@ async function promoteEnrollPending() {
     }
 }
 
+function _showToast(message) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#374151;color:#fff;padding:10px 16px;border-radius:6px;font-size:13px;z-index:9999;max-width:360px;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+    el.textContent = message;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 5000);
+}
+
 async function backfillStudentNumbers() {
     const targets = allStudents.filter(s => ENROLLABLE_STATUSES.has(s.status) && !s.studentNumber);
     if (targets.length === 0) return;
+    const assigned = new Set(allStudents.filter(s => s.studentNumber).map(s => s.studentNumber));
     const batch = writeBatch(db);
     const pending = [];
+    const duplicates = [];
     for (const s of targets) {
         const { studentNumber, source } = deriveStudentNumber(s);
         if (!studentNumber) continue;
+        if (assigned.has(studentNumber)) { duplicates.push(s.name); continue; }
+        assigned.add(studentNumber);
         batch.update(doc(db, 'students', s.id), {
             studentNumber,
             studentNumberSource: source,
@@ -552,16 +564,22 @@ async function backfillStudentNumbers() {
         });
         pending.push({ s, studentNumber, source });
     }
-    if (pending.length === 0) return;
-    try {
-        await batch.commit();
-        for (const { s, studentNumber, source } of pending) {
-            s.studentNumber = studentNumber;
-            s.studentNumberSource = source;
+    if (pending.length > 0) {
+        try {
+            await batch.commit();
+            for (const { s, studentNumber, source } of pending) {
+                s.studentNumber = studentNumber;
+                s.studentNumberSource = source;
+            }
+            console.log(`[backfillStudentNumbers] ${pending.length}명 학생번호 발급`);
+        } catch (err) {
+            console.error('[backfillStudentNumbers] 실패:', err);
         }
-        console.log(`[backfillStudentNumbers] ${pending.length}명 학생번호 발급`);
-    } catch (err) {
-        console.error('[backfillStudentNumbers] 실패:', err);
+    }
+    if (duplicates.length > 0) {
+        const msg = `학생번호 중복 발생 — 수동 확인 필요: ${duplicates.join(', ')}`;
+        console.warn('[backfillStudentNumbers]', msg);
+        _showToast(msg);
     }
 }
 
@@ -647,6 +665,9 @@ async function handleScheduledWithdrawals() {
             batch.update(doc(db, 'students', s.id), {
                 status: '퇴원',
                 pre_withdrawal_status: deleteField(),
+                studentNumber: deleteField(),
+                studentNumberSource: deleteField(),
+                studentNumberIssuedAt: deleteField(),
                 updated_at: serverTimestamp(),
             });
             batch.set(doc(collection(db, 'history_logs')), {
@@ -656,6 +677,9 @@ async function handleScheduledWithdrawals() {
             });
             s.status = '퇴원';
             delete s.pre_withdrawal_status;
+            delete s.studentNumber;
+            delete s.studentNumberSource;
+            delete s.studentNumberIssuedAt;
             count++;
         }
     }
@@ -3078,7 +3102,12 @@ window.confirmEndClassSingle = async () => {
         const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (student.branch || '');
 
         const updateData = { enrollments: remaining, branch };
-        if (isWithdraw) updateData.status = '퇴원';
+        if (isWithdraw) {
+            updateData.status = '퇴원';
+            updateData.studentNumber = deleteField();
+            updateData.studentNumberSource = deleteField();
+            updateData.studentNumberIssuedAt = deleteField();
+        }
 
         await setDoc(doc(db, 'students', studentId), updateData, { merge: true });
         await addDoc(collection(db, 'history_logs'), {
@@ -3138,6 +3167,9 @@ window.confirmEndClass = async () => {
                 const updateData = { enrollments: remaining, branch };
                 if (isWithdraw) {
                     updateData.status = '퇴원';
+                    updateData.studentNumber = deleteField();
+                    updateData.studentNumberSource = deleteField();
+                    updateData.studentNumberIssuedAt = deleteField();
                 }
 
                 batch.set(doc(db, 'students', s.id), updateData, { merge: true });
@@ -3167,7 +3199,12 @@ window.confirmEndClass = async () => {
             const isWithdraw = remaining.length === 0;
             const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (s.branch || '');
             const updateData = { enrollments: remaining, branch };
-            if (isWithdraw) updateData.status = '퇴원';
+            if (isWithdraw) {
+                updateData.status = '퇴원';
+                updateData.studentNumber = deleteField();
+                updateData.studentNumberSource = deleteField();
+                updateData.studentNumberIssuedAt = deleteField();
+            }
             _upsertLocalStudent(s.id, updateData);
         });
         _refreshUIAfterMutation();
@@ -4687,7 +4724,13 @@ window.confirmBulkDelete = async () => {
             const chunk = ids.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(id => {
-                batch.set(doc(db, 'students', id), { status: '퇴원', withdrawal_date: getTodayDateStr() }, { merge: true });
+                batch.set(doc(db, 'students', id), {
+                    status: '퇴원',
+                    withdrawal_date: getTodayDateStr(),
+                    studentNumber: deleteField(),
+                    studentNumberSource: deleteField(),
+                    studentNumberIssuedAt: deleteField(),
+                }, { merge: true });
                 const historyRef = doc(collection(db, 'history_logs'));
                 batch.set(historyRef, {
                     doc_id: id, change_type: 'WITHDRAW',
@@ -4698,7 +4741,13 @@ window.confirmBulkDelete = async () => {
             await batch.commit();
         }
 
-        allStudents.forEach(s => { if (selectedStudentIds.has(s.id)) s.status = '퇴원'; });
+        allStudents.forEach(s => {
+            if (!selectedStudentIds.has(s.id)) return;
+            s.status = '퇴원';
+            delete s.studentNumber;
+            delete s.studentNumberSource;
+            delete s.studentNumberIssuedAt;
+        });
         window.closeBulkDeleteModal();
         window.exitBulkMode();
         buildClassFilterSidebar();
