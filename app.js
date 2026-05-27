@@ -1716,6 +1716,12 @@ _searchClearBtn?.addEventListener('keydown', (e) => {
 // ---------------------------------------------------------------------------
 // Select a student — populate detail panel
 // ---------------------------------------------------------------------------
+// 형제 등 다른 학생으로 상세 이동 (리스트 하이라이트 없이 데이터로 직접 선택)
+window.goToStudent = (studentId) => {
+    const s = allStudents.find(x => x.id === studentId);
+    if (s) window.selectStudent(studentId, s);
+};
+
 window.selectStudent = (studentId, studentData, targetElement) => {
     currentStudentId = studentId;
     storeUpdate({ currentStudentId: studentId });
@@ -1758,6 +1764,21 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     document.getElementById('profile-student-phone').textContent = studentData.student_phone || '—';
     document.getElementById('profile-parent-phone-1').textContent = studentData.parent_phone_1 || '—';
     document.getElementById('profile-parent-phone-2').textContent = studentData.parent_phone_2 || '—';
+
+    // 형제 (부모 연락처 공유) — 클릭 시 해당 형제 상세로 이동
+    const sibRow = document.getElementById('profile-sibling-row');
+    const sibEl = document.getElementById('profile-sibling');
+    if (sibRow && sibEl) {
+        const links = (siblingMap[studentId] ? [...siblingMap[studentId]] : []).map(sid => {
+            const sib = allStudents.find(x => x.id === sid);
+            if (!sib) return '';
+            const sch = abbreviateSchool(sib);
+            const label = sch && sch !== '—' ? `${sib.name} (${sch})` : (sib.name || sid);
+            return `<a class="sibling-link" onclick="window.goToStudent('${escAttr(sid)}')">${esc(label)}</a>`;
+        }).filter(Boolean);
+        sibEl.innerHTML = links.join(', ');
+        sibRow.style.display = links.length ? '' : 'none';
+    }
 
     // 수업 정보 카드
     document.getElementById('profile-branch').textContent = branch || '—';

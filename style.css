@@ -2111,6 +2111,10 @@ summary.menu-l2 .material-symbols-outlined {
 .tone-ended-hard { background: #fce8e6; color: #c5221f; }
 .tone-ended-soft { background: #eceff1; color: #546e7a; }
 
+/* 형제 링크 (상세 패널 연락처 카드) */
+.sibling-link { color: var(--primary); cursor: pointer; }
+.sibling-link:hover { text-decoration: underline; }
+
 /* ── List Item Inline Icons (sibling, memo) ────────────────────────────── */
 .item-icon {
     display: inline-flex;
