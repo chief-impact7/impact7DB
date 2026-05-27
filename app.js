@@ -5026,9 +5026,10 @@ async function renderLeaveRequestCard(studentId) {
     const isWithdrawnStu = stuStatus === '퇴원';
     const isLeaveStu = LEAVE_STATUSES.includes(stuStatus);
 
-    // 휴원/퇴원 요청 분리
-    const leaveRecords = records.filter(r => !_isWithdrawalType(r.request_type) && !_isReturnType(r.request_type));
-    const withdrawRecords = records.filter(r => _isWithdrawalType(r.request_type) || _isReturnType(r.request_type));
+    // 복귀요청은 "휴원 → 재원" 이므로 휴원 라이프사이클(휴원요청서 카드)에 소속.
+    // 재등원요청(퇴원 → 재원)만 퇴원요청서 카드에 남김.
+    const leaveRecords = records.filter(r => !_isWithdrawalType(r.request_type) && !_isReEnrollType(r.request_type));
+    const withdrawRecords = records.filter(r => _isWithdrawalType(r.request_type) || _isReEnrollType(r.request_type));
 
     const btnStyle = 'font-size:11px;padding:4px 12px;margin-left:auto;display:inline-flex;align-items:center;justify-content:center;gap:4px;';
     let cards = '';
