@@ -34,3 +34,4 @@
 - [수업이력 분류기 공유 모듈](feedback_history_classifier_sync.md) — 7종 분류기는 @impact7/shared/history 단일 소스, DB·DSC가 import. 로직 수정은 공유 repo에서만 (2026-05-26)
 - [혼합 line ending 파일 Edit 함정](feedback_line_ending_edit.md) — CRLF/LF 혼합 파일(DSC daily-ops.css 등) Edit 시 대량 가짜 diff, 바이트 치환으로 보존 (2026-05-27)
 - [enrollment↔status 정합성 단일소스](feedback_enrollment_status_consistency.md) — 재원계열만 enrollment 보유. @impact7/shared/enrollment-status + firestore.rules 3겹 강제, 수정은 공유repo+Rules 동시 (2026-05-27)
+- [학생 표시 통일 이니셔티브](project_student_display_unification.md) — 공유모듈 v1.4.0(tone/계층/전이) 기반, DB 폼전이 완료, DB/DSC 배지·2계층·색상 적용 남음 (2026-05-27)

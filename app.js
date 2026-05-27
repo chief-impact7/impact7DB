@@ -5,7 +5,7 @@ import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken
 import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor } from '@impact7/shared/history';
-import { reconcileEnrollments, selectableStatuses } from '@impact7/shared/enrollment-status';
+import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE } from '@impact7/shared/enrollment-status';
 import './naesin-schedule.js';
 
 // --- RFC 4180 compliant CSV line parser ---
@@ -156,6 +156,11 @@ const esc = (str) => {
 };
 
 const escAttr = (str) => (str ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+// status → tone 클래스명 (없으면 빈 문자열). @impact7/shared STATUS_TONE 기반.
+const statusToneClass = (status) => STATUS_TONE[status] ? 'tone-' + STATUS_TONE[status] : '';
+// status → item-status tone 배지 HTML (status 없으면 빈 문자열)
+const statusBadgeHtml = (status) => status ? `<span class="item-status ${statusToneClass(status)}">${esc(status)}</span>` : '';
 
 // enrollment 코드 = level_symbol + class_number (예: HA + 101 = HA101)
 export const enrollmentCode = (e) => `${e.level_symbol || ''}${e.class_number || ''}`;
@@ -1302,9 +1307,28 @@ function renderStudentList(students, pastResults) {
         return;
     }
 
-    students.forEach(s => renderStudentItem(s, listContainer));
+    // 기본 경로: 재원생 / 비원생 2계층
+    const enrolled = students.filter(s => studentCategory(s.status) === '재원생');
+    const nonEnrolledInList = students.filter(s => studentCategory(s.status) === '비원생');
 
-    if (hasPastResults) renderPastStudentResults(pastResults, listContainer);
+    // 비원생 섹션 = 목록 내 비원생 + 검색 pastResults, id 기준 dedup
+    const seen = new Set();
+    const nonEnrolled = [];
+    for (const s of [...nonEnrolledInList, ...(pastResults || [])]) {
+        if (seen.has(s.id)) continue;
+        seen.add(s.id);
+        nonEnrolled.push(s);
+    }
+
+    if (enrolled.length > 0) {
+        const header = document.createElement('div');
+        header.className = 'group-header';
+        header.innerHTML = `<span class="group-label">재원생</span><span class="group-count">${enrolled.length}명</span>`;
+        listContainer.appendChild(header);
+        enrolled.forEach(s => renderStudentItem(s, listContainer));
+    }
+
+    if (nonEnrolled.length > 0) renderPastStudentResults(nonEnrolled, listContainer);
 }
 
 // Expected 화면: "10일 이내 / 10일 이후 / 복귀일 미설정" 섹션으로 그룹핑
@@ -1356,8 +1380,7 @@ function renderStudentItem(s, container) {
 
     // 상태 뱃지
     const status = s.status || '';
-    const statusClass = status === '재원' ? 'st-active' : status === '등원예정' ? 'st-scheduled' : status === '실휴원' || status === '가휴원' ? 'st-paused' : status === '퇴원' ? 'st-withdrawn' : '';
-    const statusBadge = status ? `<span class="item-status ${statusClass}">${esc(status)}</span>` : '';
+    const statusBadge = statusBadgeHtml(status);
 
     // 형제 아이콘
     const hasSibling = siblingMap[s.id] && siblingMap[s.id].size > 0;
@@ -1435,7 +1458,7 @@ function renderPastStudentResults(pastStudents, container) {
         div.innerHTML = `
             <span class="material-symbols-outlined drag-icon" style="color:var(--text-sec)">person_off</span>
             <div class="item-main">
-                <span class="item-title">${esc(s.name || '—')}<span class="item-status st-contact">비원생</span></span>
+                <span class="item-title">${esc(s.name || '—')}${statusBadgeHtml(s.status || '')}</span>
                 <span class="item-desc">${esc(sub || '—')}</span>
             </div>
         `;
@@ -1721,7 +1744,10 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     document.getElementById('profile-school').textContent = branch && schoolShort !== '—'
         ? `${branch} · ${schoolShort}`
         : branch || schoolShort;
-    document.getElementById('profile-status').textContent = studentData.status || '—';
+    const profileStatusEl = document.getElementById('profile-status');
+    const headerStatus = studentData.status || '';
+    profileStatusEl.textContent = headerStatus || '—';
+    profileStatusEl.className = `tag ${statusToneClass(headerStatus)}`.trim();
 
     // 기본 정보 카드
     document.getElementById('detail-level-name').textContent = studentData.level || '—';
@@ -1735,7 +1761,8 @@ window.selectStudent = (studentId, studentData, targetElement) => {
 
     // 수업 정보 카드
     document.getElementById('profile-branch').textContent = branch || '—';
-    document.getElementById('detail-status').textContent = studentData.status || '—';
+    const detailStatusEl = document.getElementById('detail-status');
+    detailStatusEl.innerHTML = statusBadgeHtml(studentData.status || '') || '—';
     document.getElementById('profile-day').textContent = displayDays(activeDays(studentData));
 
     const pauseRow = document.getElementById('profile-pause-row');

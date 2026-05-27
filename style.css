@@ -1163,11 +1163,6 @@ summary.menu-l2 .material-symbols-outlined {
     opacity: 1;
 }
 
-.item-status.st-contact {
-    background: #f3e8fd;
-    color: #7c3aed;
-}
-
 .day-checkboxes {
     display: flex;
     gap: 8px;
@@ -2109,25 +2104,12 @@ summary.menu-l2 .material-symbols-outlined {
     letter-spacing: 0.2px;
 }
 
-.st-active {
-    background: var(--sbux-light);
-    color: var(--sbux-green);
-}
-
-.st-scheduled {
-    background: var(--sbux-light);
-    color: var(--sbux-accent);
-}
-
-.st-paused {
-    background: #fef7e0;
-    color: #b06000;
-}
-
-.st-withdrawn {
-    background: #fce8e6;
-    color: #c5221f;
-}
+.tone-active     { background: var(--sbux-light); color: var(--sbux-green); }
+.tone-scheduled  { background: var(--sbux-light); color: var(--sbux-accent); }
+.tone-paused     { background: #fef7e0; color: #b06000; }
+.tone-consult    { background: #ede7f6; color: #5e35b1; }
+.tone-ended-hard { background: #fce8e6; color: #c5221f; }
+.tone-ended-soft { background: #eceff1; color: #546e7a; }
 
 /* ── List Item Inline Icons (sibling, memo) ────────────────────────────── */
 .item-icon {
