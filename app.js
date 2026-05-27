@@ -5,6 +5,7 @@ import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken
 import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor } from '@impact7/shared/history';
+import { reconcileEnrollments } from '@impact7/shared/enrollment-status';
 import './naesin-schedule.js';
 
 // --- RFC 4180 compliant CSV line parser ---
@@ -2122,21 +2123,14 @@ window.submitNewStudent = async () => {
             : '상담';
     }
 
-    // 상태↔반배정 정합성: 비활성(퇴원/상담/종강)은 enrollment 0으로, 재원·등원예정은 반 ≥1 강제.
+    // 상태↔반배정 정합성 (공유 모듈 @impact7/shared/enrollment-status SSoT)
     {
         const finalStatus = isEditMode ? studentData.status : (f.status?.value || _newStatusForCreate);
-        if (['퇴원', '상담', '종강'].includes(finalStatus)) {
-            // 비활성 학생은 정규반을 갖지 않는다 (stale 재발 방지)
-            if (isEditMode) studentData.enrollments = [];
-            else _newEnrollmentsForCreate = [];
-        } else if (['재원', '등원예정', '실휴원', '가휴원'].includes(finalStatus)) {
-            const finalEnrolls = isEditMode ? (studentData.enrollments || []) : _newEnrollmentsForCreate;
-            const hasClass = finalEnrolls.some(e => e && (e.level_symbol || e.class_number));
-            if (!hasClass) {
-                alert('재원·등원예정·휴원 상태로 저장하려면 정규반 또는 특강을 최소 1개 입력하세요.\n상담만 받는 경우 상태를 "상담"으로 두세요.');
-                return;
-            }
-        }
+        const finalEnrolls = isEditMode ? (studentData.enrollments || []) : _newEnrollmentsForCreate;
+        const { enrollments: reconciled, valid, reason } = reconcileEnrollments(finalStatus, finalEnrolls);
+        if (!valid) { alert(reason); return; }
+        if (isEditMode) studentData.enrollments = reconciled;
+        else _newEnrollmentsForCreate = reconciled;
     }
 
     const saveBtn = document.getElementById('save-btn');
