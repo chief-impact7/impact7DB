@@ -110,7 +110,7 @@ firebase deploy --only functions:shared --project impact7db
 
 ## 하네스: impact7 에코시스템 통합 운영
 
-**목표:** DB/DSC/HR/exam/consultation/newtest 6개 앱에 걸친 크로스앱 개발 작업을 안전하게 조율
+**목표:** DB/DSC/HR/exam/consultation/newtest/dashboard 7개 앱에 걸친 크로스앱 개발 작업을 안전하게 조율 (모두 공유 Firebase 프로젝트 `impact7db` 사용)
 
 **트리거:** 크로스앱 변경, 공유 컬렉션 수정, 다중 앱 기능 개발 요청 시 `impact7-orchestrator` 스킬을 사용하라. 단일 앱 내 소규모 변경이나 단순 질문은 직접 응답 가능.
 
@@ -122,4 +122,5 @@ firebase deploy --only functions:shared --project impact7db
 | 2026-04-12 | app.js 모듈 분리 규칙 추가 | AGENTS.md, agents/db-developer.md, skills/impact7-orchestrator | 새 기능은 별도 모듈, 기존 코드는 수정 시 분리 |
 | 2026-05-22 | shared codebase 슬롯 예약 | firebase.json, functions-shared/, AGENTS.md | 카카오·결제·출결 공유 백엔드 기반 구성 (실 구현은 하반기) |
 | 2026-05-26 | 에코시스템 범위 4→6개 앱 확장 + 형제 앱에 크로스앱 조율 cross-ref 추가 | AGENTS.md(DB 목표), impact7newDSC·HR·exam·newtest AGENTS.md | consultation·newtest 편입. 풀 블록 대신 한 줄 cross-ref로 형제 앱에 "크로스앱은 DB에서 조율" 인지만 노출 (orchestrator 스킬은 DB에만 존재) |
+| 2026-05-27 | 에코시스템 범위 6→7개 앱 확장 (dashboard 편입) + DashBoard에 cross-ref 추가 | AGENTS.md(DB 목표), DashBoard AGENTS.md | DashBoard(academy-dashboard, React19+Vite8)가 impact7db Firestore 데이터를 읽음 확인. consultation·newtest는 cross-ref 기보유. 단 orchestrator 스킬의 전담 개발자 에이전트는 여전히 DB/DSC/HR/exam 4개뿐 — consultation/newtest/dashboard는 자체 하네스로 구현하고 DB는 조율만. firestore.rules 동기화 대상도 rules 파일을 가진 DB/DSC/HR/exam 4개 그대로 |
 
