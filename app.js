@@ -6,7 +6,12 @@ import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeScho
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor } from '@impact7/shared/history';
 import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE } from '@impact7/shared/enrollment-status';
+import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import './naesin-schedule.js';
+
+const _promoteEnrollPending = createPromoteEnrollPending(
+    { db, writeBatch, doc, collection, serverTimestamp }
+);
 
 // --- RFC 4180 compliant CSV line parser ---
 function parseCSVLine(line) {
@@ -520,24 +525,11 @@ window.addEventListener('impact7:studentsChanged', () => applyFilterAndRender())
 
 async function promoteEnrollPending() {
     const today = getTodayDateStr();
-    const pending = allStudents.filter(s =>
-        s.status === '등원예정' &&
-        (s.enrollments || []).some(e => e.start_date && e.start_date <= today)
-    );
-    if (pending.length === 0) return;
-    const batch = writeBatch(db);
-    for (const s of pending) {
-        batch.update(doc(db, 'students', s.id), { status: '재원', updated_at: serverTimestamp() });
-        batch.set(doc(collection(db, 'history_logs')), {
-            doc_id: s.id, change_type: 'UPDATE',
-            before: '등원예정', after: '재원',
-            google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-        });
-        s.status = '재원';
-    }
     try {
-        await batch.commit();
-        console.log(`[promoteEnrollPending] ${pending.length}명 등원예정→재원 전환:`, pending.map(s => s.name));
+        const promoted = await _promoteEnrollPending(allStudents, today);
+        promoted.forEach(s => { s.status = '재원'; });
+        if (promoted.length > 0)
+            console.log(`[promoteEnrollPending] ${promoted.length}명 등원예정→재원 전환:`, promoted.map(s => s.name));
     } catch (err) {
         console.error('[promoteEnrollPending] 전환 실패:', err);
     }
