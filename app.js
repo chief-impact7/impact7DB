@@ -5,7 +5,7 @@ import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken
 import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor } from '@impact7/shared/history';
-import { reconcileEnrollments } from '@impact7/shared/enrollment-status';
+import { reconcileEnrollments, selectableStatuses } from '@impact7/shared/enrollment-status';
 import './naesin-schedule.js';
 
 // --- RFC 4180 compliant CSV line parser ---
@@ -1800,7 +1800,7 @@ window.showNewStudentForm = () => {
     setPastHistoryViewVisible(false);
     document.getElementById('detail-form').style.display = 'block';
     document.getElementById('new-student-form').reset();
-    document.getElementById('opt-withdraw').style.display = 'none';
+    populateStatusOptions(null, true);  // 신규: 등원예정/재원만 (휴원 진입 차단)
     document.getElementById('form-memo-list').innerHTML =
         '<p style="color:var(--text-sec);font-size:0.85em;">저장 후 메모를 추가할 수 있습니다.</p>';
 
@@ -1843,6 +1843,16 @@ window.handleLevelChange = (level) => {
     const def = activeFilters.semester || currentSemesterByLevel[level] || '';
     if (initSemSelect) initSemSelect.innerHTML = getSemesterOptions(level, def);
 };
+
+// status select 옵션을 전이 규칙(selectableStatuses)에 맞게 동적 생성
+// 신규·비원생은 등원예정/재원만(휴원 진입 차단), 재원생만 휴원 진입 가능
+function populateStatusOptions(current, isNew) {
+    const sel = document.getElementById('status-select');
+    if (!sel) return;
+    const opts = selectableStatuses(current, isNew);
+    sel.innerHTML = opts.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    sel.value = (current && opts.includes(current)) ? current : opts[opts.length - 1];
+}
 
 window.handleStatusChange = (val) => {
     const el = document.getElementById('pause-period-container');
@@ -1908,8 +1918,7 @@ window.showEditForm = () => {
     renderEditableEnrollments(editEnrolls);
 
     // 상태
-    document.getElementById('opt-withdraw').style.display = 'block';
-    f.status.value = student.status || '재원';
+    populateStatusOptions(student.status, false);  // 편집: 비원생→등원예정/재원만, 재원생만 휴원 진입
     f.pause_start_date.value = student.pause_start_date || '';
     f.pause_end_date.value = student.pause_end_date || '';
     if (window.handleStatusChange) window.handleStatusChange(f.status.value);
