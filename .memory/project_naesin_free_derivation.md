@@ -22,3 +22,9 @@ DB가 명시적 `class_type:'내신'` enrollment만 인식해, 마법사 표준(
 - **예외 1명: 김시헌**(override 없어 명시적 내신만 → 제거 시 내신 소실되므로 explicit 유지). override 없는 explicit 내신 학생은 이 패턴.
 
 **How to apply:** 마법사 내신/자유학기는 정규 enrollment에 override만 박음(명시적 내신 안 만듦)이 표준. 표시/이력이 DB·DSC 다르면 enrollment-derivation 공유모듈 확인. [[feedback_db_dsc_parity]]
+
+## 재원기간(tenure) 표시 (2026-05-29 추가)
+**규칙(사용자 정의):** 재원기간 = 등록(신규)/재등원부터 → 퇴원/종강이 끝. **휴원/복귀는 기간을 끊지 않음.** 퇴원 후 재등원은 새 기간.
+- **enrollment의 start_date는 재원기간이 아님** — start_date는 반별 인스턴스 시작일이고 복귀 때마다 복귀일로 리셋됨(promote/출결용). 재원기간과 혼동 금지.
+- 파생: `@impact7/shared/history`의 **`deriveTenure(logs, getDate)`** (v1.9.0) → history_logs에서 {start,end}. 신규/재등원=시작, 퇴원=끝, 휴원/복귀 무시. 종강은 classifier 미분류라 앱이 status='종강'+status_changed_at으로 end 보완.
+- DB(app.js `fillTenure`/`formatTenure`)·DSC(student-detail.js 동명) 수업정보 카드에 표시, 비동기 조회+stale 가드. END=퇴원일/종강일/"현재".
