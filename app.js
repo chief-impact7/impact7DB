@@ -8,7 +8,7 @@ import { classifyHistory, HISTORY_BADGE, shortAuthor } from '@impact7/shared/his
 import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber } from '@impact7/shared/student-number';
-import { applyNaesinFreeDerivation } from '@impact7/shared/enrollment-derivation';
+import { applyNaesinFreeDerivation, deriveClassPeriodHistory } from '@impact7/shared/enrollment-derivation';
 import './naesin-schedule.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -4296,7 +4296,15 @@ async function loadHistory(studentId) {
         const snap = await getDocs(q);
         const logs = [];
         snap.forEach(d => logs.push({ id: d.id, ...d.data() }));
-        renderHistory(logs);
+
+        // override 기반 내신/자유학기는 history_logs에 로그가 없으므로(마법사 표준 학생)
+        // enrollments + class_settings 캐시로 파생해 수업이력에 합성한다.
+        const student = allStudents.find(s => s.id === studentId);
+        const derived = student
+            ? deriveClassPeriodHistory(student.enrollments, _classSettingsCache || {}, { enrollmentCode })
+            : [];
+
+        renderHistory(logs, derived);
     } catch (e) {
         console.error('[HISTORY ERROR]', e);
         // Firestore 복합 인덱스 미생성 시 에러 메시지에 생성 링크가 포함됨
@@ -4312,15 +4320,10 @@ async function loadHistory(studentId) {
 // 수업이력 분류기(classifyHistory / HISTORY_BADGE / shortAuthor)는 공유 모듈로 이동:
 // @impact7/shared/history — impact7DB·impact7newDSC 공통 SSoT. 분류 로직 수정은 그 repo에서.
 
-function renderHistory(logs) {
+function renderHistory(logs, derived = []) {
     const container = document.getElementById('history-list');
     if (!container) return;
     container.innerHTML = '';
-
-    if (logs.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.9em;padding:8px 0;">수업 이력이 없습니다.</p>';
-        return;
-    }
 
     const filtered = logs
         .map(log => ({ log, cat: classifyHistory(log) }))
@@ -4331,24 +4334,51 @@ function renderHistory(logs) {
             return !(p && p.label === x.cat.label && p.from === x.cat.from && p.to === x.cat.to);
         });
 
-    if (filtered.length === 0) {
-        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.9em;padding:8px 0;">표시할 수업 이력이 없습니다.</p>';
-        return;
-    }
-
-    filtered.forEach(({ log, cat }) => {
+    // 로그 항목 → { sortKey, label, change, meta }
+    const items = filtered.map(({ log, cat }) => {
         const ts = log.timestamp?.toDate ? log.timestamp.toDate() : null;
         const dateStr = ts
             ? `${String(ts.getMonth() + 1).padStart(2, '0')}/${String(ts.getDate()).padStart(2, '0')}`
             : '—';
-        const change = cat.from ? `${cat.from} → ${cat.to}` : `→ ${cat.to}`;
+        return {
+            sortKey: ts ? ts.getTime() : 0,
+            label: cat.label,
+            change: cat.from ? `${cat.from} → ${cat.to}` : `→ ${cat.to}`,
+            meta: `${dateStr} · ${shortAuthor(log.google_login_id)}`,
+        };
+    });
 
+    // 파생 항목(override 기반 내신/자유학기) → "수업추가" 형태로 합성.
+    // 로그 분류 결과의 to에 같은 code가 이미 있으면 스킵(중복 방지 안전장치).
+    const loggedCodes = new Set(filtered.map(x => x.cat.to));
+    derived.forEach(d => {
+        if (loggedCodes.has(d.code)) return;
+        const md = /^\d{4}-(\d{2})-(\d{2})/.exec(d.start_date || '');
+        const dateStr = md ? `${md[1]}/${md[2]}` : '—';
+        const period = d.class_type === '자유학기' ? '자유학기' : '내신기간';
+        items.push({
+            sortKey: d.start_date ? new Date(d.start_date).getTime() : 0,
+            label: '수업추가',
+            change: `→ ${d.code}`,
+            meta: `${dateStr} · ${period}`,
+        });
+    });
+
+    if (items.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-sec);font-size:0.9em;padding:8px 0;">수업 이력이 없습니다.</p>';
+        return;
+    }
+
+    // 시간 역순(최신 먼저) 병합 정렬
+    items.sort((a, b) => b.sortKey - a.sortKey);
+
+    items.forEach(({ label, change, meta }) => {
         const item = document.createElement('div');
         item.className = 'history-item';
         item.innerHTML = `
-            <span class="history-badge ${HISTORY_BADGE[cat.label]}">${esc(cat.label)}</span>
+            <span class="history-badge ${HISTORY_BADGE[label]}">${esc(label)}</span>
             <span class="history-change">${esc(change)}</span>
-            <span class="history-meta">${esc(dateStr)} · ${esc(shortAuthor(log.google_login_id))}</span>
+            <span class="history-meta">${esc(meta)}</span>
         `;
         container.appendChild(item);
     });
