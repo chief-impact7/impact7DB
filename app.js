@@ -8,11 +8,29 @@ import { classifyHistory, HISTORY_BADGE, shortAuthor } from '@impact7/shared/his
 import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber } from '@impact7/shared/student-number';
+import { applyNaesinFreeDerivation } from '@impact7/shared/enrollment-derivation';
 import './naesin-schedule.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
     { db, writeBatch, doc, collection, serverTimestamp }
 );
+
+// class_settings 캐시 — 내신/자유학기 기간 파생(getActiveEnrollments)에 사용하므로
+// 로그인 후 학생 목록 첫 렌더 전에 eager-load 한다. 반당 1문서라 작은 컬렉션, 1회 로드.
+// (모달의 _populateTargetClassDropdown도 이 캐시를 공유)
+let _classSettingsCache = null;
+
+async function loadClassSettings() {
+    try {
+        const snap = await getDocs(collection(db, 'class_settings'));
+        _classSettingsCache = {};
+        snap.forEach(d => { _classSettingsCache[d.id] = d.data(); });
+    } catch (err) {
+        console.error('class_settings 로드 실패:', err);
+        _classSettingsCache = _classSettingsCache || {};
+    }
+    return _classSettingsCache;
+}
 
 // --- RFC 4180 compliant CSV line parser ---
 function parseCSVLine(line) {
@@ -284,15 +302,16 @@ const getActiveEnrollments = (s, today = getTodayDateStr()) => {
         return e.end_date >= today;
     });
 
-    // 내신이 활성 기간이면 정규를 숨김 (내신 종료 후 정규 복귀)
-    const hasActiveNaesin = current.some(e =>
-        e.class_type === '내신' &&
-        validDate(e.start_date) && e.start_date <= today
-    );
-    if (hasActiveNaesin) {
-        return current.filter(e => e.class_type !== '정규');
-    }
-    return current;
+    // 내신/자유학기 기간 파생 (@impact7/shared SSoT).
+    // 명시적 내신 또는 정규+override→class_settings 내신기간이면 정규를 숨기고 내신으로 치환.
+    // DB는 자동 유도 없음 — override 문자열만 사용(빈 문자열은 null).
+    return applyNaesinFreeDerivation(current, {
+        classSettings: _classSettingsCache || {},
+        dateStr: today,
+        resolveNaesinCsKey: (re) =>
+            (typeof re.naesin_class_override === 'string' ? (re.naesin_class_override || null) : null),
+        enrollmentCode,
+    });
 };
 
 // 활성 enrollment의 요일 합집합 (내신 기간 중에는 정규 제외됨)
@@ -502,6 +521,9 @@ async function loadStudentList() {
         });
         allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
         storeUpdate({ allStudents });
+        // 내신/자유학기 기간 파생을 위해 첫 렌더 전에 class_settings를 로드한다.
+        // (미로드 시 getActiveEnrollments가 파생 없이 정규로 표시되므로 순서 보장 필수)
+        await loadClassSettings();
         await promoteEnrollPending();
         await handleScheduledLeaves();
         await handleScheduledWithdrawals();
@@ -5268,24 +5290,15 @@ async function renderLeaveRequestCard(studentId) {
 let _returnModalStudentId = null;
 let _returnModalType = null;
 
-// class_settings 캐시 (모달 오픈 시 lazy load)
-let _classSettingsCache = null;
-
 async function _populateTargetClassDropdown(student) {
     const branch = branchFromStudent(student);
     const select = document.getElementById('rfl-target-class');
     select.innerHTML = '<option value="">-- 로딩 중 --</option>';
 
-    if (!_classSettingsCache) {
-        try {
-            const snap = await getDocs(collection(db, 'class_settings'));
-            _classSettingsCache = {};
-            snap.forEach(d => { _classSettingsCache[d.id] = d.data(); });
-        } catch (err) {
-            console.error('class_settings 로드 실패:', err);
-            select.innerHTML = '<option value="">(로드 실패)</option>';
-            return;
-        }
+    if (!_classSettingsCache) await loadClassSettings();
+    if (!_classSettingsCache || Object.keys(_classSettingsCache).length === 0) {
+        select.innerHTML = '<option value="">(로드 실패)</option>';
+        return;
     }
 
     select.innerHTML = '<option value="">-- 반 선택 --</option>';
