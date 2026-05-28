@@ -35,7 +35,7 @@ async function seed(stu, lr, cs = {}) {
 }
 
 describe('finalize — integration', () => {
-  it('재등원 + 반 변경 → status=재원, 정규 교체', async () => {
+  it('재등원 + 반 변경 → status=등원예정, 정규 교체(start_date=복귀일)', async () => {
     const lrRef = await seed(
       { id: 's1', name: '유시우', status: '퇴원', enrollments: [] },
       {
@@ -49,9 +49,10 @@ describe('finalize — integration', () => {
     await finalize(lrRef, lr);
 
     const stu = (await db.doc('students/s1').get()).data();
-    expect(stu.status).toBe('재원');
+    expect(stu.status).toBe('등원예정');
     expect(stu.enrollments).toHaveLength(1);
     expect(stu.enrollments[0].class_number).toBe('103');
+    expect(stu.enrollments[0].start_date).toBe('2026-04-21');
 
     const lrAfter = (await lrRef.get()).data();
     expect(lrAfter.finalized_at).toBeDefined();

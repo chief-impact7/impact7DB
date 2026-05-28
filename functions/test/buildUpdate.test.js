@@ -78,7 +78,7 @@ describe('buildUpdate — 휴원연장', () => {
 describe('buildUpdate — 재등원/복귀요청', () => {
   const cs = { A103: { default_days: ['월', '수'] } };
 
-  it('재등원: status=재원, enrollment 정규 교체', () => {
+  it('재등원: status=등원예정, 정규 enrollment.start_date=복귀일(이후 promote가 재원 전환)', () => {
     const stu = {
       id: 'a',
       name: '유시우',
@@ -90,13 +90,15 @@ describe('buildUpdate — 재등원/복귀요청', () => {
     const r = { request_type: '재등원요청', target_class_code: 'A103', return_date: '2026-04-21' };
     const { studentUpdate, changeType, enrollments } = buildUpdate(r, stu, cs, []);
     expect(changeType).toBe('RETURN');
-    expect(studentUpdate.status).toBe('재원');
+    expect(studentUpdate.status).toBe('등원예정');
     expect(enrollments).toHaveLength(2);
-    expect(enrollments.find(e => e.class_type === '정규').class_number).toBe('103');
+    const reg = enrollments.find(e => e.class_type === '정규');
+    expect(reg.class_number).toBe('103');
+    expect(reg.start_date).toBe('2026-04-21'); // 복귀일이 promote 기준
     expect(enrollments.find(e => e.class_type === '내신')).toBeDefined();
   });
 
-  it('복귀: status=재원, target 없으면 기존 enrollment 유지', () => {
+  it('복귀: status=등원예정, target 없으면 기존 enrollment 유지', () => {
     const stu = {
       id: 'a',
       name: '김민수',
@@ -107,7 +109,7 @@ describe('buildUpdate — 재등원/복귀요청', () => {
     };
     const r = { request_type: '복귀요청', return_date: '2026-04-21' };
     const { studentUpdate, enrollments } = buildUpdate(r, stu, cs, []);
-    expect(studentUpdate.status).toBe('재원');
+    expect(studentUpdate.status).toBe('등원예정');
     expect(enrollments).toEqual(stu.enrollments);
   });
 

@@ -1785,9 +1785,19 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     setPastHistoryViewVisible(false);
     switchDetailTab('info');
 
-    // 비활성 학생(퇴원/종강/상담)일 때만 "재등록" 버튼 노출.
+    // 헤더 재등록/신규등록 버튼: 상담="신규등록"(과거 재원 아님), 종강="재등록"(과거 재원생).
+    // 퇴원은 숨김 — 퇴원요청서 카드의 재등원요청서로만 복귀. 재원생 계열도 숨김.
     const reenrollBtn = document.getElementById('reenroll-btn');
-    if (reenrollBtn) reenrollBtn.style.display = isActiveStudentStatus(studentData.status) ? 'none' : '';
+    if (reenrollBtn) {
+        const reenrollLabel = { '상담': '신규등록', '종강': '재등록' }[studentData.status || ''];
+        reenrollBtn.style.display = reenrollLabel ? '' : 'none';
+        if (reenrollLabel) {
+            const labelEl = document.getElementById('reenroll-btn-label');
+            if (labelEl) labelEl.textContent = reenrollLabel;
+            reenrollBtn.title = `${reenrollLabel} (자동채움)`;
+            reenrollBtn.setAttribute('aria-label', reenrollLabel);
+        }
+    }
 
     document.getElementById('profile-initial').textContent = studentData.name?.[0] || 'S';
     document.getElementById('profile-name').textContent = studentData.name || studentId;
@@ -1950,7 +1960,9 @@ function populateStatusOptions(current, isNew) {
     if (!sel) return;
     const opts = selectableStatuses(current, isNew);
     sel.innerHTML = opts.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
-    sel.value = (current && opts.includes(current)) ? current : opts[opts.length - 1];
+    // 신규/재등록(current 미보유) 기본값은 '등원예정'(opts 첫 항목) — 비원생→재원생 진입은
+    // 등원예정 경유로 통일(휴먼에러 방지). 재원 수동 선택은 유지.
+    sel.value = (current && opts.includes(current)) ? current : opts[0];
 }
 
 window.handleStatusChange = (val) => {
@@ -2225,9 +2237,9 @@ window.submitNewStudent = async () => {
             _newEnrollmentsForCreate.push(staticEnrollment);
         }
         _newEnrollmentsForCreate.push(..._pendingEnrollments);
-        // 수업이 하나라도 있으면 폼의 status(기본 '재원')을, 없으면 '상담'으로.
+        // 수업이 하나라도 있으면 폼의 status(기본 '등원예정')을, 없으면 '상담'으로.
         _newStatusForCreate = _newEnrollmentsForCreate.length > 0
-            ? (f.status?.value || '재원')
+            ? (f.status?.value || '등원예정')
             : '상담';
     }
 
@@ -5158,7 +5170,7 @@ async function renderLeaveRequestCard(studentId) {
     // 휴원요청서 카드
     const leaveBtn = isLeaveStu
         ? `<button class="btn-save" style="${btnStyle}" onclick="window.openReturnFromLeaveModal('${escAttr(studentId)}')">
-            <span class="material-symbols-outlined" style="font-size:14px;">undo</span>복귀</button>`
+            복귀</button>`
         : '';
     if (leaveRecords.length > 0 || leaveBtn) {
         cards += `<div class="form-card">
@@ -5174,7 +5186,7 @@ async function renderLeaveRequestCard(studentId) {
     // 퇴원요청서 카드
     const withdrawBtn = isWithdrawnStu
         ? `<button class="btn-save" style="${btnStyle}" onclick="window.openReEnrollModal('${escAttr(studentId)}')">
-            <span class="material-symbols-outlined" style="font-size:14px;">person_add</span>재등원</button>`
+            재등원</button>`
         : '';
     if (withdrawRecords.length > 0 || withdrawBtn) {
         cards += `<div class="form-card">

@@ -17,8 +17,11 @@ export function buildUpdate(r, student, classSettings, allStudents) {
   }
 
   if (RETURN_TYPES.has(r.request_type)) {
+    // 복귀/재등원 진입은 '등원예정' 경유로 통일 — enrollment.start_date(=복귀일)에
+    // 도달하면 클라이언트 promoteEnrollPending이 자동 '재원' 전환. 복귀일이 오늘 이전이면
+    // 첫 promote 사이클에서 즉시 재원. (휴먼에러·수동 재원선택 제거)
     // 정책: buildUpdate는 set만, 부속 필드 deleteField는 finalize.js가 담당.
-    const studentUpdate = { status: '재원' };
+    const studentUpdate = { status: '등원예정' };
     const dedup = deduplicateName(student.id, student.name || '', allStudents);
     if (dedup) studentUpdate.name = dedup;
     const enrollments = replaceRegularEnrollment(
