@@ -505,6 +505,7 @@ async function loadStudentList() {
         await promoteEnrollPending();
         await handleScheduledLeaves();
         await handleScheduledWithdrawals();
+        await handleScheduledSpecialClassEnds();
         await backfillStudentNumbers();
         invalidateSemesterPool();
         buildSiblingMap();
@@ -690,6 +691,61 @@ async function handleScheduledWithdrawals() {
         console.log(`[handleScheduledWithdrawals] ${count}명 퇴원 상태 전환 완료`);
     } catch (err) {
         console.error('[handleScheduledWithdrawals] 전환 실패:', err);
+    }
+}
+
+// 특강 end_date 만료 자동 종강 전환: 만료된 특강 enrollment를 제거하고,
+// 수업이 없어지면 정규 이력 여부에 따라 '종강' 또는 '퇴원'으로 전환
+async function handleScheduledSpecialClassEnds() {
+    const today = getTodayDateStr();
+    const isExpired = (e) => e.class_type === '특강' && e.end_date && /^\d{4}-/.test(e.end_date) && e.end_date < today;
+    const batch = writeBatch(db);
+    let count = 0;
+
+    for (const s of allStudents) {
+        if (!ENROLLABLE_STATUSES.has(s.status)) continue;
+        const expired = (s.enrollments || []).filter(isExpired);
+        if (expired.length === 0) continue;
+
+        const remaining = (s.enrollments || []).filter(e => !isExpired(e));
+        const updateData = { enrollments: remaining, updated_at: serverTimestamp() };
+
+        if (remaining.length === 0) {
+            const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
+            updateData.status = hasRegular ? '퇴원' : '종강';
+            updateData.studentNumber = deleteField();
+            updateData.studentNumberSource = deleteField();
+            updateData.studentNumberIssuedAt = deleteField();
+        }
+
+        batch.update(doc(db, 'students', s.id), updateData);
+        batch.set(doc(collection(db, 'history_logs')), {
+            doc_id: s.id,
+            change_type: remaining.length === 0 ? 'WITHDRAW' : 'UPDATE',
+            before: expired.map(e => `특강 ${enrollmentCode(e)}`).join(', '),
+            after: remaining.length === 0
+                ? `특강 만료 → ${updateData.status}`
+                : `특강 만료 (나머지 ${remaining.length}개 수업 유지)`,
+            google_login_id: 'auto-transition',
+            timestamp: serverTimestamp(),
+        });
+
+        s.enrollments = remaining;
+        if (updateData.status) {
+            s.status = updateData.status;
+            delete s.studentNumber;
+            delete s.studentNumberSource;
+            delete s.studentNumberIssuedAt;
+        }
+        count++;
+    }
+
+    if (count === 0) return;
+    try {
+        await batch.commit();
+        console.log(`[handleScheduledSpecialClassEnds] ${count}명 특강 만료 처리`);
+    } catch (err) {
+        console.error('[handleScheduledSpecialClassEnds] 실패:', err);
     }
 }
 
@@ -3112,10 +3168,12 @@ window.confirmEndClassSingle = async () => {
         const remaining = (student.enrollments || []).filter((_, i) => i !== enrollIdx);
         const isWithdraw = remaining.length === 0;
         const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (student.branch || '');
+        const hasRegular = (student.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
+        const finalStatus = hasRegular ? '퇴원' : '종강';
 
         const updateData = { enrollments: remaining, branch };
         if (isWithdraw) {
-            updateData.status = '퇴원';
+            updateData.status = finalStatus;
             updateData.studentNumber = deleteField();
             updateData.studentNumberSource = deleteField();
             updateData.studentNumberIssuedAt = deleteField();
@@ -3127,7 +3185,7 @@ window.confirmEndClassSingle = async () => {
             change_type: isWithdraw ? 'WITHDRAW' : 'UPDATE',
             before: `수업: ${code} (${classType})`,
             after: isWithdraw
-                ? `종강 처리: ${code} (${classType}) → 퇴원 (다른 수업 없음)`
+                ? `종강 처리: ${code} (${classType}) → ${finalStatus} (다른 수업 없음)`
                 : `종강 처리: ${code} (${classType})`,
             google_login_id: currentUser?.email || 'system',
             timestamp: serverTimestamp(),
@@ -3175,10 +3233,12 @@ window.confirmEndClass = async () => {
                 const remaining = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
                 const isWithdraw = remaining.length === 0;
                 const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (s.branch || '');
+                const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
+                const finalStatus = hasRegular ? '퇴원' : '종강';
 
                 const updateData = { enrollments: remaining, branch };
                 if (isWithdraw) {
-                    updateData.status = '퇴원';
+                    updateData.status = finalStatus;
                     updateData.studentNumber = deleteField();
                     updateData.studentNumberSource = deleteField();
                     updateData.studentNumberIssuedAt = deleteField();
@@ -3192,7 +3252,7 @@ window.confirmEndClass = async () => {
                     change_type: isWithdraw ? 'WITHDRAW' : 'UPDATE',
                     before: `수업: ${code} (${classType})`,
                     after: isWithdraw
-                        ? `종강 처리: ${code} (${classType}) → 퇴원 (다른 수업 없음)`
+                        ? `종강 처리: ${code} (${classType}) → ${finalStatus} (다른 수업 없음)`
                         : `종강 처리: ${code} (${classType})`,
                     google_login_id: currentUser?.email || 'system',
                     timestamp: serverTimestamp(),
@@ -3210,9 +3270,10 @@ window.confirmEndClass = async () => {
             const remaining = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
             const isWithdraw = remaining.length === 0;
             const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (s.branch || '');
+            const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
             const updateData = { enrollments: remaining, branch };
             if (isWithdraw) {
-                updateData.status = '퇴원';
+                updateData.status = hasRegular ? '퇴원' : '종강';
                 updateData.studentNumber = deleteField();
                 updateData.studentNumberSource = deleteField();
                 updateData.studentNumberIssuedAt = deleteField();
