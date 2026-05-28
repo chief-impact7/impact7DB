@@ -4,7 +4,7 @@ import { auth, db } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
 import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
-import { classifyHistory, HISTORY_BADGE, shortAuthor } from '@impact7/shared/history';
+import { classifyHistory, HISTORY_BADGE, shortAuthor, deriveTenure } from '@impact7/shared/history';
 import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber } from '@impact7/shared/student-number';
@@ -1936,6 +1936,9 @@ window.selectStudent = (studentId, studentData, targetElement) => {
             pauseRow.style.display = 'none';
         }
     }
+
+    // 재원기간 — history_logs에서 파생(공유 deriveTenure). 비동기라 학생 바뀌면 placeholder 후 채움.
+    fillTenure(studentId, studentData);
 
     // enrollment 카드 렌더링
     renderEnrollmentCards(studentData);
@@ -4319,6 +4322,53 @@ async function loadHistory(studentId) {
 
 // 수업이력 분류기(classifyHistory / HISTORY_BADGE / shortAuthor)는 공유 모듈로 이동:
 // @impact7/shared/history — impact7DB·impact7newDSC 공통 SSoT. 분류 로직 수정은 그 repo에서.
+
+// 재원기간 — history_logs에서 deriveTenure(공유)로 파생해 수업정보 카드에 표시.
+// selectStudent는 동기 렌더라 여기서 비동기 조회 후, 그 학생이 아직 선택돼 있을 때만 반영(stale 방지).
+async function fillTenure(studentId, studentData) {
+    const el = document.getElementById('profile-tenure');
+    if (!el) return;
+    el.textContent = '…';
+    try {
+        const q = query(
+            collection(db, 'history_logs'),
+            where('doc_id', '==', studentId),
+            orderBy('timestamp', 'desc'),
+            limit(200)
+        );
+        const snap = await getDocs(q);
+        if (currentStudentId !== studentId) return; // 그 사이 다른 학생 선택됨
+        const logs = [];
+        snap.forEach(d => logs.push({ id: d.id, ...d.data() }));
+        const { start, end } = deriveTenure(
+            logs,
+            (l) => l.timestamp?.toDate ? l.timestamp.toDate() : (l.timestamp ? new Date(l.timestamp) : null)
+        );
+        el.textContent = formatTenure(start, end, studentData);
+    } catch (e) {
+        if (currentStudentId !== studentId) return;
+        console.warn('[TENURE] 재원기간 조회 실패:', e.code, e.message);
+        el.textContent = '—';
+    }
+}
+
+// 재원기간 표시 문자열. start 없으면 '—'. END 규칙: end 있으면 퇴원일,
+// 없고 status='종강'이면 status_changed_at(없으면 updated_at), 그 외(재원계열)면 '현재'.
+function formatTenure(start, end, studentData) {
+    if (!start) return '—';
+    const startStr = formatDate(start);
+    let endStr;
+    if (end) {
+        endStr = formatDate(end);
+    } else if (studentData?.status === '종강') {
+        const ts = studentData.status_changed_at || studentData.updated_at;
+        const d = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
+        endStr = d && !isNaN(d.getTime()) ? formatDate(d) : '종강';
+    } else {
+        endStr = '현재';
+    }
+    return `${startStr} ~ ${endStr}`;
+}
 
 function renderHistory(logs, derived = []) {
     const container = document.getElementById('history-list');
