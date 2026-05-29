@@ -40,3 +40,4 @@
 - [⏳ qbank 에코시스템 편입 보류](project_qbank_ecosystem_pending.md) — 사용자가 나중에 다시 물어봐 달라고 함. 에코시스템/qbank 화제 시 재질문할 것 (2026-05-27)
 - [⏳ '신규' status 일원화 보류](project_new_status_deferred.md) — 신규현황은 이미 ENROLL 이벤트로 집계됨 → status 마이그레이션 불필요. 재논의 시 이 결론서 출발 (2026-05-28)
 - [⏳ 에코시스템 SSO 보류](project_ecosystem_sso.md) — 구글 1회 로그인. Auth 세션 origin별 격리가 원인. 권장 B(One Tap 자동로그인). 인증 화제 시 재제안 (2026-05-28)
+- [반 이동 안전화](project_class_move_unification.md) — moveClass 공유함수(v1.11.0) + 일괄 반 변경 학기 가드. 학기 ON이면 내신 숨김 정규 복원→합반 누락 해소. 후속: applyBulkDays 가드·DSC 미적용 (2026-05-29)
