@@ -2854,7 +2854,7 @@ function _renderEnrollmentCard(container, e, idx, isHistory) {
             <span class="enrollment-type">${esc(ct)}</span>
             ${notStarted ? '<span class="enrollment-pending">예정</span>' : ''}
             ${semLabel ? `<span class="enrollment-semester">${esc(semLabel)}</span>` : ''}
-            ${!isRegular && !isHistory ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리">종강처리</button>` : ''}
+            ${!isRegular && !isHistory && idx >= 0 ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리">종강처리</button>` : ''}
         </div>
         <div class="enrollment-card-body">
             <div class="enrollment-field"><span class="field-label">요일</span><span>${esc(days)}</span></div>
