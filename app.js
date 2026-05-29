@@ -8,7 +8,7 @@ import { classifyHistory, HISTORY_BADGE, shortAuthor, deriveTenure } from '@impa
 import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber } from '@impact7/shared/student-number';
-import { applyNaesinFreeDerivation, deriveClassPeriodHistory } from '@impact7/shared/enrollment-derivation';
+import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod } from '@impact7/shared/enrollment-derivation';
 import './naesin-schedule.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -2878,26 +2878,12 @@ function renderStayStats(studentData) {
         return;
     }
 
-    // ── 재원기간 (활성 상태일 때만 — 상담/퇴원/종강은 비원생이라 재원기간 표시 안 함) ──
-    const startDates = enrollments.map(e => e.start_date).filter(d => d && d !== '?' && /^\d{4}-/.test(d)).sort();
+    // ── 레벨기간 (활성 상태일 때만 — 상담/퇴원/종강은 비원생이라 표시 안 함) ──
+    // 값은 공유 deriveLevelPeriod로 일원화(DB·DSC 동일). 재원기간(deriveTenure)과 구분.
     let periodHtml = '';
-    if (isActiveStudentStatus(studentData.status) && startDates.length) {
-        const isPast = startDates[0] <= getTodayDateStr();
-        const [sy, sm] = startDates[0].split('-').map(Number);
-        const nowKST = new Date(getTodayDateStr() + 'T00:00:00+09:00');
-        const totalMonths = (nowKST.getFullYear() - sy) * 12 + (nowKST.getMonth() + 1 - sm);
-        const duration = !isPast
-            ? '등원예정'
-            : totalMonths < 1
-                ? '등원'
-                : (() => {
-                    const years = Math.floor(totalMonths / 12);
-                    const months = totalMonths % 12;
-                    return years > 0
-                        ? `${years}년${months > 0 ? ' ' + months + '개월' : ''}`
-                        : `${totalMonths}개월`;
-                })();
-        periodHtml = `${formatDate(startDates[0])} 부터 &nbsp;·&nbsp; <strong>${duration}</strong>`;
+    if (isActiveStudentStatus(studentData.status)) {
+        const { start, label } = deriveLevelPeriod(enrollments, getTodayDateStr());
+        if (start) periodHtml = `${formatDate(start)} &nbsp;·&nbsp; <strong>${label}</strong>`;
     }
 
     // ── 레벨 이력 (현재 활성 enrollment 제외, 과거 학기만) ──
@@ -2928,7 +2914,7 @@ function renderStayStats(studentData) {
 
     container.innerHTML = `
         ${periodHtml ? `<div class="form-field">
-            <span class="field-label">재원기간</span>
+            <span class="field-label">레벨기간</span>
             <div class="field-value">${periodHtml}</div>
         </div>` : ''}
         ${levelRows ? `<div class="form-field">

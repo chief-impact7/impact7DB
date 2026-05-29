@@ -21,7 +21,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@impact7/shared": "github:chief-impact7/impact7-shared#v1.9.0",
+    "@impact7/shared": "github:chief-impact7/impact7-shared#v1.10.0",
     "firebase": "^12.9.0"
   },
   "devDependencies": {
