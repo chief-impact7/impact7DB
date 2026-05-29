@@ -4,6 +4,7 @@ import { onCall, HttpsError, onRequest } from 'firebase-functions/v2/https';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { handleLlmGenerate } from './src/llmHandler.js';
 import { handleGenerateStudentConsultationAi } from './src/consultationAiHandler.js';
+import { computeLabelUpdate } from './src/studentLabelSync.js';
 
 initializeApp();
 
@@ -43,6 +44,19 @@ export const onAttendance = onDocumentWritten(
   { document: 'attendance/{docId}' },
   async (event) => {
     console.log('[onAttendance] not implemented — change observed', event.params.docId);
+    return null;
+  }
+);
+
+// 어떤 경로로 쓰이든 school/level/grade → school_level_grade 자동 동기화(stale 차단).
+export const onStudentLabelSync = onDocumentWritten(
+  { document: 'students/{docId}' },
+  async (event) => {
+    const after = event.data?.after;
+    if (!after?.exists) return null; // 삭제는 무시
+    const update = computeLabelUpdate(after.data());
+    if (!update) return null; // 라벨 동일 → write 스킵(무한루프 방지)
+    await after.ref.update(update);
     return null;
   }
 );
