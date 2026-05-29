@@ -9,6 +9,7 @@ import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE,
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber } from '@impact7/shared/student-number';
 import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod } from '@impact7/shared/enrollment-derivation';
+import { moveClass } from '@impact7/shared/class-move';
 import './naesin-schedule.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -4592,45 +4593,56 @@ window.applyBulkClass = async () => {
     if (!raw) { alert('반코드를 입력해주세요. (예: HX103)'); return; }
     if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
 
-    // 반코드에서 레벨기호(영문)와 반넘버(숫자) 자동 분리
+    const sem = activeFilters.semester;
+    if (!sem) {
+        alert('어느 학기 수업을 옮길지 먼저 좌측 Semester에서 학기를 선택하세요.');
+        return;
+    }
+
     const match = raw.match(/^([A-Za-z]+)(\d+)$/);
     if (!match) { alert('반코드 형식이 올바르지 않습니다. (예: HX103, HA201)'); return; }
     const levelSymbol = match[1];
     const classNumber = match[2];
 
-    if (!confirm(`선택한 ${selectedStudentIds.size}명의 반을 '${raw}'(으)로 변경합니다.`)) return;
+    if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${sem} 정규반을 '${raw}'(으)로 변경합니다.`)) return;
 
     const ids = [...selectedStudentIds];
+    const newBranch = branchFromClassNumber(classNumber);
     try {
         const changes = [];
-        const updateMap = {}; // id → updateData for local sync
+        const skipped = [];
+        const warnings = [];
 
         ids.forEach(id => {
             const student = allStudents.find(s => s.id === id);
-            if (!student || !student.enrollments?.length) return;
-            const sem = activeFilters.semester;
-            const eIdx = sem ? student.enrollments.findIndex(e => e.semester === sem) : 0;
-            if (eIdx < 0) return; // 해당 학기 enrollment 없음
-            const oldCode = enrollmentCode(student.enrollments[eIdx]);
-            const updated = [...student.enrollments];
-            updated[eIdx] = { ...updated[eIdx], level_symbol: levelSymbol, class_number: classNumber };
+            if (!student) return;
+            const { updatedEnrollments, before, after, skipped: sk, warning } = moveClass(student, {
+                semester: sem, targetLevelSymbol: levelSymbol, targetClassNumber: classNumber,
+            });
+            if (sk) { skipped.push(student.name || id); return; }
+            if (findEnrollmentConflicts(updatedEnrollments).length) {
+                skipped.push(`${student.name || id} (반명 충돌)`);
+                return;
+            }
+            if (warning) warnings.push(warning);
 
-            const newBranch = branchFromClassNumber(classNumber);
-            const updateData = { enrollments: updated };
+            const updateData = { enrollments: updatedEnrollments };
             if (newBranch) updateData.branch = newBranch;
-
-            updateMap[id] = updateData;
-            changes.push({ id, name: student.name, from: oldCode, to: raw, eIdx });
+            changes.push({ id, name: student.name, from: before, to: after, enrollments: updatedEnrollments, updateData });
         });
 
-        if (changes.length === 0) { alert('변경할 학생이 없습니다.'); return; }
+        if (changes.length === 0) {
+            const detail = skipped.length ? `\n제외: ${skipped.join(', ')}` : '';
+            alert(`변경할 학생이 없습니다.${detail}`);
+            return;
+        }
 
         const BATCH_SIZE = 200;
         for (let i = 0; i < changes.length; i += BATCH_SIZE) {
             const chunk = changes.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(c => {
-                batch.update(doc(db, 'students', c.id), updateMap[c.id]);
+                batch.update(doc(db, 'students', c.id), c.updateData);
                 const historyRef = doc(collection(db, 'history_logs'));
                 batch.set(historyRef, {
                     doc_id: c.id, change_type: 'UPDATE',
@@ -4643,10 +4655,8 @@ window.applyBulkClass = async () => {
 
         changes.forEach(c => {
             const s = allStudents.find(s => s.id === c.id);
-            if (s && s.enrollments?.[c.eIdx]) {
-                s.enrollments[c.eIdx].level_symbol = levelSymbol;
-                s.enrollments[c.eIdx].class_number = classNumber;
-                const newBranch = branchFromClassNumber(classNumber);
+            if (s) {
+                s.enrollments = c.enrollments;
                 if (newBranch) s.branch = newBranch;
             }
         });
@@ -4655,8 +4665,10 @@ window.applyBulkClass = async () => {
         buildClassFilterSidebar();
         applyFilterAndRender();
         updateBulkEditSummary();
-        const semLabel = activeFilters.semester || '첫 번째';
-        alert(`${changes.length}명의 반을 '${raw}'(으)로 변경했습니다. (${semLabel} 수업)`);
+        let msg = `${changes.length}명의 반을 '${raw}'(으)로 변경했습니다. (${sem} 정규)`;
+        if (skipped.length) msg += `\n\n⚠️ 제외 ${skipped.length}명: ${skipped.join(', ')}\n(해당 학기 정규 수업이 없거나 반명 충돌)`;
+        if (warnings.length) msg += `\n\n⚠️ 내신 매핑 주의:\n${warnings.join('\n')}`;
+        alert(msg);
     } catch (e) {
         console.error('[BULK CLASS ERROR]', e);
         alert('일괄 반 변경 실패: ' + e.message);
