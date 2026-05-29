@@ -4684,19 +4684,26 @@ window.applyBulkDays = async () => {
     if (checked.length === 0) { alert('변경할 요일을 선택해주세요.'); return; }
     if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
 
-    if (!confirm(`선택한 ${selectedStudentIds.size}명의 등원요일을 '${checked.join(', ')}'(으)로 변경합니다.`)) return;
+    // 학기 컨텍스트 가드: 어느 학기 수업의 요일을 바꿀지 확정돼야 함
+    const sem = activeFilters.semester;
+    if (!sem) {
+        alert('어느 학기 수업을 변경할지 먼저 좌측 Semester에서 학기를 선택하세요.');
+        return;
+    }
+
+    if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${sem} 등원요일을 '${checked.join(', ')}'(으)로 변경합니다.`)) return;
 
     const ids = [...selectedStudentIds];
     try {
         const changes = [];
         const updateMap = {}; // id → updateData for batching
+        const skipped = [];
 
         ids.forEach(id => {
             const student = allStudents.find(s => s.id === id);
-            if (!student || !student.enrollments?.length) return;
-            const sem = activeFilters.semester;
-            const eIdx = sem ? student.enrollments.findIndex(e => e.semester === sem) : 0;
-            if (eIdx < 0) return;
+            if (!student) return;
+            const eIdx = (student.enrollments || []).findIndex(e => e.semester === sem);
+            if (eIdx < 0) { skipped.push(student.name || id); return; }
             const oldDays = displayDays(student.enrollments[eIdx].day);
             const updated = [...student.enrollments];
             updated[eIdx] = { ...updated[eIdx], day: [...checked] };
@@ -4704,7 +4711,11 @@ window.applyBulkDays = async () => {
             changes.push({ id, name: student.name, from: oldDays, to: checked.join(', '), eIdx });
         });
 
-        if (changes.length === 0) { alert('변경할 학생이 없습니다.'); return; }
+        if (changes.length === 0) {
+            const detail = skipped.length ? `\n제외: ${skipped.join(', ')}` : '';
+            alert(`변경할 학생이 없습니다.${detail}`);
+            return;
+        }
 
         const BATCH_SIZE = 200;
         for (let i = 0; i < changes.length; i += BATCH_SIZE) {
@@ -4733,8 +4744,9 @@ window.applyBulkDays = async () => {
         document.querySelectorAll('#bulk-day-checkboxes input').forEach(cb => cb.checked = false);
         applyFilterAndRender();
         updateBulkEditSummary();
-        const semLabel = activeFilters.semester || '첫 번째';
-        alert(`${changes.length}명의 등원요일을 변경했습니다. (${semLabel} 수업)`);
+        let msg = `${changes.length}명의 등원요일을 변경했습니다. (${sem} 수업)`;
+        if (skipped.length) msg += `\n\n⚠️ 제외 ${skipped.length}명: ${skipped.join(', ')}\n(해당 학기 수업 없음)`;
+        alert(msg);
     } catch (e) {
         console.error('[BULK DAYS ERROR]', e);
         alert('일괄 요일 변경 실패: ' + e.message);
