@@ -27,11 +27,12 @@ DB가 명시적 `class_type:'내신'` enrollment만 인식해, 마법사 표준(
 내신 기간 중 학생을 **정규/자유학기 모드로 추가**하면 override 없는 정규가 생겨 내신이 안 잡힘(김시헌 사고). DSC `class-setup.js` `submitWizard`에 가드 추가(commit 961ce58): `resolveNaesinCsKey`로 csKey 유도 → `class_settings` 활성 내신기간이면 confirm 경고 → 내신 마법사 유도.
 - **DSC-only가 의도된 설계(파리티 위반 아님).** 내신 override 배정은 DSC 반편성 마법사에서만 일어남. DB 등록 시엔 override를 안 박으므로(나중에 DSC에서 설정) DB에 같은 가드를 넣으면 모든 신규 등록이 오경고. 즉 경로 특화 가드라 DB 대응 불필요.
 
-## 재원기간(tenure) 표시 (2026-05-29 추가)
-**규칙(사용자 정의):** 재원기간 = 등록(신규)/재등원부터 → 퇴원/종강이 끝. **휴원/복귀는 기간을 끊지 않음.** 퇴원 후 재등원은 새 기간.
+## 재원기간(tenure) 표시 (2026-05-29, 기산일 2026-05-29 변경)
+**규칙(사용자 정의, 갱신):** 재원기간 START = **현재 재원구간의 첫 실제 출석일**(출석/지각/조퇴). 미등원이면 `'등원예정'` 표시. END = 퇴원/종강. **휴원/복귀는 기간을 끊지 않음.** 퇴원 후 재등원은 새 구간(재등원 이후 첫 출석일부터).
+- (구 규칙: "등록(신규)/재등원일부터"였으나, 미등원 학생도 재원 N일로 잡히는 문제로 첫 출석일 기산으로 변경.)
 - **enrollment의 start_date는 재원기간이 아님** — start_date는 반별 인스턴스 시작일이고 복귀 때마다 복귀일로 리셋됨(promote/출결용). 재원기간과 혼동 금지.
-- 파생: `@impact7/shared/history`의 **`deriveTenure(logs, getDate)`** (v1.9.0) → history_logs에서 {start,end}. 신규/재등원=시작, 퇴원=끝, 휴원/복귀 무시. 종강은 classifier 미분류라 앱이 status='종강'+status_changed_at으로 end 보완.
-- DB(app.js `fillTenure`/`formatTenure`)·DSC(student-detail.js 동명) 수업정보 카드에 표시, 비동기 조회+stale 가드. END=퇴원일/종강일/"현재".
+- 파생: `@impact7/shared/history`의 **`deriveTenure(logs, getDate, attendances)`** (v1.12.0) → `{start, end, startEvent}`. logs로 startEvent(신규/재등원)·end(퇴원) 잡고, attendances(daily_records `{date,status}`)에서 startEvent 이후 첫 출석일을 start로. `startEvent=null`→이력없음('—'), `startEvent≠null & start=null`→미등원('등원예정'), `start≠null`→첫출석~. 출석 판정은 같은 모듈 **`isAttendedStatus`**(출석/지각/조퇴) SSoT.
+- 호출부(양 앱 `fillTenure`)가 history_logs + daily_records(student_id) 병렬 조회해 attendances 주입. DB app.js·DSC student-detail.js 동일. `formatTenure(start, end, startEvent, student)`. END=퇴원일/종강일/"현재".
 
 ## 재원기간 vs 레벨기간 — 용어 분리 (2026-05-29)
 혼동 방지를 위해 두 기간 개념을 용어로 분리. 둘 다 공유모듈에서 가져옴(DB·DSC 동일 값).
