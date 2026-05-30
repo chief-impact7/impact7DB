@@ -57,7 +57,7 @@ metadata:
   - 🔴 DB `upsert-students.js`(admin)가 bare school **재기록**(미러 부활) → toPersistFields 매핑.
   - 🟠 DSC `daily-ops`/`export-report`/`past-history`가 사라진 s.school read → currentSchool/schoolSearchTerms 전환.
   - 🟡 학년승급 라벨 동기화에 hasAnySchool 가드 추가(학교미입력 멱등). `import-students.js`는 deprecated 미사용. withinFieldLimit worst 25/35 여유.
-  - ⏳ **별건(선재, 전역전환 무관)**: DSC `DailyLogBoard.getBranch`(enrollments[0] 기준)가 정본 `branchFromStudent`(정규/자유학기)와 분기 → 내신 csKey branch 잠복 불일치 가능(2026-05-16 도입). 정본 단일화 필요. 검증 `_workspace/37`, 수정 `40`·`41`.
+  - ✅ **별건(선재) DailyLogBoard branch 정본 단일화 완료**(2026-05-30, DSC 290ec6c): 자체 `getBranch`(enrollments[0])·`buildNaesinKey` 삭제 → 정본 `branchFromStudent`(정규/자유학기 기준)·`resolveNaesinCsKey` import. enrollments 앞에 내신/특강 오면 branch 갈리던 일탈 교정(정상 diff 0, 일탈 3건). class_settings doc id는 이미 정본 키라 일탈 학생이 정상 매칭됨(마이그레이션 불요). override까지 정본 적용. 검증 `_workspace/37`, 수정 `40`·`41`·`42`.
   - **배포 체크리스트(내신키류)**: 배포 직전 `node _workspace/audit-naesin-stale.mjs`로 활성 내신 stale=0 재확인(진급·newtest발 stale 상시 재발 가능).
 - ⏳ 학년승급 로컬 캐시(allStudents) 학부별 필드 동기화(현재는 트리거/리로드 의존).
 
