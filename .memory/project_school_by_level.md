@@ -36,7 +36,10 @@ metadata:
 
 ## Phase 2 (TODO)
 - ✅ **퇴원생 grade 누적(B) 완료**(2026-05-30, Phase 2-B): studentFullLabel을 예측 학부 기준으로 전환 → 누적 데이터도 `고(졸업+N)` 정확. status는 '퇴원' 유지(졸업 신규 없음). 목적=졸업생 현재상태 예측으로 동생·친척 연관 상담. 상세: predicted-level-label spec/plan.
-- ⏳ 전역 앱(DSC/exam 등) `.school` 읽기 → `currentSchool`/학부별 전환 (DSC 30곳·exam 154곳 중 students.school).
+- ⏳ **전역 전환** = 각 앱 자체 학교 라벨 함수를 `@impact7/shared`(studentFullLabel/currentSchool)로 통일하는 작업(단순 .school 치환 아님). 진입점:
+  - DSC: `studentShortLabel`·`school-normalizer.js` (students.school 소비 ~30곳 대부분 경유)
+  - exam: `formatSchoolShort`·`schoolSearchTerms` (`src/shared/lib/student-display.ts`). exam `.school` 154곳 중 students 소비 ~29곳이 이 함수 경유, 나머지 ~125곳은 시험분석·외부성적 **자체 도메인이라 대상 아님**
+  - **DSC 전환 / exam 전환 = 독립 sub-project**. 각각 자체 함수 의미(예측 vs 다녔던 학교) 정밀 분석 → shared 교체 → 빌드/검증. (전역 전환 완료 후 구 school 제거 가능)
 - ⏳ 구 `school` 필드 제거(전역 전환 완료 후) → "완전 대체" 완성.
 - ⏳ 학년승급 로컬 캐시(allStudents) 학부별 필드 동기화(현재는 트리거/리로드 의존).
 
