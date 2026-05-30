@@ -52,6 +52,12 @@ metadata:
   - ✅②**검색어 shared 공통화 완료**(2026-05-30, shared v1.16.0 태그·push + DB 0fd91b0·DSC cfeb812·exam 9fc88e2 배포): `student-label.js`에 `studentSearchTerms`(exam 정본, 빈학교+Set중복제거) 추가, 3앱 로컬 `schoolSearchTerms`를 `export { studentSearchTerms as schoolSearchTerms }` 재노출로 교체(callsite 무수정). **DB만 raw 합성이던 검색 회귀를 정규화 기준으로 교정**(표시-검색 일치). exam .d.ts는 인덱스시그니처 TS2345 회피 위해 실제 읽는 필드만 선언. github 캐시 함정(v1.15.0 고정) 강제재설치로 교정. 분석 `_workspace/30`, 구현 `33`(exam)`34`(DSC)`35`(DB).
   - ✅③**학년승급 로컬캐시 동기화 완료**(2026-05-30, DB d1370ad): `applyBulkPromotion`·`runPromotion`이 로컬 allStudents에 grade/level/school_*는 반영했으나 트리거가 쓰는 `school_level_grade`만 stale → 두 경로에 `s.school_level_grade = studentFullLabel(s)` 추가(멱등, 트리거 후속 write no-op). 화면 라벨은 원래 라이브 계산이라 정확, 검색/denormalized 필드 stale만 해소. 구현 `_workspace/36`.
 - ✅✅ **전역 전환 전 항목 완료**(표시·검색 3앱 통일 + rules 버그 + 구 school 미러 완전 제거[데이터·코드·rules] + 검색어 shared 공통화 v1.16.0 + 학년승급 캐시). DB·DSC·exam·newtest·shared·functions(leave-request·shared) 전부 배포. 미러 백업 `_workspace/school-mirror-backup.json` 보존.
+- ✅ **사후 code review로 미러 잔여 버그 수정**(2026-05-30, DSC 8efac71·DB e9b8402): 영향분석 22가 **인앱 보조 경로를 놓쳐** 미러 삭제+rules 제거 배포 후 다음이 깨졌던 것을 qa-validator+code review로 발견·수정 → [[feedback_field_removal_inapp_paths]]:
+  - 🔴 DSC `diagnostic.js` 진단평가 upsert가 school client write → **permission-denied 차단** → SCHOOL_FIELD 매핑.
+  - 🔴 DB `upsert-students.js`(admin)가 bare school **재기록**(미러 부활) → toPersistFields 매핑.
+  - 🟠 DSC `daily-ops`/`export-report`/`past-history`가 사라진 s.school read → currentSchool/schoolSearchTerms 전환.
+  - 🟡 학년승급 라벨 동기화에 hasAnySchool 가드 추가(학교미입력 멱등). `import-students.js`는 deprecated 미사용. withinFieldLimit worst 25/35 여유.
+  - ⏳ **별건(선재, 전역전환 무관)**: DSC `DailyLogBoard.getBranch`(enrollments[0] 기준)가 정본 `branchFromStudent`(정규/자유학기)와 분기 → 내신 csKey branch 잠복 불일치 가능(2026-05-16 도입). 정본 단일화 필요. 검증 `_workspace/37`, 수정 `40`·`41`.
   - **배포 체크리스트(내신키류)**: 배포 직전 `node _workspace/audit-naesin-stale.mjs`로 활성 내신 stale=0 재확인(진급·newtest발 stale 상시 재발 가능).
 - ⏳ 학년승급 로컬 캐시(allStudents) 학부별 필드 동기화(현재는 트리거/리로드 의존).
 

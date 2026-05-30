@@ -41,6 +41,7 @@
 - [⏳ '신규' status 일원화 보류](project_new_status_deferred.md) — 신규현황은 이미 ENROLL 이벤트로 집계됨 → status 마이그레이션 불필요. 재논의 시 이 결론서 출발 (2026-05-28)
 - [⏳ 에코시스템 SSO 보류](project_ecosystem_sso.md) — 구글 1회 로그인. Auth 세션 origin별 격리가 원인. 권장 B(One Tap 자동로그인). 인증 화제 시 재제안 (2026-05-28)
 - [반 이동 안전화](project_class_move_unification.md) — moveClass 공유함수(v1.11.0) + 일괄 반 변경 학기 가드. 학기 ON이면 내신 숨김 정규 복원→합반 누락 해소. applyBulkDays 가드도 완료, DSC 미지원 확정 (2026-05-29)
+- [공용 필드 제거 시 인앱 보조 경로 전수+리뷰 필수](feedback_field_removal_inapp_paths.md) — 영향분석이 본선만 잡으면 보조 upsert(diagnostic)·admin import 스크립트·read 표시에서 깨짐. admin은 rules 우회라 미러 재기록 위험. 배포 전 code review 필수 (2026-05-30 school 미러 제거 사고)
 - [학생 필드 추가 시 rules 동기화 필수](feedback_student_field_rules_sync.md) — students client write 필드는 rules allowed에 넣어야 함. 누락 시 폼 저장 조용히 reject(admin은 우회), withinFieldLimit도 점검 (2026-05-30 school_* 버그)
 - [shared 버전 선점 충돌 주의](feedback_shared_version_conflict.md) — 크로스앱 실행 전 shared version·태그 확인, 점유됐으면 다음 번호로. npm link 사고 시 lock 미갱신 배포 깨짐 (2026-05-29)
 - 재원기간 기산일 = 첫 출석일로 변경(deriveTenure v1.12.0, attendances 인자). 상세: [내신/자유학기 파생](project_naesin_free_derivation.md) 재원기간 섹션
