@@ -5,7 +5,7 @@ import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken
 import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor, deriveTenure } from '@impact7/shared/history';
-import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
+import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES, NON_ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber } from '@impact7/shared/student-number';
 import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod } from '@impact7/shared/enrollment-derivation';
@@ -2486,16 +2486,42 @@ window.submitNewStudent = async () => {
                     if (firstNewBranch) mergeData.branch = firstNewBranch;
                     appendNote = ` + 수업 ${_newEnrollmentsForCreate.length}건 추가`;
                 }
+                // 비원생(퇴원/종강)에 수업이 붙어 재원계열로 전이되면 재등원 — RETURN으로 명시 기록.
+                // 무로그 전환 차단(재원기간 deriveTenure의 재등원 인식 위해서도 필요).
+                const prevStatus = existingStudent.status || '';
+                const isReEnroll = NON_ENROLLABLE_STATUSES.has(prevStatus)
+                    && ENROLLABLE_STATUSES.has(mergeData.status)
+                    && _newEnrollmentsForCreate.length > 0;
+                // 재등원 로그의 before/after는 classifyHistory(@impact7/shared)가 인식하는
+                // "상태:X, 반:Y" 포맷으로 — 그래야 deriveTenure가 재등원을 기간 시작으로 잡음.
+                const reEnrollCodes = (mergeData.enrollments || []).map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '—';
+                if (isReEnroll) {
+                    mergeData.status_changed_at = serverTimestamp();
+                    mergeData.status_changed_by = currentUser?.email || 'system';
+                    mergeData.status_previous = prevStatus || null;
+                }
                 await Promise.all([
                     setDoc(doc(db, 'students', docId), mergeData, { merge: true }),
                     addDoc(collection(db, 'history_logs'), {
                         doc_id: docId,
-                        change_type: 'UPDATE',
-                        before: `상태: ${existingStudent.status || ''}`,
-                        after: `첫데이터 재입력: ${name}${appendNote}`,
+                        change_type: isReEnroll ? 'RETURN' : 'UPDATE',
+                        before: `상태:${prevStatus}`,
+                        after: isReEnroll
+                            ? `상태:${mergeData.status}, 반:${reEnrollCodes} (재등원${appendNote})`
+                            : `첫데이터 재입력: ${name}${appendNote}`,
                         google_login_id: currentUser?.email || 'system',
                         timestamp: serverTimestamp(),
                     }),
+                    isReEnroll
+                        ? addDoc(collection(db, 'history_logs'), {
+                              doc_id: docId,
+                              change_type: 'STATUS_CHANGE',
+                              before: JSON.stringify({ status: prevStatus }),
+                              after: JSON.stringify({ status: mergeData.status }),
+                              google_login_id: currentUser?.email || 'system',
+                              timestamp: serverTimestamp(),
+                          })
+                        : Promise.resolve(),
                 ]);
             } else {
                 // 완전 신규 — 폼에 입력한 수업이 있으면 그 status·enrollments·branch로 생성,
@@ -3093,6 +3119,11 @@ window.saveEnrollment = async () => {
     try {
         const student = allStudents.find(s => s.id === currentStudentId);
         if (!student) return;
+        // 비원생(퇴원/종강/상담)은 수업추가로 status를 무로그 전환할 수 없음 — 재등원 경로로 안내.
+        if (NON_ENROLLABLE_STATUSES.has(student.status)) {
+            alert(`${student.status} 상태의 학생은 수업을 직접 추가할 수 없습니다.\n"정규 등록"(재등원) 버튼으로 처리하세요.`);
+            return;
+        }
         const updatedEnrollments = [...(student.enrollments || []), enrollment];
 
         // branch 업데이트 (첫 번째 enrollment 기준)
@@ -6047,6 +6078,7 @@ window.saveGrammarSpecial = async () => {
         const filterSemester = activeFilters.semester || '';
         const BATCH_SIZE = 200;
         const studentMap = new Map(allStudents.map(s => [s.id, s]));
+        const skippedWithdrawn = [];
 
         for (let i = 0; i < toSave.length; i += BATCH_SIZE) {
             const chunk = toSave.slice(i, i + BATCH_SIZE);
@@ -6055,6 +6087,12 @@ window.saveGrammarSpecial = async () => {
             for (const entry of chunk) {
                 const allDays = [...new Set(entry.weeklySchedule.map(ws => ws.day))];
                 const existingS = studentMap.get(entry.docId);
+                // 비원생(퇴원/종강/상담)에 특강을 붙이면 rules가 거부하고 무로그 재원 전환 위험 —
+                // 일괄경로에서는 건너뛰고 재등원 안내. (개별 학생은 재등원 처리 후 추가)
+                if (existingS && NON_ENROLLABLE_STATUSES.has(existingS.status)) {
+                    skippedWithdrawn.push(`${entry.name}(${existingS.status})`);
+                    continue;
+                }
                 const studentLevel = existingS?.level || entry.level || '';
                 const semester = filterSemester || currentSemesterByLevel[studentLevel] || '';
                 const newEnrollment = {
@@ -6132,7 +6170,11 @@ window.saveGrammarSpecial = async () => {
 
         applyFilterAndRender();
         window.closeGrammarSpecial();
-        alert(`${toSave.length}명의 문법 특강을 저장했습니다.`);
+        const savedCount = toSave.length - skippedWithdrawn.length;
+        const skipNote = skippedWithdrawn.length > 0
+            ? `\n\n비원생(퇴원/종강/상담) ${skippedWithdrawn.length}명은 제외됨 — 재등원 처리 후 추가하세요:\n${skippedWithdrawn.join(', ')}`
+            : '';
+        alert(`${savedCount}명의 문법 특강을 저장했습니다.${skipNote}`);
     } catch (e) {
         console.error('[GS SAVE ERROR]', e);
         alert('문법 특강 저장 실패: ' + e.message);
