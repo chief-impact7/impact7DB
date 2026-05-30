@@ -4813,33 +4813,34 @@ window.applyBulkPromotion = async () => {
         if (!student) return;
         const oldLevel = student.level || '';
         const oldGrade = parseInt(student.grade, 10) || 0;
-        const oldSchool = student.school || '';
         if (!oldLevel || !oldGrade) { skipped.push(`${student.name} (학부/학년 정보 없음)`); return; }
 
         const maxG = LEVEL_MAX_GRADE[oldLevel] || 6;
         let afterLevel = oldLevel;
         let afterGrade = oldGrade + 1;
-        let afterSchool = oldSchool;
         let isTransition = false;
+        const updateData = {};
 
         if (oldGrade >= maxG) {
-            // 학부 전환 (초6→중1, 중3→고1)
             const next = NEXT_LEVEL[oldLevel];
             if (!next) { skipped.push(`${student.name} (고${oldGrade} — 졸업 대상)`); return; }
             afterLevel = next;
             afterGrade = 1;
             isTransition = true;
-            afterSchool = newSchool || '';  // 전환 시 학교 비우면 빈칸으로 초기화
+            updateData.level = next;
+            // 새 학부 학교: newSchool 입력 시 새 학부 필드에. 이전 학부 필드는 보존(건드리지 않음).
+            if (newSchool) updateData[SCHOOL_FIELD[next]] = newSchool;
+            updateData.school = newSchool || ''; // 미러는 새 학부 기준
         }
 
+        updateData.grade = afterGrade;
+
+        const oldSchool = student[SCHOOL_FIELD[oldLevel]] || student.school || '';
+        const afterSchool = isTransition ? (newSchool || '') : oldSchool;
         const beforeParts = [oldLevel, `${oldGrade}학년`, oldSchool].filter(Boolean).join(' ');
         const afterParts = [afterLevel, `${afterGrade}학년`, afterSchool].filter(Boolean).join(' ');
 
-        const updateData = { grade: afterGrade };
-        if (afterLevel !== oldLevel) updateData.level = afterLevel;
-        if (afterSchool !== oldSchool) updateData.school = afterSchool;
-
-        changes.push({ id, name: student.name, before: beforeParts, after: afterParts, updateData, afterLevel, afterGrade, afterSchool, isTransition });
+        changes.push({ id, name: student.name, before: beforeParts, after: afterParts, updateData, afterLevel, afterGrade, isTransition });
     });
 
     if (changes.length === 0) { alert('승격할 학생이 없습니다.' + (skipped.length ? `\n\n건너뜀:\n${skipped.join('\n')}` : '')); return; }
@@ -4873,11 +4874,7 @@ window.applyBulkPromotion = async () => {
         // 로컬 데이터 업데이트
         changes.forEach(c => {
             const s = allStudents.find(s => s.id === c.id);
-            if (s) {
-                s.grade = c.afterGrade;
-                if (c.afterLevel !== s.level) s.level = c.afterLevel;
-                if (c.afterSchool !== s.school) s.school = c.afterSchool;
-            }
+            if (s) Object.assign(s, c.updateData);
         });
 
         document.getElementById('bulk-promote-school').value = '';
