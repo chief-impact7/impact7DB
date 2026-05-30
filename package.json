@@ -16,7 +16,9 @@
     "migrate:semester": "node migrate-semester.js",
     "migrate:semester:run": "node migrate-semester.js --run",
     "migrate:label": "node migrate-school-label.js",
-    "migrate:label:run": "node migrate-school-label.js --run"
+    "migrate:label:run": "node migrate-school-label.js --run",
+    "migrate:schoollevel": "node migrate-school-by-level.js",
+    "migrate:schoollevel:run": "node migrate-school-by-level.js --run"
   },
   "keywords": [],
   "author": "",
