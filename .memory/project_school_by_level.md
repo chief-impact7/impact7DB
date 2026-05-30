@@ -36,11 +36,19 @@ metadata:
 
 ## Phase 2 (TODO)
 - ✅ **퇴원생 grade 누적(B) 완료**(2026-05-30, Phase 2-B): studentFullLabel을 예측 학부 기준으로 전환 → 누적 데이터도 `고(졸업+N)` 정확. status는 '퇴원' 유지(졸업 신규 없음). 목적=졸업생 현재상태 예측으로 동생·친척 연관 상담. 상세: predicted-level-label spec/plan.
-- ⏳ **전역 전환** = 각 앱 자체 학교 라벨 함수를 `@impact7/shared`(studentFullLabel/currentSchool)로 통일하는 작업(단순 .school 치환 아님). 진입점:
-  - DSC: `studentShortLabel`·`school-normalizer.js` (students.school 소비 ~30곳 대부분 경유)
-  - exam: `formatSchoolShort`·`schoolSearchTerms` (`src/shared/lib/student-display.ts`). exam `.school` 154곳 중 students 소비 ~29곳이 이 함수 경유, 나머지 ~125곳은 시험분석·외부성적 **자체 도메인이라 대상 아님**
-  - **DSC 전환 / exam 전환 = 독립 sub-project**. 각각 자체 함수 의미(예측 vs 다녔던 학교) 정밀 분석 → shared 교체 → 빌드/검증. (전역 전환 완료 후 구 school 제거 가능)
-- ⏳ 구 `school` 필드 제거(전역 전환 완료 후) → "완전 대체" 완성.
+- **전역 전환** = 각 앱 자체 학교 라벨 함수를 `@impact7/shared`(studentFullLabel/currentSchool)로 통일하는 작업(단순 .school 치환 아님). 사용자 결정: **예측 학부 기준 전면 수용**(DB와 동일 라벨, 진급·졸업 반영). DSC→exam 순서.
+  - ✅ **DSC 완료**(2026-05-30, 커밋 b431c80 배포): `studentShortLabel`=`studentFullLabel` 재노출(표시 8곳), `schoolSearchTerms` 예측 학부 학교+학년 기반 재작성(검색 4곳, 표시-검색 SSoT 정규화 공유), shared v1.12.0→v1.15.0, dead code 5함수 제거. 빌드+테스트19/19, 라벨 diff 정상학생 변동 0건. 분석/구현: `_workspace/18`,`20`.
+  - ✅ **exam 완료**(2026-05-30, 커밋 1249ead 배포): `formatSchoolShort`=`studentFullLabel` 래퍼(growth-report 등 호출부 무변경), `schoolSearchTerms` 예측 기준 재작성, `@impact7/shared#v1.15.0` 추가 + **로컬 ambient `.d.ts`**(`src/shared/types/impact7-shared.d.ts`, shared repo 무수정)로 TS 타입 보강, `Student`에 school_* 추가. **경계 엄수**: `ExamAnalysis`·`ExternalScoreEvent` 자체 school·`isSameSchoolName` 매칭·`ExternalScorePanel` 전부 미변경. tsc any 0·next build 45p·재원 349건 변동 0건. 구현: `_workspace/21`.
+  - **전역 전환 표시·검색 부분 완료**(DB·DSC·exam 3앱 동일 SSoT 라벨). 남은 후속: ①구 `school` 단일 미러 **제거**(이제 모든 앱이 school_* 사용 → 가능, 단 exam은 미러 의존 잔여 없는지 최종 확인 후) ②검색어 `studentSearchTerms` **shared 공통화**(현재 DSC·exam 각자 로컬 동일 패턴, v1.16.0 후보) ③학년승급 로컬캐시(allStudents) 학부별 필드 동기화.
+- ⏳ **후속 1번: 구 `school` 미러 제거 진행 중**(영향분석 `_workspace/22`, 위험도 높음). 사용자 결정: rules 버그 선결→미러제거 블로커 단계별, newtest는 자체 수정, 데이터는 **dead data 보존**(15,032건 삭제 안 함).
+  - ✅ **선결 rules 버그 수정 완료**(2026-05-30, DB 4d7d50b 배포·4앱 동기화): students allowed에 `school_*`·`school_level_grade`·`enrollments_cleared_at/by` 누락 → 폼 저장 reject 현존 버그. `withinFieldLimit` 30→35. 교훈 [[feedback_student_field_rules_sync]]. 상세 `_workspace/23`.
+  - ⏳ **미러 제거 블로커 (①완료, ②③ 남음)**(읽기→currentSchool 전환 후 쓰기 중단): ✅①**exam `ExternalScorePanel` 완료**(2026-05-30 d643465 배포): `studentSchool()`→currentSchool, exam students 미러 의존 0. event.school 자체도메인·isSameSchoolName 매칭 현행. 재원 일치율 99.75%. `_workspace/24`. ✅②**DB+DSC 내신 CS키 동시 이전 완료**(2026-05-30 배포: DB functions:leave-request firebase deploy + DB 7b46f48 + DSC 8a8cad6). csKey 생성 4곳(DB fn `naesinHelpers.deriveNaesinCode`, DSC 루트 `student-helpers.deriveNaesinCode`=실제 생성주체, DSC React `DailyLogBoard.buildNaesinKey`) + 독립 `naesin-schedule`(csKey 아님). **세 csKey 식 글자단위 동일**: `branch+school+levelShort+grade+group`(구분자 0), `.school`→`currentSchool`만 교체. functions는 shared 미의존→inline 미러(shared 정의와 글자동일 `student?.[SCHOOL_FIELD[level]]||''`). **무중단**(정상학생 키 보존). 게이트=stale audit(활성 0/키변동 0, 배포직전 재확인). 분석 `_workspace/25`, audit `_workspace/26`+`audit-naesin-stale.mjs`, 구현 `_workspace/27`,`28`. ✅③**newtest cloudrun 완료**(2026-05-30, `gws-impact7-cli` 프로젝트 커밋 a6196a2·revision 00068-nw6 배포). `cloudrun/src/index.js` `upsertDscStudentFromTemp` baseFields에 학부별 필드 주입(`SCHOOL_FIELD_BY_LEVEL[data.level]`=data.school). 진단평가 생성 students가 school_* 보유 → 미마이그레이션 doc 생산 중단·트리거 가드 통과. 미러 school은 최종단계까지 유지. **주의: newtest는 별도 GCP `gws-impact7-cli` 배포(impact7db 아님), Firestore는 SA키로 impact7db 접근. 배포=`gcloud run deploy newtest-chat-handler --project=gws-impact7-cli`.**
+  - **블로커 ①②③ + 마무리 2단계 전부 완료** ✅ → **구 school 미러 완전 제거**(2026-05-30, DB 026e6ec + functions:shared 배포).
+    - 마무리 단계1(read 전환): app.js(abbreviateSchool·과거학생폼·상세·시트export·승급폴백)·school-normalizer·past-history·promo-extractor·consultationAiHandler→currentSchool. autofill `_form.school` undefined throw 버그도 `school_current`로 교정. `schoolOf=currentSchool(s)||s?.school` 방어 fallback 유지.
+    - 마무리 단계2(write 중단): onStudentLabelSync 미러 write 삭제(school_level_grade 라벨 write 유지), saveStudent/applyBulkPromotion/import/시트 payload의 `school` 키 제거(school_* 저장 유지). 게이트=미러 순수 read 0 grep. 구현 `_workspace/29`.
+    - **이후 students write에 school 미러 미생성.** 데이터 15,032건 school은 **dead data 보존**(삭제 안 함).
+- ⏳ **전역 전환 잔여(선택·저우선)**: ①rules `students` 화이트리스트에서 `school` 제거(허용만이라 무해, 안 해도 됨) ②검색어 `studentSearchTerms` shared 공통화(DSC·exam·DB 각자 로컬 동일 패턴, v1.16.0 후보) ③학년승급 로컬캐시(allStudents) 학부별 필드 동기화(현재 트리거/리로드 의존).
+  - **배포 체크리스트(내신키류)**: 배포 직전 `node _workspace/audit-naesin-stale.mjs`로 활성 내신 stale=0 재확인(진급·newtest발 stale 상시 재발 가능).
 - ⏳ 학년승급 로컬 캐시(allStudents) 학부별 필드 동기화(현재는 트리거/리로드 의존).
 
 ## 문서

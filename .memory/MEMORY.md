@@ -41,6 +41,7 @@
 - [⏳ '신규' status 일원화 보류](project_new_status_deferred.md) — 신규현황은 이미 ENROLL 이벤트로 집계됨 → status 마이그레이션 불필요. 재논의 시 이 결론서 출발 (2026-05-28)
 - [⏳ 에코시스템 SSO 보류](project_ecosystem_sso.md) — 구글 1회 로그인. Auth 세션 origin별 격리가 원인. 권장 B(One Tap 자동로그인). 인증 화제 시 재제안 (2026-05-28)
 - [반 이동 안전화](project_class_move_unification.md) — moveClass 공유함수(v1.11.0) + 일괄 반 변경 학기 가드. 학기 ON이면 내신 숨김 정규 복원→합반 누락 해소. applyBulkDays 가드도 완료, DSC 미지원 확정 (2026-05-29)
+- [학생 필드 추가 시 rules 동기화 필수](feedback_student_field_rules_sync.md) — students client write 필드는 rules allowed에 넣어야 함. 누락 시 폼 저장 조용히 reject(admin은 우회), withinFieldLimit도 점검 (2026-05-30 school_* 버그)
 - [shared 버전 선점 충돌 주의](feedback_shared_version_conflict.md) — 크로스앱 실행 전 shared version·태그 확인, 점유됐으면 다음 번호로. npm link 사고 시 lock 미갱신 배포 깨짐 (2026-05-29)
 - 재원기간 기산일 = 첫 출석일로 변경(deriveTenure v1.12.0, attendances 인자). 상세: [내신/자유학기 파생](project_naesin_free_derivation.md) 재원기간 섹션
-- [학부별 학교명 + 라벨](project_school_by_level.md) — school_elementary/middle/high + studentFullLabel(예측 학부 기준 v1.15.0, 정규화 약어·지역명17·예외14) + 트리거 동기화+가드. 전체 15,032명 백필. 졸업생 "고(졸업+N)" 예측(B 완료). Phase2 남음: 전역 .school 전환·구 school 제거 (2026-05-30)
+- [학부별 학교명 + 라벨](project_school_by_level.md) — school_elementary/middle/high + studentFullLabel(예측 학부 기준 v1.15.0, 정규화 약어·지역명17·예외14) + 트리거 동기화+가드. 전체 15,032명 백필. 졸업생 "고(졸업+N)" 예측(B 완료). 전역 전환 표시·검색 **3앱 완료** + **구 school 미러 완전 제거 완료**(블로커 ①exam ②내신키 ③newtest + 마무리 read전환/write중단, DB 026e6ec·DSC·exam·functions:shared 배포). rules school_* 화이트리스트 버그도 수정. 미러 데이터 dead 보존. 잔여(선택): 검색어 shared 공통화·학년승급 캐시 (2026-05-30)
