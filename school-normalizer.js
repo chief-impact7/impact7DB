@@ -1,3 +1,9 @@
+import { currentSchool } from '@impact7/shared/student-label';
+
+// students 미러 .school 제거 후: 현재 학부 학교는 currentSchool(학부별 필드) 우선.
+// import 단계 temp 객체는 school_* 가 없으므로 작업용 .school 으로 폴백.
+const schoolOf = (s) => currentSchool(s) || s?.school || '';
+
 const LEVEL_SUFFIXES = {
     '초등': [
         { suffix: '초등학교', safe: true },
@@ -30,7 +36,7 @@ export function levelShortName(level) {
 }
 
 export function collectKnownSchoolNames(students = []) {
-    return new Set(students.map(s => cleanSchoolName(s.school)).filter(Boolean));
+    return new Set(students.map(s => cleanSchoolName(schoolOf(s))).filter(Boolean));
 }
 
 export function normalizeStudentSchools(students = [], knownStudents = []) {
@@ -52,7 +58,7 @@ export function normalizeSchoolName(school, level, knownSchools = new Set()) {
 }
 
 export function schoolSearchTerms(student) {
-    const school = cleanSchoolName(student?.school);
+    const school = cleanSchoolName(schoolOf(student));
     const levelShort = levelShortName(student?.level);
     const grade = student?.grade ? String(student.grade).replace(/[^0-9]/g, '') : '';
     return [

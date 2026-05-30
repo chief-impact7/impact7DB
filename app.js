@@ -157,7 +157,8 @@ const _prefillNewStudentForm = (s) => {
         if (!f) return;
         f.name.value = s.name || '';
         if (s.level) f.level.value = s.level;
-        if (currentSchool(s)) f.school_current.value = currentSchool(s);
+        const sc = currentSchool(s);
+        if (sc) f.school_current.value = sc;
         if (s.school_elementary) f.school_elementary.value = s.school_elementary;
         if (s.school_middle) f.school_middle.value = s.school_middle;
         if (s.school_high) f.school_high.value = s.school_high;
@@ -343,7 +344,7 @@ const activeDays = (s) => [...new Set(relevantEnrollments(s).flatMap(e => normal
 
 // 학교명 축약 표시 (예: 진명여자고등학교 고등 2학년 → 진명여고2)
 const abbreviateSchool = (s) => {
-    const school = cleanSchoolName(s.school)
+    const school = cleanSchoolName(currentSchool(s))
         .replace(/고등학교$/, '')
         .replace(/중학교$/, '')
         .replace(/초등학교$/, '')
@@ -1815,7 +1816,8 @@ _searchClearBtn?.addEventListener('keydown', (e) => {
 
         _lastFilledDocId = docId;
         if (pastStudent.level) _form.level.value = pastStudent.level;
-        if (pastStudent.school && !_form.school.value) _form.school.value = pastStudent.school;
+        const pastSchool = currentSchool(pastStudent);
+        if (pastSchool && !_form.school_current.value) _form.school_current.value = pastSchool;
         if (pastStudent.grade && !_form.grade.value) _form.grade.value = pastStudent.grade;
         if (pastStudent.student_phone && !_form.student_phone.value) _form.student_phone.value = pastStudent.student_phone;
         if (pastStudent.parent_phone_2 && !_form.parent_phone_2.value) _form.parent_phone_2.value = pastStudent.parent_phone_2;
@@ -1901,7 +1903,7 @@ window.selectStudent = (studentId, studentData, targetElement) => {
 
     // 기본 정보 카드
     document.getElementById('detail-level-name').textContent = studentData.level || '—';
-    document.getElementById('detail-school-name').textContent = studentData.school || '—';
+    document.getElementById('detail-school-name').textContent = currentSchool(studentData) || '—';
     document.getElementById('detail-grade').textContent = studentData.grade ? `${studentData.grade}학년` : '—';
 
     // 연락처 카드
@@ -2200,7 +2202,7 @@ window.submitNewStudent = async () => {
     for (const [lv, field] of Object.entries(SCHOOL_FIELD)) {
         if (schoolByLevel[field]) schoolByLevel[field] = normalizeSchoolName(schoolByLevel[field], lv, knownSchools);
     }
-    const school = schoolByLevel[curField] || ''; // 미러용 현재 학부 학교
+    const school = schoolByLevel[curField] || ''; // 현재 학부 학교 (입력 검증용)
 
     if (!name) { alert('이름을 입력하세요.'); f.name.focus(); return; }
     if (!parentPhone1) { alert('학부모 연락처를 입력하세요.'); f.parent_phone_1.focus(); return; }
@@ -2265,7 +2267,6 @@ window.submitNewStudent = async () => {
             name,
             level,
             ...schoolByLevel,
-            school,
             grade,
             student_phone: f.student_phone.value.trim(),
             parent_phone_1: parentPhone1,
@@ -2312,7 +2313,6 @@ window.submitNewStudent = async () => {
             name,
             level,
             ...schoolByLevel,
-            school,
             grade,
             student_phone: f.student_phone.value.trim(),
             parent_phone_1: parentPhone1,
@@ -3392,7 +3392,7 @@ window.handleSheetExport = async () => {
         const branch = s.branch || '';
         if (enrollments.length === 0) {
             dataRows.push([
-                s.name || '', s.level || '', s.school || '', s.grade || '',
+                s.name || '', s.level || '', currentSchool(s) || '', s.grade || '',
                 s.student_phone || '', s.parent_phone_1 || '', s.parent_phone_2 || '',
                 s.guardian_name_1 || '', s.guardian_name_2 || '',
                 branch, '', '', '정규', '', '', '',
@@ -3402,7 +3402,7 @@ window.handleSheetExport = async () => {
             enrollments.forEach(e => {
                 const dayStr = Array.isArray(e.day) ? e.day.join(',') : (e.day || '');
                 dataRows.push([
-                    s.name || '', s.level || '', s.school || '', s.grade || '',
+                    s.name || '', s.level || '', currentSchool(s) || '', s.grade || '',
                     s.student_phone || '', s.parent_phone_1 || '', s.parent_phone_2 || '',
                     s.guardian_name_1 || '', s.guardian_name_2 || '',
                     branch,
@@ -3807,7 +3807,18 @@ async function runUpsertFromRows(rows, sourceName) {
     normalizeStudentSchools(Object.values(studentMap), allStudents);
 
     // 4) Compare and classify
-    const infoFields = ['name', 'level', 'school', 'grade', 'student_phone', 'parent_phone_1', 'parent_phone_2', 'guardian_name_1', 'guardian_name_2', 'branch', 'status', 'pause_start_date', 'pause_end_date', 'first_registered'];
+    // 'school'은 학부별 필드(SCHOOL_FIELD[level])로 저장 — 비교/쓰기를 별도 처리.
+    const infoFields = ['name', 'level', 'grade', 'student_phone', 'parent_phone_1', 'parent_phone_2', 'guardian_name_1', 'guardian_name_2', 'branch', 'status', 'pause_start_date', 'pause_end_date', 'first_registered'];
+
+    // import 단계 작업용 .school → 학부별 필드로 옮기고 .school 키 제거.
+    const toPersistFields = (obj) => {
+        const out = { ...obj };
+        const field = SCHOOL_FIELD[out.level];
+        const sch = cleanSchoolName(out.school || '');
+        delete out.school;
+        if (field && sch) out[field] = sch;
+        return out;
+    };
 
     const results = { inserted: [], updated: [], skipped: [] };
     const writes = [];
@@ -3819,7 +3830,7 @@ async function runUpsertFromRows(rows, sourceName) {
         if (!ex) {
             // INSERT
             results.inserted.push({ docId, name: incoming.name, enrollments: incoming.enrollments });
-            writes.push({ docId, data: incoming, type: 'set' });
+            writes.push({ docId, data: toPersistFields(incoming), type: 'set' });
             logEntries.push({
                 doc_id: docId, change_type: 'ENROLL', before: '—',
                 after: `신규 등록: ${incoming.name} (${incoming.enrollments.map(enrollmentCode).join(', ') || '수업없음'})`
@@ -3831,6 +3842,13 @@ async function runUpsertFromRows(rows, sourceName) {
                 const oldVal = (ex[f] || '').toString().trim();
                 const newVal = (incoming[f] || '').toString().trim();
                 if (newVal && newVal !== oldVal) infoDiff[f] = { old: oldVal, new: newVal };
+            }
+            // school: 입력 학교를 해당 학부 필드(SCHOOL_FIELD[level])와 비교 → 변경 시 그 필드에 기록.
+            const _diffLevel = (incoming.level || ex.level || '').toString().trim();
+            const _diffField = SCHOOL_FIELD[_diffLevel];
+            const _diffSchool = cleanSchoolName(incoming.school || '').trim();
+            if (_diffField && _diffSchool && _diffSchool !== (ex[_diffField] || '').trim()) {
+                infoDiff[_diffField] = { old: (ex[_diffField] || '').trim(), new: _diffSchool };
             }
 
             // 비활성(퇴원/상담/종강) 학생은 import로 정규반을 되살리지 않는다 (stale 재발 방지).
@@ -4830,12 +4848,11 @@ window.applyBulkPromotion = async () => {
             updateData.level = next;
             // 새 학부 학교: newSchool 입력 시 새 학부 필드에. 이전 학부 필드는 보존(건드리지 않음).
             if (newSchool) updateData[SCHOOL_FIELD[next]] = newSchool;
-            updateData.school = newSchool || ''; // 미러는 새 학부 기준
         }
 
         updateData.grade = afterGrade;
 
-        const oldSchool = student[SCHOOL_FIELD[oldLevel]] || student.school || '';
+        const oldSchool = student[SCHOOL_FIELD[oldLevel]] || '';
         const afterSchool = isTransition ? (newSchool || '') : oldSchool;
         const beforeParts = [oldLevel, `${oldGrade}학년`, oldSchool].filter(Boolean).join(' ');
         const afterParts = [afterLevel, `${afterGrade}학년`, afterSchool].filter(Boolean).join(' ');
@@ -6065,12 +6082,13 @@ window.saveGrammarSpecial = async () => {
                         existingS.enrollments = [...(existingS.enrollments || []), newEnrollment];
                     }
                 } else {
-                    // New student (비원생) — create
+                    // New student (비원생) — create. 학교는 학부별 필드(SCHOOL_FIELD)에 저장(미러 제거).
+                    const _schoolField = SCHOOL_FIELD[entry.level];
                     const studentData = {
                         name: entry.name,
                         parent_phone_1: entry.phone || '',
                         level: entry.level || '',
-                        school: entry.school || '',
+                        ...(_schoolField && entry.school ? { [_schoolField]: entry.school } : {}),
                         grade: entry.grade || '',
                         branch: '',
                         status: '등원예정',
@@ -6213,8 +6231,7 @@ function getPromotedStudent(s) {
 
 function buildLevelChangeHistory(s, year) {
     return {
-        school_history: [...(s.school_history || []), { school: s.school || '', level: s.level, grade: s.grade, year }],
-        school: '',
+        school_history: [...(s.school_history || []), { school: currentSchool(s) || '', level: s.level, grade: s.grade, year }],
     };
 }
 
@@ -6264,7 +6281,6 @@ window.runPromotion = async () => {
             if (p._levelChanged) {
                 const hist = buildLevelChangeHistory(s, prevYear);
                 s.school_history = hist.school_history;
-                s.school = '';
             }
             s.grade = p.grade;
             s.level = p.level;

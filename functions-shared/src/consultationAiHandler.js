@@ -1,5 +1,6 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
+import { currentSchool } from '@impact7/shared/student-label';
 import { generateText } from './vertex.js';
 import { writeLog } from './notifyLog.js';
 
@@ -30,7 +31,7 @@ function buildPrompt({ student, consultations }) {
   const profile = {
     name: student.name || '',
     status: student.status || '',
-    school: student.school || '',
+    school: currentSchool(student) || '',
     grade: student.grade || '',
     branch: student.branch || '',
   };

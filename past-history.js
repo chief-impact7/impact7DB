@@ -19,6 +19,7 @@
 
 import { state } from './store.js';
 import { db } from './firebase-config.js';
+import { currentSchool } from '@impact7/shared/student-label';
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import {
     enrollmentCode,
@@ -311,7 +312,7 @@ function renderHeaderSection(student, lastActivityDate) {
             <div class="past-history-header-meta">
                 <h2 class="past-history-name">${esc(student.name || '—')}</h2>
                 <div class="past-history-tags">
-                    <span class="tag">${esc(student.school || '학교 미입력')}</span>
+                    <span class="tag">${esc(currentSchool(student) || '학교 미입력')}</span>
                     ${student.grade ? `<span class="tag">${esc(student.grade)}학년</span>` : ''}
                     ${student.level ? `<span class="tag">${esc(student.level)}</span>` : ''}
                     <span class="tag tag-status past-history-status-tag">${esc(status)}</span>

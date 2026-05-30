@@ -7,6 +7,7 @@
  * 또는 Google Sheets로 내보낼 수 있다.
  */
 import { state } from './store.js';
+import { currentSchool } from '@impact7/shared/student-label';
 import {
     normalizeRealLevelGrade,
     gridKeyFor,
@@ -314,7 +315,7 @@ function buildRows() {
             id: s.id,
             name: s.name || '',
             branch,
-            schoolGrade: buildSchoolGradeStr(s.school, norm),
+            schoolGrade: buildSchoolGradeStr(currentSchool(s), norm),
             classCode: isPast ? pickLastCode(s) : pickActiveCodes(s),
             phone: anyPhone, // 정렬·병합 키 (선택 중 가장 우선순위 높은 번호)
             phones,          // { parent_phone_1: '010-1', student_phone: '' ... }
