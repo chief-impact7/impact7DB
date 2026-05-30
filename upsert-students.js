@@ -23,6 +23,18 @@ import { createInterface } from 'readline';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { cleanSchoolName, normalizeStudentSchools } from './school-normalizer.js';
+import { SCHOOL_FIELD } from '@impact7/shared/student-label';
+
+// 작업용 .school(temp) → 학부별 필드(SCHOOL_FIELD[level])로 옮기고 .school 키 제거.
+// students 문서에 bare school 미러를 쓰지 않는다 (school_* 가 SSoT).
+function toPersistFields(obj) {
+    const out = { ...obj };
+    const field = SCHOOL_FIELD[out.level];
+    const sch = cleanSchoolName(out.school || '');
+    delete out.school;
+    if (field && sch) out[field] = sch;
+    return out;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -134,7 +146,7 @@ function enrollmentsEqual(a, b) {
 
 /** Compare basic info fields between existing and new */
 function diffBasicInfo(existing, incoming) {
-    const fields = ['name', 'level', 'school', 'grade', 'student_phone',
+    const fields = ['name', 'level', 'grade', 'student_phone',
                     'parent_phone_1', 'parent_phone_2', 'branch', 'status'];
     const changes = {};
     for (const f of fields) {
@@ -143,6 +155,14 @@ function diffBasicInfo(existing, incoming) {
         if (newVal && newVal !== oldVal) {
             changes[f] = { old: oldVal, new: newVal };
         }
+    }
+    // school: 입력 학교를 해당 학부 필드(SCHOOL_FIELD[level])와 비교 → 변경 시 그 필드에 기록.
+    // bare school 미러는 쓰지 않는다.
+    const diffLevel = (incoming.level || existing.level || '').toString().trim();
+    const diffField = SCHOOL_FIELD[diffLevel];
+    const diffSchool = cleanSchoolName(incoming.school || '').trim();
+    if (diffField && diffSchool && diffSchool !== (existing[diffField] || '').trim()) {
+        changes[diffField] = { old: (existing[diffField] || '').trim(), new: diffSchool };
     }
     return changes;
 }
@@ -320,7 +340,7 @@ async function upsertStudents() {
         if (!ex) {
             // ── INSERT: new student ──
             results.inserted.push(docId);
-            writes.push({ docId, data: incoming, type: 'set' });
+            writes.push({ docId, data: toPersistFields(incoming), type: 'set' });
             logEntries.push({
                 doc_id: docId,
                 change_type: 'ENROLL',
@@ -353,7 +373,7 @@ async function upsertStudents() {
             // If found via old docId, delete old and create new
             if (foundViaOldId) {
                 writes.push({ docId: oldDocId, data: null, type: 'delete' });
-                writes.push({ docId, data: { ...ex, ...updateData }, type: 'set' });
+                writes.push({ docId, data: toPersistFields({ ...ex, ...updateData }), type: 'set' });
             } else {
                 writes.push({ docId, data: updateData, type: 'merge' });
             }

@@ -4893,7 +4893,10 @@ window.applyBulkPromotion = async () => {
             const s = allStudents.find(s => s.id === c.id);
             if (!s) return;
             Object.assign(s, c.updateData);
-            s.school_level_grade = studentFullLabel(s);
+            // 트리거 computeLabelUpdate와 동일 가드: 학부필드가 하나라도 있을 때만 라벨 갱신(미입력 학생 보존).
+            if (s.school_elementary || s.school_middle || s.school_high) {
+                s.school_level_grade = studentFullLabel(s);
+            }
         });
 
         document.getElementById('bulk-promote-school').value = '';
@@ -6286,8 +6289,11 @@ window.runPromotion = async () => {
             }
             s.grade = p.grade;
             s.level = p.level;
-            // 트리거 onStudentLabelSync가 쓸 라벨을 로컬에도 즉시 반영(stale 방지·멱등).
-            s.school_level_grade = studentFullLabel(s);
+            // 트리거 onStudentLabelSync(computeLabelUpdate)와 동일 가드: 학부필드가 하나라도
+            // 있을 때만 라벨 갱신(학교 미입력 학생은 기존값 보존 → 로컬·Firestore 일치·멱등).
+            if (s.school_elementary || s.school_middle || s.school_high) {
+                s.school_level_grade = studentFullLabel(s);
+            }
         }
         applyFilterAndRender();
         alert('승급 완료!');
