@@ -57,13 +57,4 @@ export function normalizeSchoolName(school, level, knownSchools = new Set()) {
     return value;
 }
 
-export function schoolSearchTerms(student) {
-    const school = cleanSchoolName(schoolOf(student));
-    const levelShort = levelShortName(student?.level);
-    const grade = student?.grade ? String(student.grade).replace(/[^0-9]/g, '') : '';
-    return [
-        school,
-        school && levelShort ? `${school}${levelShort}` : '',
-        school && levelShort && grade ? `${school}${levelShort}${grade}` : '',
-    ].filter(Boolean);
-}
+export { studentSearchTerms as schoolSearchTerms } from '@impact7/shared/student-label';
