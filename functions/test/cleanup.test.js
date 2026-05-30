@@ -28,7 +28,7 @@ describe('cleanup._internals._countNaesinStudents', () => {
             name: '김학생',
             branch: '2단지',
             level: '중등',
-            school: '신목',
+            school_middle: '신목',
             grade: '2',
             enrollments: [{ class_type: '정규', level_symbol: 'A', class_number: '101' }],
         }];
@@ -42,7 +42,7 @@ describe('cleanup._internals._countNaesinStudents', () => {
             docId: 'a',
             branch: '10단지',
             level: '중등',
-            school: '양정',
+            school_middle: '양정',
             grade: '3',
             enrollments: [{ class_type: '정규', level_symbol: 'A', class_number: '202', naesin_class_override: '10단지수동매핑' }],
         }];
@@ -55,7 +55,7 @@ describe('cleanup._internals._countNaesinStudents', () => {
             docId: 'a',
             branch: '2단지',
             level: '중등',
-            school: '신목',
+            school_middle: '신목',
             grade: '2',
             enrollments: [{ class_type: '정규', level_symbol: 'A', class_number: '101', naesin_class_override: '' }],
         }];
@@ -133,7 +133,7 @@ describe('runClassCleanup', () => {
                 docId: 'a',
                 branch: '2단지',
                 level: '중등',
-                school: '신목',
+                school_middle: '신목',
                 grade: '2',
                 enrollments: [{ class_type: '정규', level_symbol: 'A', class_number: '101' }],
             }],

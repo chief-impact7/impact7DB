@@ -2,6 +2,12 @@
 // Cloud Function에서 자동 정리 시 자동 유도 학생을 정확히 카운트하기 위함.
 
 const LEVEL_SHORT = { '초등': '초', '중등': '중', '고등': '고' };
+// 현재 학부의 학교명 소스. @impact7/shared의 currentSchool과 동일(정규화 없는 raw).
+// functions(leave-request)는 @impact7/shared 미의존 → inline 미러.
+const SCHOOL_FIELD = { '초등': 'school_elementary', '중등': 'school_middle', '고등': 'school_high' };
+function currentSchool(student) {
+    return student?.[SCHOOL_FIELD[student?.level]] || '';
+}
 export const NAESIN_OVERRIDE_EXCLUDE = '';
 
 export function branchFromStudent(s) {
@@ -26,7 +32,7 @@ export function buildNaesinCsKey({ branch, school, level, grade, group }) {
 }
 
 export function deriveNaesinCode(student, enrollment) {
-    const school = student.school || '';
+    const school = currentSchool(student);
     const levelShort = LEVEL_SHORT[student.level] || '';
     const grade = student.grade || '';
     if (!school || !grade) return '';

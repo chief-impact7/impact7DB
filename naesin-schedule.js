@@ -2,6 +2,7 @@ import { state } from './store.js';
 import { db } from './firebase-config.js';
 import { writeBatch, doc, collection, serverTimestamp } from 'firebase/firestore';
 import { cleanSchoolName, levelShortName } from './school-normalizer.js';
+import { currentSchool } from '@impact7/shared/student-label';
 
 // ===========================================================================
 // 내신 시간표 일괄 설정
@@ -20,7 +21,7 @@ const esc = (str) => {
 const escAttr = (str) => (str ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 function abbreviateSchool(s) {
-    const school = cleanSchoolName(s.school)
+    const school = cleanSchoolName(currentSchool(s))
         .replace(/고등학교$/, '').replace(/중학교$/, '').replace(/초등학교$/, '').replace(/학교$/, '').trim();
     const ls = levelShortName(s.level || '');
     let grade = '';
@@ -64,7 +65,7 @@ function buildNaesinGroups() {
 
     const groupMap = {};
     for (const s of targets) {
-        const school = s.school || '학교미입력';
+        const school = currentSchool(s) || '학교미입력';
         const grade = s.grade || '?';
         const key = `${school}_${s.level}_${grade}`;
         const label = abbreviateSchool(s) || `${school}_${s.level}_${grade}`;

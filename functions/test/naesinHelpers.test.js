@@ -104,7 +104,7 @@ describe('buildNaesinCsKey', () => {
 // deriveNaesinCode
 // ---------------------------------------------------------------------------
 describe('deriveNaesinCode', () => {
-    const baseStudent = { school: '을지중', level: '중등', grade: '2', enrollments: [] };
+    const baseStudent = { school_middle: '을지중', level: '중등', grade: '2', enrollments: [] };
 
     it('class_number 마지막 자리 홀수 → A 그룹', () => {
         const enrollment = { class_number: '101' };
@@ -135,8 +135,8 @@ describe('deriveNaesinCode', () => {
         expect(deriveNaesinCode(s, enrollment)).toBe('을지중중2A');
     });
 
-    it('school 없으면 빈 문자열', () => {
-        const s = { ...baseStudent, school: '' };
+    it('현재 학부 학교(currentSchool) 없으면 빈 문자열', () => {
+        const s = { ...baseStudent, school_middle: '' };
         expect(deriveNaesinCode(s, { class_number: '101' })).toBe('');
     });
 
@@ -150,7 +150,7 @@ describe('deriveNaesinCode', () => {
 // resolveNaesinCsKey
 // ---------------------------------------------------------------------------
 describe('resolveNaesinCsKey', () => {
-    const student = { branch: '2단지', school: '을지중', level: '중등', grade: '2', enrollments: [] };
+    const student = { branch: '2단지', school_middle: '을지중', level: '중등', grade: '2', enrollments: [] };
 
     it('regularEnroll 없으면 null', () => {
         expect(resolveNaesinCsKey(student, null)).toBeNull();
@@ -173,7 +173,7 @@ describe('resolveNaesinCsKey', () => {
     });
 
     it('자동 유도 결과가 빈 문자열이면 null', () => {
-        const s = { ...student, school: '' }; // school 없음 → deriveNaesinCode 빈 문자열
+        const s = { ...student, school_middle: '' }; // 현재 학부 학교 없음 → deriveNaesinCode 빈 문자열
         const e = { class_number: '101' };
         expect(resolveNaesinCsKey(s, e)).toBeNull();
     });
