@@ -10,7 +10,7 @@ import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber } from '@impact7/shared/student-number';
 import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod } from '@impact7/shared/enrollment-derivation';
 import { moveClass } from '@impact7/shared/class-move';
-import { currentSchool, SCHOOL_FIELD } from '@impact7/shared/student-label';
+import { currentSchool, SCHOOL_FIELD, studentFullLabel } from '@impact7/shared/student-label';
 import './naesin-schedule.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -4888,10 +4888,12 @@ window.applyBulkPromotion = async () => {
             await batch.commit();
         }
 
-        // 로컬 데이터 업데이트
+        // 로컬 데이터 업데이트 — Firestore write와 동일 필드 + 트리거가 쓸 라벨까지 즉시 반영(stale 방지).
         changes.forEach(c => {
             const s = allStudents.find(s => s.id === c.id);
-            if (s) Object.assign(s, c.updateData);
+            if (!s) return;
+            Object.assign(s, c.updateData);
+            s.school_level_grade = studentFullLabel(s);
         });
 
         document.getElementById('bulk-promote-school').value = '';
@@ -6284,6 +6286,8 @@ window.runPromotion = async () => {
             }
             s.grade = p.grade;
             s.level = p.level;
+            // 트리거 onStudentLabelSync가 쓸 라벨을 로컬에도 즉시 반영(stale 방지·멱등).
+            s.school_level_grade = studentFullLabel(s);
         }
         applyFilterAndRender();
         alert('승급 완료!');
