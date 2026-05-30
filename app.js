@@ -1170,9 +1170,9 @@ function applyFilterAndRender() {
             const cutoff = cutoffs[s.level];
             if (!cutoff) return false;
             if (st === '퇴원') return s.withdrawal_date && s.withdrawal_date >= cutoff;
-            // 상담/종강: updated_at 기준
-            const updatedStr = s.updated_at?.toDate?.()?.toISOString?.()?.slice(0, 10);
-            return updatedStr ? updatedStr >= cutoff : false;
+            // 상담/종강: updated_at 기준, 없으면 first_registered 폴백
+            const ts = (s.updated_at?.toDate?.()?.toISOString?.()?.slice(0, 10)) || s.first_registered || '';
+            return ts ? ts >= cutoff : false;
         });
     }
 
