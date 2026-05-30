@@ -10,6 +10,7 @@ import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber } from '@impact7/shared/student-number';
 import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod } from '@impact7/shared/enrollment-derivation';
 import { moveClass } from '@impact7/shared/class-move';
+import { currentSchool, SCHOOL_FIELD } from '@impact7/shared/student-label';
 import './naesin-schedule.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -156,7 +157,10 @@ const _prefillNewStudentForm = (s) => {
         if (!f) return;
         f.name.value = s.name || '';
         if (s.level) f.level.value = s.level;
-        if (s.school) f.school.value = s.school;
+        if (currentSchool(s)) f.school_current.value = currentSchool(s);
+        if (s.school_elementary) f.school_elementary.value = s.school_elementary;
+        if (s.school_middle) f.school_middle.value = s.school_middle;
+        if (s.school_high) f.school_high.value = s.school_high;
         if (s.grade) f.grade.value = s.grade;
         if (s.student_phone) f.student_phone.value = s.student_phone;
         if (s.parent_phone_1) f.parent_phone_1.value = s.parent_phone_1;
@@ -2093,7 +2097,10 @@ window.showEditForm = () => {
     // Pre-fill 기본 정보 + 연락처
     f.name.value = student.name || '';
     f.level.value = student.level || '초등';
-    f.school.value = student.school || '';
+    f.school_current.value = currentSchool(student);
+    f.school_elementary.value = student.school_elementary || '';
+    f.school_middle.value = student.school_middle || '';
+    f.school_high.value = student.school_high || '';
     f.grade.value = student.grade || '';
     f.student_phone.value = student.student_phone || '';
     f.parent_phone_1.value = student.parent_phone_1 || '';
@@ -2178,11 +2185,26 @@ window.submitNewStudent = async () => {
     const grade = f.grade.value.trim().replace(/[^0-9]/g, '');
     const level = f.level.value;
     const knownSchools = collectKnownSchoolNames(allStudents);
-    const school = normalizeSchoolName(f.school.value, level, knownSchools);
+
+    // school_current(현재 학부 칸)을 level의 학부별 필드에 우선 반영 후 normalize.
+    const curField = SCHOOL_FIELD[level];
+    const schoolByLevel = {
+        school_elementary: (f.school_elementary.value || '').trim(),
+        school_middle: (f.school_middle.value || '').trim(),
+        school_high: (f.school_high.value || '').trim(),
+    };
+    // 현재 학부 칸이 입력되면 접기 칸보다 우선(현재 학부의 최종 값)
+    const curInput = (f.school_current.value || '').trim();
+    if (curInput && curField) schoolByLevel[curField] = curInput;
+    // 모든 학부 학교명 정규화(현재·이전 일관)
+    for (const [lv, field] of Object.entries(SCHOOL_FIELD)) {
+        if (schoolByLevel[field]) schoolByLevel[field] = normalizeSchoolName(schoolByLevel[field], lv, knownSchools);
+    }
+    const school = schoolByLevel[curField] || ''; // 미러용 현재 학부 학교
 
     if (!name) { alert('이름을 입력하세요.'); f.name.focus(); return; }
     if (!parentPhone1) { alert('학부모 연락처를 입력하세요.'); f.parent_phone_1.focus(); return; }
-    if (!school) { alert('학교를 입력하세요.'); f.school.focus(); return; }
+    if (!school) { alert('학교를 입력하세요.'); f.school_current.focus(); return; }
     if (!grade) { alert('학년을 입력하세요.'); f.grade.focus(); return; }
     if (!level) { alert('학부(초/중/고)를 선택하세요.'); f.level.focus(); return; }
 
@@ -2242,6 +2264,7 @@ window.submitNewStudent = async () => {
         studentData = {
             name,
             level,
+            ...schoolByLevel,
             school,
             grade,
             student_phone: f.student_phone.value.trim(),
@@ -2288,6 +2311,7 @@ window.submitNewStudent = async () => {
         studentData = {
             name,
             level,
+            ...schoolByLevel,
             school,
             grade,
             student_phone: f.student_phone.value.trim(),

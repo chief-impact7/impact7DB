@@ -679,7 +679,13 @@
                                     </div>
                                     <div class="form-field">
                                         <label class="field-label">학교</label>
-                                        <input class="field-input" name="school" type="text" placeholder="○○초등학교">
+                                        <input class="field-input" name="school_current" type="text" placeholder="현재 학부 학교 (예: 봉영여중)">
+                                        <details class="prev-school-fold" style="margin-top:6px;">
+                                          <summary style="cursor:pointer;font-size:13px;color:#888;">이전 학부 학교 입력</summary>
+                                          <input class="field-input" name="school_elementary" type="text" placeholder="초등 학교명" style="margin-top:6px;">
+                                          <input class="field-input" name="school_middle" type="text" placeholder="중등 학교명" style="margin-top:6px;">
+                                          <input class="field-input" name="school_high" type="text" placeholder="고등 학교명" style="margin-top:6px;">
+                                        </details>
                                     </div>
                                     <div class="form-field">
                                         <label class="field-label">학년</label>

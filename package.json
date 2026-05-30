@@ -14,14 +14,16 @@
     "check": "node --env-file=.env check-duplicates.js",
     "dedup": "node --env-file=.env dedup-students.js",
     "migrate:semester": "node migrate-semester.js",
-    "migrate:semester:run": "node migrate-semester.js --run"
+    "migrate:semester:run": "node migrate-semester.js --run",
+    "migrate:label": "node migrate-school-label.js",
+    "migrate:label:run": "node migrate-school-label.js --run"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@impact7/shared": "github:chief-impact7/impact7-shared#v1.12.0",
+    "@impact7/shared": "github:chief-impact7/impact7-shared#v1.14.0",
     "firebase": "^12.9.0"
   },
   "devDependencies": {
