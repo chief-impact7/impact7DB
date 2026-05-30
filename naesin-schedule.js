@@ -1,15 +1,12 @@
 import { state } from './store.js';
 import { db } from './firebase-config.js';
 import { writeBatch, doc, collection, serverTimestamp } from 'firebase/firestore';
-import { cleanSchoolName, levelShortName } from './school-normalizer.js';
-import { currentSchool } from '@impact7/shared/student-label';
+import { currentSchool, studentFullLabel } from '@impact7/shared/student-label';
 
 // ===========================================================================
 // 내신 시간표 일괄 설정
 // ===========================================================================
 
-const LEVEL_MAX_GRADE = { '초등': 6, '중등': 3, '고등': 3 };
-const NEXT_LEVEL = { '초등': '중등', '중등': '고등' };
 const NAESIN_DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const NAESIN_ACTIVE_STATUSES = new Set(['재원', '등원예정']);
 
@@ -20,18 +17,7 @@ const esc = (str) => {
 };
 const escAttr = (str) => (str ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-function abbreviateSchool(s) {
-    const school = cleanSchoolName(currentSchool(s))
-        .replace(/고등학교$/, '').replace(/중학교$/, '').replace(/초등학교$/, '').replace(/학교$/, '').trim();
-    const ls = levelShortName(s.level || '');
-    let grade = '';
-    if (s.grade) {
-        const gradeNum = parseInt(s.grade, 10);
-        const maxGrade = LEVEL_MAX_GRADE[s.level];
-        grade = (!NEXT_LEVEL[s.level] && maxGrade && gradeNum > maxGrade) ? `${maxGrade}+` : s.grade;
-    }
-    return `${school}${ls}${grade}`.trim() || '—';
-}
+const abbreviateSchool = (s) => studentFullLabel(s) || '';
 
 let _naesinState = { startDate: '', endDate: '', groups: {} };
 

@@ -2,7 +2,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { collection, getDocs, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
 import { auth, db } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
-import { cleanSchoolName, collectKnownSchoolNames, levelShortName, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
+import { cleanSchoolName, collectKnownSchoolNames, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor, deriveTenure } from '@impact7/shared/history';
 import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES, NON_ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
@@ -345,21 +345,8 @@ const activeBranchesFromStudent = (s) => {
 
 const activeDays = (s) => [...new Set(relevantEnrollments(s).flatMap(e => normalizeDays(e.day)))];
 
-// 학교명 축약 표시 (예: 진명여자고등학교 고등 2학년 → 진명여고2)
-const abbreviateSchool = (s) => {
-    const school = cleanSchoolName(currentSchool(s))
-        .replace(/고등학교$/, '')
-        .replace(/중학교$/, '')
-        .replace(/초등학교$/, '')
-        .replace(/학교$/, '')
-        .trim();
-    const level = s.level || '';
-    const levelShort = levelShortName(level);
-    const gradeNum = parseInt(s.grade, 10);
-    const maxGrade = LEVEL_MAX_GRADE[level];
-    const grade = s.grade ? (!NEXT_LEVEL[level] && maxGrade && gradeNum > maxGrade ? `${maxGrade}+` : `${s.grade}`) : '';
-    return `${school}${levelShort}${grade}`.trim() || '—';
-};
+// 학교+학부+학년 표시 (전역 전환 studentFullLabel로 통일)
+const abbreviateSchool = (s) => studentFullLabel(s) || '—';
 
 // ---------------------------------------------------------------------------
 // day 필드 정규화 → 배열 (예: "월요일" → ["월"], ["월","수"] → ["월","수"])
