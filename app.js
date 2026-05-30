@@ -4685,7 +4685,24 @@ window.applyBulkClass = async () => {
     const levelSymbol = match[1];
     const classNumber = match[2];
 
-    if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${sem} 정규반을 '${raw}'(으)로 변경합니다.`)) return;
+    const regularCodes = new Set();
+    allStudents.forEach(s => {
+        if (!ENROLLABLE_STATUSES.has(s.status)) return;
+        (s.enrollments || []).forEach(e => {
+            if ((e.class_type || '정규') === '정규' && e.semester === sem) {
+                const code = enrollmentCode(e).toUpperCase();  // 입력 raw도 toUpperCase — 대소문자 무관 비교
+                if (code) regularCodes.add(code);
+            }
+        });
+    });
+    if (!regularCodes.has(raw)) {
+        alert(`존재하지 않는 반입니다: ${raw}\n현재 ${sem} 정규반에 있는 반코드로만 이동할 수 있습니다.`);
+        return;
+    }
+
+    const startDate = document.getElementById('bulk-class-startdate')?.value || '';
+
+    if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${sem} 정규반을 '${raw}'(으)로 이동합니다.`)) return;
 
     const ids = [...selectedStudentIds];
     const newBranch = branchFromClassNumber(classNumber);
@@ -4707,6 +4724,11 @@ window.applyBulkClass = async () => {
             }
             if (warning) warnings.push(warning);
 
+            if (startDate) {
+                const mIdx = updatedEnrollments.findIndex(e => (e.class_type || '정규') === '정규' && e.semester === sem);
+                if (mIdx >= 0) updatedEnrollments[mIdx] = { ...updatedEnrollments[mIdx], start_date: startDate };
+            }
+
             const updateData = { enrollments: updatedEnrollments };
             if (newBranch) updateData.branch = newBranch;
             changes.push({ id, name: student.name, from: before, to: after, enrollments: updatedEnrollments, updateData });
@@ -4727,7 +4749,7 @@ window.applyBulkClass = async () => {
                 const historyRef = doc(collection(db, 'history_logs'));
                 batch.set(historyRef, {
                     doc_id: c.id, change_type: 'UPDATE',
-                    before: `반: ${c.from}`, after: `반: ${c.to} (일괄변경)`,
+                    before: `반: ${c.from}`, after: `반: ${c.to} (일괄 이동)`,
                     google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
                 });
             });
@@ -4743,10 +4765,12 @@ window.applyBulkClass = async () => {
         });
 
         document.getElementById('bulk-class-code').value = '';
+        const sdEl = document.getElementById('bulk-class-startdate');
+        if (sdEl) sdEl.value = '';
         buildClassFilterSidebar();
         applyFilterAndRender();
         updateBulkEditSummary();
-        let msg = `${changes.length}명의 반을 '${raw}'(으)로 변경했습니다. (${sem} 정규)`;
+        let msg = `${changes.length}명의 반을 '${raw}'(으)로 이동했습니다. (${sem} 정규)`;
         if (skipped.length) msg += `\n\n⚠️ 제외 ${skipped.length}명: ${skipped.join(', ')}\n(해당 학기 정규 수업이 없거나 반명 충돌)`;
         if (warnings.length) msg += `\n\n⚠️ 내신 매핑 주의:\n${warnings.join('\n')}`;
         alert(msg);
@@ -4844,6 +4868,8 @@ window.resetBulkStatus = () => {
 window.resetBulkClass = () => {
     const el = document.getElementById('bulk-class-code');
     if (el) el.value = '';
+    const sd = document.getElementById('bulk-class-startdate');
+    if (sd) sd.value = '';
 };
 window.resetBulkDays = () => {
     document.querySelectorAll('#bulk-day-checkboxes input').forEach(cb => cb.checked = false);
@@ -4946,6 +4972,75 @@ window.applyBulkPromotion = async () => {
 
 window.resetBulkPromotion = () => {
     document.getElementById('bulk-promote-school').value = '';
+};
+
+// ---------------------------------------------------------------------------
+// 일괄 학교이름 변경 (우측 패널) — 선택 학부의 school_* 필드만 변경, level/grade 미변경
+// ---------------------------------------------------------------------------
+window.applyBulkSchool = async () => {
+    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
+
+    const level = document.querySelector('input[name="bulk-school-level"]:checked')?.value;
+    if (!level) { alert('학부(초/중/고)를 선택하세요.'); return; }
+
+    const rawName = document.getElementById('bulk-school-name').value.trim();
+    if (!rawName) { alert('학교명을 입력하세요.'); return; }
+
+    const knownSchools = collectKnownSchoolNames(allStudents);
+    const schoolName = normalizeSchoolName(rawName, level, knownSchools);
+    const field = SCHOOL_FIELD[level];
+
+    const changes = [...selectedStudentIds].reduce((acc, id) => {
+        const s = allStudents.find(s => s.id === id);
+        if (s) acc.push({ id, name: s.name, before: s[field] || '—' });
+        return acc;
+    }, []);
+
+    if (changes.length === 0) { alert('변경할 학생이 없습니다.'); return; }
+
+    if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${level} 학교를 '${schoolName}'(으)로 설정합니다.`)) return;
+
+    try {
+        const BATCH_SIZE = 200;
+        for (let i = 0; i < changes.length; i += BATCH_SIZE) {
+            const chunk = changes.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(c => {
+                batch.update(doc(db, 'students', c.id), { [field]: schoolName });
+                const historyRef = doc(collection(db, 'history_logs'));
+                batch.set(historyRef, {
+                    doc_id: c.id, change_type: 'UPDATE',
+                    before: `${level}학교: ${c.before}`, after: `${level}학교: ${schoolName} (일괄)`,
+                    google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                });
+            });
+            await batch.commit();
+        }
+
+        changes.forEach(c => {
+            const s = allStudents.find(s => s.id === c.id);
+            if (!s) return;
+            s[field] = schoolName;
+            if (s.school_elementary || s.school_middle || s.school_high) {
+                s.school_level_grade = studentFullLabel(s);
+            }
+        });
+
+        window.resetBulkSchool();
+        applyFilterAndRender();
+        updateBulkEditSummary();
+        alert(`${changes.length}명의 ${level} 학교를 '${schoolName}'(으)로 변경했습니다.`);
+    } catch (e) {
+        console.error('[BULK SCHOOL ERROR]', e);
+        alert('일괄 학교 변경 실패: ' + e.message);
+    }
+};
+
+window.resetBulkSchool = () => {
+    document.querySelectorAll('input[name="bulk-school-level"]').forEach(r => r.checked = false);
+    const el = document.getElementById('bulk-school-name');
+    if (el) el.value = '';
 };
 
 // ---------------------------------------------------------------------------

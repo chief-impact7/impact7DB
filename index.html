@@ -439,15 +439,33 @@
                             </div>
                         </div>
 
-                        <!-- 반 일괄 변경 -->
+                        <!-- 반 일괄 이동 -->
                         <div class="bulk-edit-section">
                             <h4 class="bulk-edit-section-title">
-                                <span class="material-symbols-outlined">class</span>반 변경
+                                <span class="material-symbols-outlined">class</span>반 이동
                             </h4>
                             <div class="bulk-edit-row">
                                 <input class="field-input" id="bulk-class-code" type="text" placeholder="예: HS103" style="flex:1;">
+                                <input class="field-input" id="bulk-class-startdate" type="date" title="이동 시작일 (선택)" style="flex:1;">
                                 <button class="btn-save bulk-apply-btn" onclick="window.applyBulkClass()">적용</button>
                                 <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkClass()">초기화</button>
+                            </div>
+                        </div>
+
+                        <!-- 학교이름 변경 -->
+                        <div class="bulk-edit-section">
+                            <h4 class="bulk-edit-section-title">
+                                <span class="material-symbols-outlined">school</span>학교이름 변경
+                            </h4>
+                            <div class="bulk-edit-row" style="gap:12px;">
+                                <label class="day-check"><input type="radio" name="bulk-school-level" value="초등">초</label>
+                                <label class="day-check"><input type="radio" name="bulk-school-level" value="중등">중</label>
+                                <label class="day-check"><input type="radio" name="bulk-school-level" value="고등">고</label>
+                            </div>
+                            <div class="bulk-edit-row" style="margin-top:8px;">
+                                <input class="field-input" id="bulk-school-name" type="text" placeholder="새 학교명" style="flex:1;">
+                                <button class="btn-save bulk-apply-btn" onclick="window.applyBulkSchool()">적용</button>
+                                <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkSchool()">초기화</button>
                             </div>
                         </div>
 
