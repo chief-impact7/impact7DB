@@ -45,4 +45,5 @@
 - [학생 필드 추가 시 rules 동기화 필수](feedback_student_field_rules_sync.md) — students client write 필드는 rules allowed에 넣어야 함. 누락 시 폼 저장 조용히 reject(admin은 우회), withinFieldLimit도 점검 (2026-05-30 school_* 버그)
 - [shared 버전 선점 충돌 주의](feedback_shared_version_conflict.md) — 크로스앱 실행 전 shared version·태그 확인, 점유됐으면 다음 번호로. npm link 사고 시 lock 미갱신 배포 깨짐 (2026-05-29)
 - 재원기간 기산일 = 첫 출석일로 변경(deriveTenure v1.12.0, attendances 인자). 상세: [내신/자유학기 파생](project_naesin_free_derivation.md) 재원기간 섹션
+- [심예율 핸드오프 3이슈 완료](project_simyeyul_handoff_fixes.md) — 소속 csKey 오인(branchFromClassNumber)·퇴원 수업추가 가드(RETURN 로그)·재원기간 무로그 재등원 보정(deriveTenure v1.17.0 isCurrentlyEnrolled). DB/DSC/shared 배포, 데이터 미수정 (2026-05-30)
 - [학부별 학교명 + 라벨](project_school_by_level.md) — school_elementary/middle/high + studentFullLabel(예측 학부 기준 v1.15.0, 정규화 약어·지역명17·예외14) + 트리거 동기화+가드. 전체 15,032명 백필. 졸업생 "고(졸업+N)" 예측(B 완료). **전역 전환 전 항목 완료**(2026-05-30): ①표시·검색 3앱 통일 ②rules school_* 화이트리스트 버그 수정 ③구 school 미러 완전 제거(블로커 exam·내신키·newtest + read전환/write중단 + **데이터 15,675건 백업후 삭제** + rules school 제거) ④검색어 shared 공통화(v1.16.0, DB 회귀 교정) ⑤학년승급 캐시 동기화. DB/DSC/exam/newtest/shared/functions 전부 배포. 미러 백업 `_workspace/school-mirror-backup.json`
