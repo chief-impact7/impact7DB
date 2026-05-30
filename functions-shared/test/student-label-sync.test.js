@@ -18,7 +18,11 @@ describe('computeLabelUpdate', () => {
     const r = computeLabelUpdate({ level: '중등', grade: 1, school_middle: '봉영여중', school: '봉영여중', school_level_grade: '봉영여중1' });
     expect(r).toBeNull();
   });
-  it('currentSchool 빈값이면 null (미마이그레이션 보호)', () => {
+  it('진학 예측(고 학교 없음)도 라벨 생성 — 학부 필드 하나라도 있으면', () => {
+    const r = computeLabelUpdate({ level: '중등', grade: 7, school_middle: '봉영여', school_level_grade: '구값' });
+    expect(r.school_level_grade).toBe('고(졸업+1)');
+  });
+  it('학부별 필드 전무 → null (미마이그레이션만 skip)', () => {
     const r = computeLabelUpdate({ level: '중등', grade: 1, school: '봉영여중', school_level_grade: '봉영여중1' });
     expect(r).toBeNull();
   });
