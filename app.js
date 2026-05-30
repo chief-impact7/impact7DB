@@ -4409,7 +4409,8 @@ async function fillTenure(studentId, studentData) {
         const { start, end, startEvent } = deriveTenure(
             logs,
             (l) => l.timestamp?.toDate ? l.timestamp.toDate() : (l.timestamp ? new Date(l.timestamp) : null),
-            attendances
+            attendances,
+            ENROLLABLE_STATUSES.has(studentData.status)  // 현재 재원계열이면 무로그 퇴원 end 무효
         );
         el.textContent = formatTenure(start, end, startEvent, studentData);
     } catch (e) {
