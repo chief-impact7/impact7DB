@@ -19,3 +19,8 @@ impact7newDSC 세션에서 심예율(`심예율_1049477532`) 조사 중 발견, 
 첫 출석 기산(deriveTenure v1.12.0~)은 이미 완료됐으나, 심예율은 03/13 무로그 재원 전환 때문에 `deriveTenure`가 퇴원(03/12)을 마지막으로 봐 **end=03/12 고정**(현재 재원인데 03-12~03-12 표시). **수정**: shared `deriveTenure(logs, getDate, attendances, isCurrentlyEnrolled=false)` 4번째 인자 추가(하위호환) → 현재 재원계열인데 history 마지막이 퇴원이면 `end=null`(현재 status가 진실). DB `fillTenure`=`ENROLLABLE_STATUSES.has(studentData.status)`, DSC=`isEnrollableStatus(student.status)` 전달([[feedback_db_dsc_parity]]). 심예율 재시뮬: end=null, start=03/13(첫출석)~현재 정상화. 이슈2가 앞으로의 무로그 전환을 막고, 이슈3이 기존 무로그 케이스 표시를 교정.
 
 **검증 스크립트**(read-only): `_workspace/check-simyeyul-tenure.mjs`. 산출물 `_workspace/43`(이슈2)·`44`(DSC parity).
+
+## 사후 simplify + code review (DB 50044ff)
+- simplify: branchFromClassNumber 중복 주석 1줄 정리.
+- code review(`_workspace/45`): critical 0, **major 1 수정**, minor 5. **F2-5(major)**: 문법특강 일괄 가드가 `NON_ENROLLABLE_STATUSES.has`라 **status 결손 레거시 학생을 못 걸러** enrollment 붙으면 rules 거부→200개 청크 batch 전원 롤백 → `!ENROLLABLE_STATUSES.has`로 전환(결손 커버). 이슈1·3 견고·이슈2 가드 정상 확인.
+- **미해결 minor(설계 합의 사항)**: 실휴원/가휴원도 ENROLLABLE이라 과거 퇴원이력 있으면 `deriveTenure` end=null로 "~현재" 표기 — 휴원=재원유지 관점이면 맞으나 확인 필요. 그 외 minor(다중 enrollment RETURN after `반:` 파싱 잘림=표시한정 무영향, 무로그 재등원 start가 직전 stint 출석 잡을 수 있음=핸드오프 허용 한계)는 영향 경미.
