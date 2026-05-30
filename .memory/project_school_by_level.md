@@ -47,7 +47,11 @@ metadata:
     - 마무리 단계1(read 전환): app.js(abbreviateSchool·과거학생폼·상세·시트export·승급폴백)·school-normalizer·past-history·promo-extractor·consultationAiHandler→currentSchool. autofill `_form.school` undefined throw 버그도 `school_current`로 교정. `schoolOf=currentSchool(s)||s?.school` 방어 fallback 유지.
     - 마무리 단계2(write 중단): onStudentLabelSync 미러 write 삭제(school_level_grade 라벨 write 유지), saveStudent/applyBulkPromotion/import/시트 payload의 `school` 키 제거(school_* 저장 유지). 게이트=미러 순수 read 0 grep. 구현 `_workspace/29`.
     - **이후 students write에 school 미러 미생성.** 데이터 15,032건 school은 **dead data 보존**(삭제 안 함).
-- ⏳ **전역 전환 잔여(선택·저우선)**: ①rules `students` 화이트리스트에서 `school` 제거(허용만이라 무해, 안 해도 됨) ②검색어 `studentSearchTerms` shared 공통화(DSC·exam·DB 각자 로컬 동일 패턴, v1.16.0 후보) ③학년승급 로컬캐시(allStudents) 학부별 필드 동기화(현재 트리거/리로드 의존).
+- **전역 전환 잔여 진행 중**:
+  - ✅①**rules school 제거 완료**(2026-05-30, DB 44bad8a 배포·4앱 동기화): 데이터 15,675건 **백업(`_workspace/school-mirror-backup.json` 롤백근거) 후 전수 deleteField 삭제**(잔여 0, 활성 손실 0, 위험 38건은 퇴원/상담 깨진값), rules allowed에서 `school` 제거. newtest cloudrun도 미러 write 제거·재배포(00069-vws). **구 school 미러 데이터·코드·rules 완전 소멸.** audit `_workspace/31`, 실행 `_workspace/32`.
+  - ✅②**검색어 shared 공통화 완료**(2026-05-30, shared v1.16.0 태그·push + DB 0fd91b0·DSC cfeb812·exam 9fc88e2 배포): `student-label.js`에 `studentSearchTerms`(exam 정본, 빈학교+Set중복제거) 추가, 3앱 로컬 `schoolSearchTerms`를 `export { studentSearchTerms as schoolSearchTerms }` 재노출로 교체(callsite 무수정). **DB만 raw 합성이던 검색 회귀를 정규화 기준으로 교정**(표시-검색 일치). exam .d.ts는 인덱스시그니처 TS2345 회피 위해 실제 읽는 필드만 선언. github 캐시 함정(v1.15.0 고정) 강제재설치로 교정. 분석 `_workspace/30`, 구현 `33`(exam)`34`(DSC)`35`(DB).
+  - ✅③**학년승급 로컬캐시 동기화 완료**(2026-05-30, DB d1370ad): `applyBulkPromotion`·`runPromotion`이 로컬 allStudents에 grade/level/school_*는 반영했으나 트리거가 쓰는 `school_level_grade`만 stale → 두 경로에 `s.school_level_grade = studentFullLabel(s)` 추가(멱등, 트리거 후속 write no-op). 화면 라벨은 원래 라이브 계산이라 정확, 검색/denormalized 필드 stale만 해소. 구현 `_workspace/36`.
+- ✅✅ **전역 전환 전 항목 완료**(표시·검색 3앱 통일 + rules 버그 + 구 school 미러 완전 제거[데이터·코드·rules] + 검색어 shared 공통화 v1.16.0 + 학년승급 캐시). DB·DSC·exam·newtest·shared·functions(leave-request·shared) 전부 배포. 미러 백업 `_workspace/school-mirror-backup.json` 보존.
   - **배포 체크리스트(내신키류)**: 배포 직전 `node _workspace/audit-naesin-stale.mjs`로 활성 내신 stale=0 재확인(진급·newtest발 stale 상시 재발 가능).
 - ⏳ 학년승급 로컬 캐시(allStudents) 학부별 필드 동기화(현재는 트리거/리로드 의존).
 
