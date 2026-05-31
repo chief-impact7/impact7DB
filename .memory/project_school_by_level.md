@@ -60,6 +60,7 @@ metadata:
   - ✅ **별건(선재) DailyLogBoard branch 정본 단일화 완료**(2026-05-30, DSC 290ec6c): 자체 `getBranch`(enrollments[0])·`buildNaesinKey` 삭제 → 정본 `branchFromStudent`(정규/자유학기 기준)·`resolveNaesinCsKey` import. enrollments 앞에 내신/특강 오면 branch 갈리던 일탈 교정(정상 diff 0, 일탈 3건). class_settings doc id는 이미 정본 키라 일탈 학생이 정상 매칭됨(마이그레이션 불요). override까지 정본 적용. 검증 `_workspace/37`, 수정 `40`·`41`·`42`.
   - **배포 체크리스트(내신키류)**: 배포 직전 `node _workspace/audit-naesin-stale.mjs`로 활성 내신 stale=0 재확인(진급·newtest발 stale 상시 재발 가능).
 - ⏳ 학년승급 로컬 캐시(allStudents) 학부별 필드 동기화(현재는 트리거/리로드 의존).
+- ✅ **newtest 화면 표시 라벨 통일 완료**(2026-05-31, gws-impact7-cli 커밋 e18fbd0·revision 00074-kcs 배포): 그간 newtest는 저장 필드(school_*)만 맞췄고 **표시는 원본 그대로**(상담 신청 카드 "봉영여자중3" 등)였음. `cloudrun/src/index.js` 3지점(대시보드 행·진단 카드·상담 신청 카드)을 `studentFullLabel`로 통일 → 봉영여중2/대원외고2. newtest가 처음으로 `@impact7/shared`(v1.22.0) 의존+import(이전엔 미의존·inline 미러). CJS라 **동적 import 프리로드+listen 게이팅** 패턴 사용. 외부 SMS 안내 문구는 정식 학교명 유지(사용자 결정). 상담 카드 중복 학부·학년 위젯 제거. 배포 함정(env 덮어쓰기) 회피 → [[feedback_newtest_shared_cjs_deploy]]. 분석 `_workspace/01_impact_analysis.md`. **에코시스템 표시 통일: DB/DSC/exam/newtest 적용, DashBoard/consultation/HR/qbank는 학생-학교 표시 지점 없어 해당없음.**
 
 ## 문서
 - Phase 1 설계/계획: `docs/superpowers/specs/2026-05-30-school-by-level-design.md`, `docs/superpowers/plans/2026-05-30-school-by-level.md`
