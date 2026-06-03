@@ -243,6 +243,11 @@ function blockOnEnrollmentConflicts(conflicts) {
 
 // 모든 enrollment의 코드 목록
 const allClassCodes = (s) => (s.enrollments || []).map(e => enrollmentCode(e)).filter(Boolean);
+const hasSpecialEnrollment = (enrollments) => (enrollments || []).some(e => e.class_type === '특강');
+function syncSpecialStatus2(data, allowDelete = true) {
+    if (hasSpecialEnrollment(data.enrollments)) data.status2 = '특강';
+    else if (allowDelete) data.status2 = deleteField();
+}
 
 // 단지 파생. 내신 csKey('2단지…'/'10단지…')는 접두로, 정규 반번호는 첫 숫자('1xx'→2단지, '2xx'→10단지)로.
 const branchFromClassNumber = (num) => {
@@ -2348,6 +2353,7 @@ window.submitNewStudent = async () => {
         if (isEditMode) studentData.enrollments = reconciled;
         else _newEnrollmentsForCreate = reconciled;
     }
+    if (isEditMode) syncSpecialStatus2(studentData);
 
     const saveBtn = document.getElementById('save-btn');
     saveBtn.disabled = true;
@@ -2467,6 +2473,7 @@ window.submitNewStudent = async () => {
                     ? [...(existingStudent.enrollments || []), ..._newEnrollmentsForCreate]
                     : (existingStudent.enrollments || []);
                 mergeData.status = _newStatusForCreate || existingStudent.status || '상담';
+                syncSpecialStatus2(mergeData);
                 if (!existingStudent.studentNumber) {
                     const { studentNumber, source } = deriveStudentNumber(mergeData);
                     if (studentNumber) {
@@ -2538,6 +2545,7 @@ window.submitNewStudent = async () => {
                     status: _newStatusForCreate || '상담',
                     enrollments: _newEnrollmentsForCreate,
                 };
+                syncSpecialStatus2(newStudentData, false);
                 const { studentNumber, source } = deriveStudentNumber(newStudentData);
                 if (studentNumber) {
                     const duplicate = findStudentNumberDuplicate(newStudentData.name, studentNumber, docId);
