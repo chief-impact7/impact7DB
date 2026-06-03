@@ -7,7 +7,7 @@ import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor, deriveTenure } from '@impact7/shared/history';
 import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES, NON_ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
-import { deriveStudentNumber } from '@impact7/shared/student-number';
+import { deriveStudentNumber, studentNumberIdentityKey } from '@impact7/shared/student-number';
 import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod } from '@impact7/shared/enrollment-derivation';
 import { moveClass } from '@impact7/shared/class-move';
 import { currentSchool, SCHOOL_FIELD, studentFullLabel } from '@impact7/shared/student-label';
@@ -567,15 +567,17 @@ function _showToast(message) {
 async function backfillStudentNumbers() {
     const targets = allStudents.filter(s => ENROLLABLE_STATUSES.has(s.status) && !s.studentNumber);
     if (targets.length === 0) return;
-    const assigned = new Set(allStudents.filter(s => s.studentNumber).map(s => s.studentNumber));
+    const assigned = new Set(allStudents.filter(s => s.studentNumber).map(s => studentNumberIdentityKey(s.name, s.studentNumber)));
     const batch = writeBatch(db);
     const pending = [];
     const duplicates = [];
     for (const s of targets) {
         const { studentNumber, source } = deriveStudentNumber(s);
         if (!studentNumber) continue;
-        if (assigned.has(studentNumber)) { duplicates.push(s.name); continue; }
-        assigned.add(studentNumber);
+        const key = studentNumberIdentityKey(s.name, studentNumber);
+        if (!key) continue;
+        if (assigned.has(key)) { duplicates.push(`${s.name} (#${studentNumber})`); continue; }
+        assigned.add(key);
         batch.update(doc(db, 'students', s.id), {
             studentNumber,
             studentNumberSource: source,
@@ -596,10 +598,20 @@ async function backfillStudentNumbers() {
         }
     }
     if (duplicates.length > 0) {
-        const msg = `학생번호 중복 발생 — 수동 확인 필요: ${duplicates.join(', ')}`;
+        const msg = `이름+학생번호 중복 발생 — 수동 확인 필요: ${duplicates.join(', ')}`;
         console.warn('[backfillStudentNumbers]', msg);
         _showToast(msg);
     }
+}
+
+function findStudentNumberDuplicate(name, studentNumber, excludeId = null) {
+    const key = studentNumberIdentityKey(name, studentNumber);
+    if (!key) return null;
+    return allStudents.find(s => s.id !== excludeId && studentNumberIdentityKey(s.name, s.studentNumber) === key) || null;
+}
+
+function alertStudentNumberDuplicate(name, studentNumber, duplicate) {
+    alert(`이름+학생번호가 이미 존재합니다.\n\n입력값: ${name} #${studentNumber}\n기존 학생: ${duplicate.name || duplicate.id} (${duplicate.status || '상태없음'})\n\n동명이인인 경우 이름 뒤에 숫자를 붙여 구분한 뒤 다시 저장하세요.`);
 }
 
 // 휴원 날짜 기반 자동 전환: 시작일 전이면 재원 유지, 시작일 도래 시 휴원 전환
@@ -684,9 +696,6 @@ async function handleScheduledWithdrawals() {
             batch.update(doc(db, 'students', s.id), {
                 status: '퇴원',
                 pre_withdrawal_status: deleteField(),
-                studentNumber: deleteField(),
-                studentNumberSource: deleteField(),
-                studentNumberIssuedAt: deleteField(),
                 updated_at: serverTimestamp(),
             });
             batch.set(doc(collection(db, 'history_logs')), {
@@ -696,9 +705,6 @@ async function handleScheduledWithdrawals() {
             });
             s.status = '퇴원';
             delete s.pre_withdrawal_status;
-            delete s.studentNumber;
-            delete s.studentNumberSource;
-            delete s.studentNumberIssuedAt;
             count++;
         }
     }
@@ -731,9 +737,6 @@ async function handleScheduledSpecialClassEnds() {
         if (remaining.length === 0) {
             const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
             updateData.status = hasRegular ? '퇴원' : '종강';
-            updateData.studentNumber = deleteField();
-            updateData.studentNumberSource = deleteField();
-            updateData.studentNumberIssuedAt = deleteField();
         }
 
         batch.update(doc(db, 'students', s.id), updateData);
@@ -751,9 +754,6 @@ async function handleScheduledSpecialClassEnds() {
         s.enrollments = remaining;
         if (updateData.status) {
             s.status = updateData.status;
-            delete s.studentNumber;
-            delete s.studentNumberSource;
-            delete s.studentNumberIssuedAt;
         }
         count++;
     }
@@ -2367,6 +2367,14 @@ window.submitNewStudent = async () => {
                     studentData.studentNumberIssuedAt = serverTimestamp();
                 }
             }
+            {
+                const finalStudentNumber = studentData.studentNumber || oldStudent.studentNumber;
+                const duplicate = findStudentNumberDuplicate(studentData.name, finalStudentNumber, docId);
+                if (duplicate) {
+                    alertStudentNumberDuplicate(studentData.name, finalStudentNumber, duplicate);
+                    return;
+                }
+            }
 
             const oldCodes = allClassCodes(oldStudent).join(', ') || '—';
             const newCodes = (studentData.enrollments || []).map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '—';
@@ -2467,6 +2475,14 @@ window.submitNewStudent = async () => {
                         mergeData.studentNumberIssuedAt = serverTimestamp();
                     }
                 }
+                {
+                    const finalStudentNumber = mergeData.studentNumber || existingStudent.studentNumber;
+                    const duplicate = findStudentNumberDuplicate(mergeData.name, finalStudentNumber, docId);
+                    if (duplicate) {
+                        alertStudentNumberDuplicate(mergeData.name, finalStudentNumber, duplicate);
+                        return;
+                    }
+                }
                 let appendNote = '';
                 if (_newEnrollmentsForCreate.length > 0) {
                     const firstNewBranch = branchFromClassNumber(_newEnrollmentsForCreate[0].class_number);
@@ -2524,6 +2540,11 @@ window.submitNewStudent = async () => {
                 };
                 const { studentNumber, source } = deriveStudentNumber(newStudentData);
                 if (studentNumber) {
+                    const duplicate = findStudentNumberDuplicate(newStudentData.name, studentNumber, docId);
+                    if (duplicate) {
+                        alertStudentNumberDuplicate(newStudentData.name, studentNumber, duplicate);
+                        return;
+                    }
                     newStudentData.studentNumber = studentNumber;
                     newStudentData.studentNumberSource = source;
                     newStudentData.studentNumberIssuedAt = serverTimestamp();
@@ -3231,9 +3252,6 @@ window.confirmEndClassSingle = async () => {
         const updateData = { enrollments: remaining, branch };
         if (isWithdraw) {
             updateData.status = finalStatus;
-            updateData.studentNumber = deleteField();
-            updateData.studentNumberSource = deleteField();
-            updateData.studentNumberIssuedAt = deleteField();
         }
 
         await setDoc(doc(db, 'students', studentId), updateData, { merge: true });
@@ -3296,9 +3314,6 @@ window.confirmEndClass = async () => {
                 const updateData = { enrollments: remaining, branch };
                 if (isWithdraw) {
                     updateData.status = finalStatus;
-                    updateData.studentNumber = deleteField();
-                    updateData.studentNumberSource = deleteField();
-                    updateData.studentNumberIssuedAt = deleteField();
                 }
 
                 batch.set(doc(db, 'students', s.id), updateData, { merge: true });
@@ -3331,9 +3346,6 @@ window.confirmEndClass = async () => {
             const updateData = { enrollments: remaining, branch };
             if (isWithdraw) {
                 updateData.status = hasRegular ? '퇴원' : '종강';
-                updateData.studentNumber = deleteField();
-                updateData.studentNumberSource = deleteField();
-                updateData.studentNumberIssuedAt = deleteField();
             }
             _upsertLocalStudent(s.id, updateData);
         });
@@ -5076,9 +5088,6 @@ window.confirmBulkDelete = async () => {
                 batch.set(doc(db, 'students', id), {
                     status: '퇴원',
                     withdrawal_date: getTodayDateStr(),
-                    studentNumber: deleteField(),
-                    studentNumberSource: deleteField(),
-                    studentNumberIssuedAt: deleteField(),
                 }, { merge: true });
                 const historyRef = doc(collection(db, 'history_logs'));
                 batch.set(historyRef, {
@@ -5093,9 +5102,6 @@ window.confirmBulkDelete = async () => {
         allStudents.forEach(s => {
             if (!selectedStudentIds.has(s.id)) return;
             s.status = '퇴원';
-            delete s.studentNumber;
-            delete s.studentNumberSource;
-            delete s.studentNumberIssuedAt;
         });
         window.closeBulkDeleteModal();
         window.exitBulkMode();
