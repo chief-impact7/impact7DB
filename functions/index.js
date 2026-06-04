@@ -6,6 +6,7 @@ import { setGlobalOptions } from 'firebase-functions/v2';
 import { finalize } from './src/finalize.js';
 import { runClassCleanup } from './src/cleanup.js';
 import { syncNaesinPeriod } from './src/syncNaesinPeriod.js';
+import { runScheduledWithdrawals } from './src/scheduledWithdrawals.js';
 
 initializeApp();
 getFirestore();
@@ -31,6 +32,24 @@ export const onScheduleClassCleanup = onSchedule(
       console.log('[onScheduleClassCleanup] 완료:', JSON.stringify(result));
     } catch (err) {
       console.error('[onScheduleClassCleanup] 실패:', err);
+      throw err;
+    }
+  }
+);
+
+export const onScheduleWithdrawals = onSchedule(
+  {
+    schedule: '10 3 * * *',
+    timeZone: 'Asia/Seoul',
+    retryCount: 0,
+  },
+  async () => {
+    const db = getFirestore();
+    try {
+      const result = await runScheduledWithdrawals(db);
+      console.log('[onScheduleWithdrawals] 완료:', JSON.stringify(result));
+    } catch (err) {
+      console.error('[onScheduleWithdrawals] 실패:', err);
       throw err;
     }
   }

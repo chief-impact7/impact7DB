@@ -700,6 +700,7 @@ async function handleScheduledWithdrawals() {
             const beforeStatus = s.status;
             batch.update(doc(db, 'students', s.id), {
                 status: '퇴원',
+                enrollments: [],
                 pre_withdrawal_status: deleteField(),
                 updated_at: serverTimestamp(),
             });
@@ -709,6 +710,7 @@ async function handleScheduledWithdrawals() {
                 google_login_id: 'auto-transition', timestamp: serverTimestamp(),
             });
             s.status = '퇴원';
+            s.enrollments = [];
             delete s.pre_withdrawal_status;
             count++;
         }
