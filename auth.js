@@ -10,7 +10,7 @@ provider.addScope('https://www.googleapis.com/auth/drive.file');
 // 도메인 제한: hd 파라미터는 단일 도메인만 지원하므로 사용하지 않음.
 // 실제 도메인 검증은 app.js onAuthStateChanged 내부(클라이언트)와
 // firestore.rules isAuthorized()(서버)에서 이중으로 처리함.
-// provider.setCustomParameters({ hd: 'gw.impact7.kr' }); // 단일 도메인만 가능
+// provider.setCustomParameters({ hd: 'impact7.kr' }); // 단일 도메인만 가능
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file';
 const STORAGE_KEY = 'impact7db_google_token';
