@@ -29,6 +29,29 @@
 - 큰 변경(여러 파일, 인증/보안 관련) 시 푸시 전에 `/code-review` 실행을 권장한다
 - 푸시하면 Actions로 자동 배포되므로, 푸시 전 점검이 마지막 안전장치다
 
+## impact7 검색 우선순위 — shared-first
+
+impact7 에코시스템에서 기능·함수·상태값·도메인 로직·코드 위치를 검색하거나 설명할 때는 현재 앱 로컬 구현보다 `/Users/jongsooyi/projects/impact7-shared`의 `@impact7/shared` 계약 표면을 먼저 확인한다.
+
+검색 순서:
+1. `/Users/jongsooyi/projects/impact7-shared/package.json` export map 확인
+2. 관련 shared 모듈 검색
+3. 현재 앱 로컬 구현 검색
+4. shared 계약과 로컬 구현이 다르면 drift로 보고 원인 확인
+
+현재 shared 기준 export:
+- `@impact7/shared/history` → `history-classifier.js`
+- `@impact7/shared/enrollment-status` → `enrollment-status.js`
+- `@impact7/shared/enrollment-derivation` → `enrollment-derivation.js`
+- `@impact7/shared/class-move` → `class-move.js`
+- `@impact7/shared/promote-enroll` → `promote-enroll.js`
+- `@impact7/shared/student-number` → `student-number.js`
+- `@impact7/shared/student-label` → `student-label.js`
+
+특히 학생 상태, 재원 여부, 수업이력, 내신/자유학기 파생, 학생 표시/검색/번호, 반 이동, 자동 승격, 학생 매칭 관련 작업은 shared 계약을 기준으로 비교한다.
+
+자동 주입 hook의 정본은 `.agents/hooks/impact7-shared-first-search.mjs`에 둔다. Codex·Claude Code 같은 도구별 hook 설정은 이 파일을 호출만 하게 하고, 도구별 설정 폴더(`~/.codex/hooks`, `~/.claude/settings.json` 등)에 로직 사본을 만들지 않는다.
+
 ## app.js 모듈 분리 규칙 (2026-04-12 결정)
 
 impact7DB는 에코시스템의 마스터 데이터 허브이므로 app.js(현재 ~6000줄)를 점진적으로 분리한다.
@@ -123,4 +146,3 @@ firebase deploy --only functions:shared --project impact7db
 | 2026-05-22 | shared codebase 슬롯 예약 | firebase.json, functions-shared/, AGENTS.md | 카카오·결제·출결 공유 백엔드 기반 구성 (실 구현은 하반기) |
 | 2026-05-26 | 에코시스템 범위 4→6개 앱 확장 + 형제 앱에 크로스앱 조율 cross-ref 추가 | AGENTS.md(DB 목표), impact7newDSC·HR·exam·newtest AGENTS.md | consultation·newtest 편입. 풀 블록 대신 한 줄 cross-ref로 형제 앱에 "크로스앱은 DB에서 조율" 인지만 노출 (orchestrator 스킬은 DB에만 존재) |
 | 2026-05-27 | 에코시스템 범위 6→7개 앱 확장 (dashboard 편입) + DashBoard에 cross-ref 추가 | AGENTS.md(DB 목표), DashBoard AGENTS.md | DashBoard(academy-dashboard, React19+Vite8)가 impact7db Firestore 데이터를 읽음 확인. consultation·newtest는 cross-ref 기보유. 단 orchestrator 스킬의 전담 개발자 에이전트는 여전히 DB/DSC/HR/exam 4개뿐 — consultation/newtest/dashboard는 자체 하네스로 구현하고 DB는 조율만. firestore.rules 동기화 대상도 rules 파일을 가진 DB/DSC/HR/exam 4개 그대로 |
-
