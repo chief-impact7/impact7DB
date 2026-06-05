@@ -450,6 +450,10 @@ function applyRoleUI() {
     }
 }
 
+function displayImpact7Email(email) {
+    return String(email || '').replace(/@gw\.impact7\.kr$/i, '@impact7.kr');
+}
+
 onAuthStateChanged(auth, async (user) => {
     const avatarBtn = document.querySelector('.avatar');
 
@@ -466,7 +470,7 @@ onAuthStateChanged(auth, async (user) => {
         currentUser = user;
         storeUpdate({ currentUser: user });
         avatarBtn.textContent = user.email[0].toUpperCase();
-        avatarBtn.title = `Logged in as ${user.email} (click to logout)`;
+        avatarBtn.title = `Logged in as ${displayImpact7Email(user.email)} (click to logout)`;
         await loadUserRole(email);
         await loadSemesterSettings();
         getCurrentSemester();
