@@ -15,6 +15,8 @@ const SENSITIVE_FILES = new Set([
   'storage.rules'
 ]);
 
+const DIRECT_STUDENT_LABEL_PATTERN = /(?:\.\s*school\b|studentSchool\s*\().*학년|학년.*(?:\.\s*school\b|studentSchool\s*\()/i;
+
 function runGit(args, options = {}) {
   const result = spawnSync('git', args, { encoding: 'utf8', ...options });
   if (result.status !== 0) {
@@ -55,6 +57,30 @@ function stagedGuardedHash(files) {
   return createHash('sha256').update(diff).digest('hex');
 }
 
+function directStudentLabelLines(files) {
+  if (files.length === 0) return [];
+  return runGit(['diff', '--cached', '--unified=0', '--', ...files])
+    .split('\n')
+    .filter((line) =>
+      line.startsWith('+') &&
+      !line.startsWith('+++') &&
+      DIRECT_STUDENT_LABEL_PATTERN.test(line)
+    );
+}
+
+function checkStudentLabelContract(files) {
+  const violations = directStudentLabelLines(files);
+  if (violations.length === 0) return true;
+
+  console.error('');
+  console.error('[impact7 quality] commit blocked: school + level + grade labels must use @impact7/shared.');
+  console.error('Use studentFullLabel(student) or schoolLevelGradeLabel({ school, level, grade }).');
+  console.error('');
+  for (const line of violations) console.error(`  ${line}`);
+  console.error('');
+  return false;
+}
+
 function markerPath() {
   const dir = gitDir();
   const absoluteGitDir = dir.startsWith('/') ? dir : join(repoRoot(), dir);
@@ -89,6 +115,7 @@ function mark() {
     printNoGuardedFiles();
     return 0;
   }
+  if (!checkStudentLabelContract(files)) return 1;
   const hash = stagedGuardedHash(files);
   writeMarker(files, hash);
   console.error(`[impact7 quality] marked reviewed staged source/security diff (${files.length} files).`);
@@ -98,6 +125,7 @@ function mark() {
 function check() {
   const files = stagedGuardedFiles();
   if (files.length === 0) return 0;
+  if (!checkStudentLabelContract(files)) return 1;
 
   const hash = stagedGuardedHash(files);
   const marker = readMarker();
