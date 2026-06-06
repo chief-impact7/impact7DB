@@ -11,6 +11,11 @@ import { deriveStudentNumber, studentNumberIdentityKey } from '@impact7/shared/s
 import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod } from '@impact7/shared/enrollment-derivation';
 import { moveClass } from '@impact7/shared/class-move';
 import { currentSchool, SCHOOL_FIELD, studentFullLabel } from '@impact7/shared/student-label';
+import {
+    enrollmentClassParts,
+    selectableClassCodes,
+    validateExistingClass,
+} from './class-enrollment-policy.js';
 import './naesin-schedule.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -32,6 +37,19 @@ async function loadClassSettings() {
         _classSettingsCache = _classSettingsCache || {};
     }
     return _classSettingsCache;
+}
+
+async function populateExistingClassSelect(select, classType) {
+    if (!select) return;
+    if (!_classSettingsCache) await loadClassSettings();
+    const codes = selectableClassCodes(_classSettingsCache, classType);
+    select.innerHTML = '<option value="">-- 반 선택 --</option>';
+    for (const code of codes) {
+        const option = document.createElement('option');
+        option.value = code;
+        option.textContent = code;
+        select.appendChild(option);
+    }
 }
 
 // --- RFC 4180 compliant CSV line parser ---
@@ -2016,11 +2034,11 @@ window.showNewStudentForm = () => {
     // 신규 등록 폼에 수업 정보 카드 표시 (static 필드 + 수업 추가 버튼).
     const enrollContainer = document.getElementById('enrollment-fields-container');
     if (enrollContainer) enrollContainer.style.display = '';
-    // 신규 등록 시 수업종류 '내신' 옵션은 가림 (정규/특강만). 수정 시 복원.
-    const naesinOpt = document.getElementById('opt-class-type-naesin');
-    if (naesinOpt) naesinOpt.style.display = 'none';
     const classTypeSel = document.querySelector('#new-student-form [name="class_type"]');
-    if (classTypeSel && classTypeSel.value === '내신') classTypeSel.value = '정규';
+    if (classTypeSel) {
+        classTypeSel.value = '정규';
+        populateExistingClassSelect(document.getElementById('initial-class-select'), '정규');
+    }
     const pendingContainer = document.getElementById('form-pending-enrollments');
     if (pendingContainer) { pendingContainer.style.display = 'none'; pendingContainer.innerHTML = ''; }
     const addEnrollBtn = document.getElementById('form-add-enrollment-btn');
@@ -2079,9 +2097,6 @@ window.showEditForm = () => {
 
     pauseAlertTriggered = false;
     isEditMode = true;
-    // 수정 모드에서는 수업종류 '내신' 옵션 복원 (신규 등록 시 가림 → 여기서 되돌림)
-    const naesinOpt = document.getElementById('opt-class-type-naesin');
-    if (naesinOpt) naesinOpt.style.display = '';
     document.getElementById('detail-header').style.display = 'none';
     document.getElementById('form-header').style.display = 'flex';
     document.getElementById('detail-tab-bar').style.display = 'none';
@@ -2326,17 +2341,20 @@ window.submitNewStudent = async () => {
     let _newEnrollmentsForCreate = [];
     let _newStatusForCreate = '';
     if (!isEditMode) {
-        const staticLevelSymbol = (f.level_symbol?.value || '').trim();
-        const staticClassNumber = (f.class_number?.value || '').trim();
-        if (staticLevelSymbol || staticClassNumber) {
+        if (!_classSettingsCache) await loadClassSettings();
+        const staticClassCode = (f.class_code?.value || '').trim();
+        if (staticClassCode) {
             const staticDays = Array.from(f.querySelectorAll('input[name="day"]:checked')).map(cb => cb.value);
             const staticClassType = f.class_type?.value || '정규';
+            const classError = validateExistingClass(_classSettingsCache, staticClassType, staticClassCode);
+            if (classError) { alert(classError); return; }
+            const { levelSymbol, classNumber } = enrollmentClassParts(staticClassType, staticClassCode);
             const staticStartDate = f.start_date?.value || '';
             const staticSemester = f.initial_semester?.value || currentSemesterByLevel[level] || '';
             const staticEnrollment = {
                 class_type: staticClassType,
-                level_symbol: staticLevelSymbol,
-                class_number: staticClassNumber,
+                level_symbol: levelSymbol,
+                class_number: classNumber,
                 day: staticDays,
                 start_date: staticStartDate,
             };
@@ -2640,6 +2658,7 @@ window.handleFormClassTypeChange = () => {
     const startInput = document.querySelector('[name="start_date"]');
     const endInput = document.querySelector('[name="special_end_date"]');
     applyDateConstraints(startInput, endInput);
+    populateExistingClassSelect(document.getElementById('initial-class-select'), val);
 };
 
 // 수업 모달 학기 드롭다운 공통 채우기
@@ -2666,6 +2685,7 @@ window.openFormEnrollmentModal = () => {
     applyDateConstraints(startInput, endInput);
     // 학부에 맞는 학기 옵션 채우기
     _populateEnrollmentSemester(document.getElementById('new-student-form')?.level?.value || '');
+    populateExistingClassSelect(document.getElementById('enroll-class-select'), '정규');
     // 모달 데이터 속성으로 컨텍스트 표시 (form = 신규등록 폼에서 호출)
     modal.dataset.context = 'form';
     modal.style.display = 'flex';
@@ -2697,13 +2717,6 @@ function renderPendingEnrollments() {
 window.removePendingEnrollment = (idx) => {
     _pendingEnrollments.splice(idx, 1);
     renderPendingEnrollments();
-};
-
-// 반넘버 입력 시 소속 자동 표시
-window.handleClassNumberChange = (val) => {
-    const branch = branchFromClassNumber(val);
-    const branchPreview = document.getElementById('branch-preview');
-    if (branchPreview) branchPreview.textContent = branch ? `(${branch})` : '';
 };
 
 // ---------------------------------------------------------------------------
@@ -2749,23 +2762,17 @@ function _rebuildEditEnrollmentCards() {
                 <div class="form-row">
                     <div class="form-field">
                         <label class="field-label">레벨기호</label>
-                        <input class="field-input" data-field="level_symbol" data-idx="${idx}" type="text" placeholder="HA" value="${esc(e.level_symbol || '')}">
+                        <input class="field-input" data-field="level_symbol" data-idx="${idx}" type="text" readonly value="${esc(e.level_symbol || '')}">
                     </div>
                     <div class="form-field">
                         <label class="field-label">반넘버</label>
                         <input class="field-input" data-field="class_number" data-idx="${idx}" type="text" placeholder="101,201"
-                            inputmode="numeric" value="${esc(e.class_number || '')}"
-                            oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                            readonly value="${esc(e.class_number || '')}">
                     </div>
                 </div>
                 <div class="form-field">
                     <label class="field-label">수업종류</label>
-                    <select class="field-select" data-field="class_type" data-idx="${idx}"
-                        onchange="window.handleEditEnrollClassType(${idx}, this.value)">
-                        <option value="정규" ${ct === '정규' ? 'selected' : ''}>정규</option>
-                        <option value="특강" ${ct === '특강' ? 'selected' : ''}>특강</option>
-                        <option value="내신" ${ct === '내신' ? 'selected' : ''}>내신</option>
-                    </select>
+                    <input class="field-input" data-field="class_type" data-idx="${idx}" type="text" readonly value="${esc(ct)}">
                 </div>
                 <div class="form-field">
                     <label class="field-label">요일</label>
@@ -2800,20 +2807,6 @@ function _rebuildEditEnrollmentCards() {
     }
 }
 
-// 수정 폼: 수업종류 변경 시 날짜 라벨/표시 전환
-window.handleEditEnrollClassType = (idx, val) => {
-    const container = document.getElementById('edit-enrollment-list');
-    if (!container) return;
-    const cards = container.querySelectorAll('.edit-enrollment-card');
-    const card = cards[idx];
-    if (!card) return;
-    const isRegular = val === '정규';
-    const startLabel = card.querySelector('[data-field="start_date"]')?.closest('.form-field')?.querySelector('.field-label');
-    if (startLabel) startLabel.textContent = isRegular ? '등원일' : '시작일';
-    const endField = card.querySelector('[data-field="end_date"]')?.closest('.form-field');
-    if (endField) endField.style.display = isRegular ? 'none' : 'block';
-};
-
 window.removeEditEnrollment = (idx) => {
     _editEnrollments.splice(idx, 1);
     _rebuildEditEnrollmentCards();
@@ -2837,6 +2830,7 @@ window.addEditEnrollment = () => {
     // 학기 드롭다운 채우기
     const student = allStudents.find(s => s.id === currentStudentId);
     _populateEnrollmentSemester(student?.level || '');
+    populateExistingClassSelect(document.getElementById('enroll-class-select'), '정규');
     modal.dataset.context = 'edit';
     modal.style.display = 'flex';
 };
@@ -3049,6 +3043,7 @@ window.handleEnrollClassTypeChange = () => {
     const startInput = document.querySelector('#enrollment-form [name="enroll_start_date"]');
     const endInput = document.querySelector('#enrollment-form [name="enroll_end_date"]');
     applyDateConstraints(startInput, endInput);
+    populateExistingClassSelect(document.getElementById('enroll-class-select'), val);
 };
 
 // enrollment 정합성 검증 (반편성도우미·CSV import 규칙과 동일).
@@ -3080,8 +3075,11 @@ window.saveEnrollment = async () => {
     const modal = document.getElementById('enrollment-modal');
     const form = document.getElementById('enrollment-form');
     const classType = form.enroll_class_type.value;
-    const levelSymbol = form.enroll_level_symbol.value.trim();
-    const classNumber = form.enroll_class_number.value.trim();
+    if (!_classSettingsCache) await loadClassSettings();
+    const classCode = form.enroll_class_code.value.trim();
+    const classError = validateExistingClass(_classSettingsCache, classType, classCode);
+    if (classError) { alert(classError); return; }
+    const { levelSymbol, classNumber } = enrollmentClassParts(classType, classCode);
     const days = Array.from(form.querySelectorAll('[name="enroll_day"]:checked')).map(cb => cb.value);
     const startDate = form.enroll_start_date.value;
     const endDate = form.enroll_end_date?.value || '';
@@ -3843,6 +3841,24 @@ async function runUpsertFromRows(rows, sourceName) {
 
         const hasData = enrollment.level_symbol || enrollment.class_number || enrollment.start_date || dayArr.length > 0;
         if (hasData) studentMap[docId].enrollments.push(enrollment);
+    }
+
+    if (!_classSettingsCache) await loadClassSettings();
+    const invalidClasses = [];
+    for (const student of Object.values(studentMap)) {
+        for (const enrollment of student.enrollments) {
+            const classType = enrollment.class_type || '정규';
+            const classCode = enrollmentCode(enrollment);
+            const error = validateExistingClass(_classSettingsCache, classType, classCode);
+            if (error) invalidClasses.push(`${student.name}: ${error}`);
+        }
+    }
+    if (invalidClasses.length) {
+        alert(
+            `업로드 파일에 반 생성 마법사에서 생성되지 않은 반이 있습니다.\n` +
+            `학생 데이터는 저장하지 않았습니다.\n\n${invalidClasses.slice(0, 20).join('\n')}`
+        );
+        return;
     }
 
     // Fetch existing from Firestore (already loaded in allStudents)
@@ -6149,6 +6165,12 @@ window.saveGrammarSpecial = async () => {
     if (!startDate || !endDate) { alert('기간을 설정해주세요.'); return; }
     if (endDate <= startDate) { alert('종료일은 시작일 이후여야 합니다.'); return; }
     if (entries.length === 0) { alert('저장할 학생이 없습니다.'); return; }
+    if (!_classSettingsCache) await loadClassSettings();
+    const classError = validateExistingClass(_classSettingsCache, '특강', 'GR901');
+    if (classError) {
+        alert(`문법 특강을 저장할 수 없습니다.\n${classError}\n반 생성 마법사에서 GR901 특강반을 먼저 생성하세요.`);
+        return;
+    }
 
     // Filter out already-saved entries
     const toSave = entries.filter(e => !e.isAlreadySaved);

@@ -772,18 +772,11 @@
 
                                     <!-- 신규등록 시 static enrollment fields -->
                                     <div id="static-enrollment-fields">
-                                        <div class="form-row">
-                                            <div class="form-field">
-                                                <label class="field-label">레벨기호</label>
-                                                <input class="field-input" name="level_symbol" type="text" placeholder="HA">
-                                            </div>
-                                            <div class="form-field">
-                                                <label class="field-label">반넘버 <span id="branch-preview"
-                                                        style="color: var(--primary, #1a73e8); font-size: 0.85em; font-weight: 600;"></span></label>
-                                                <input class="field-input" name="class_number" type="text"
-                                                    placeholder="101,201" inputmode="numeric"
-                                                    oninput="this.value=this.value.replace(/[^0-9,]/g,''); window.handleClassNumberChange && window.handleClassNumberChange(this.value)">
-                                            </div>
+                                        <div class="form-field">
+                                            <label class="field-label">반 선택</label>
+                                            <select class="field-select" name="class_code" id="initial-class-select">
+                                                <option value="">-- 반 선택 --</option>
+                                            </select>
                                         </div>
                                         <div class="form-field">
                                             <label class="field-label">요일</label>
@@ -803,7 +796,6 @@
                                                 onchange="window.handleFormClassTypeChange && window.handleFormClassTypeChange()">
                                                 <option value="정규">정규</option>
                                                 <option value="특강">특강</option>
-                                                <option value="내신" id="opt-class-type-naesin">내신</option>
                                             </select>
                                         </div>
                                         <div class="form-field" id="start-date-container">
@@ -873,16 +865,11 @@
             </h3>
             <form id="enrollment-form" onsubmit="return false">
                 <div class="form-fields" style="gap:16px;">
-                    <div class="form-row">
-                        <div class="form-field">
-                            <label class="field-label">레벨기호</label>
-                            <input class="field-input" name="enroll_level_symbol" type="text" placeholder="HA">
-                        </div>
-                        <div class="form-field">
-                            <label class="field-label">반넘버</label>
-                            <input class="field-input" name="enroll_class_number" type="text" placeholder="101,201"
-                                inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9,]/g,'')">
-                        </div>
+                    <div class="form-field">
+                        <label class="field-label">반 선택</label>
+                        <select class="field-select" name="enroll_class_code" id="enroll-class-select">
+                            <option value="">-- 반 선택 --</option>
+                        </select>
                     </div>
                     <div class="form-field">
                         <label class="field-label">수업종류</label>
@@ -890,7 +877,6 @@
                             onchange="window.handleEnrollClassTypeChange && window.handleEnrollClassTypeChange()">
                             <option value="정규">정규</option>
                             <option value="특강">특강</option>
-                            <option value="내신">내신</option>
                         </select>
                     </div>
                     <div class="form-field">
