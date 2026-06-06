@@ -20,6 +20,7 @@
 import { state } from './store.js';
 import { db } from './firebase-config.js';
 import { currentSchool } from '@impact7/shared/student-label';
+import { staffLabel } from '@impact7/shared/staff-label';
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import {
     enrollmentCode,
@@ -163,7 +164,7 @@ async function lookupCurrentTeacher(code) {
         if (!csSnap.exists()) return null;
         const email = (csSnap.data() || {}).teacher;
         if (!email) return null;
-        const fallback = email.split('@')[0] || email;
+        const fallback = staffLabel(email) || email;
         const tSnap = await getDoc(doc(db, 'teachers', email));
         if (!tSnap.exists()) return fallback;
         return (tSnap.data() || {}).display_name || fallback;

@@ -11,6 +11,7 @@ import { deriveStudentNumber, studentNumberIdentityKey } from '@impact7/shared/s
 import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod } from '@impact7/shared/enrollment-derivation';
 import { moveClass } from '@impact7/shared/class-move';
 import { currentSchool, SCHOOL_FIELD, studentFullLabel } from '@impact7/shared/student-label';
+import { staffLabel } from '@impact7/shared/staff-label';
 import {
     enrollmentClassParts,
     selectableClassCodes,
@@ -5427,9 +5428,9 @@ function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
     else if (r.withdrawal_date) dateStr = `퇴원일: ${r.withdrawal_date}`;
     else if (r.leave_start_date) dateStr = `${r.leave_start_date} ~ ${r.leave_end_date || ''}`;
 
-    const reqBy = (r.requested_by || '').split('@')[0];
-    const tAppBy = (r.teacher_approved_by || '').split('@')[0];
-    const appBy = (r.approved_by || '').split('@')[0];
+    const reqBy = staffLabel(r.requested_by);
+    const tAppBy = staffLabel(r.teacher_approved_by);
+    const appBy = staffLabel(r.approved_by);
     let metaHtml = `<div style="font-size:10px;color:var(--text-sec);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
         ${reqBy ? `<span>요청: ${esc(reqBy)} ${_fmtTs(r.requested_at)}</span>` : ''}
         ${tAppBy ? `<span>교수부: ${esc(tAppBy)} ${_fmtTs(r.teacher_approved_at)}</span>` : ''}

@@ -37,6 +37,7 @@
 - [DB↔DSC 항상 동일](feedback_db_dsc_parity.md) — 한쪽 동작 변경 시 반대쪽도 맞춤. 공유(Cloud Function·shared·promote)는 한 곳, 분기 UI만 양쪽 (2026-05-28)
 - [내신/자유학기 파생 통일](project_naesin_free_derivation.md) — @impact7/shared/enrollment-derivation SSoT(DB·DSC 공유). 표시+수업이력 파생, 91명 override-only 정리 완료, 김시헌 예외 (2026-05-29)
 - [학생 표시 통일 이니셔티브](project_student_display_unification.md) — 공유모듈 v1.4.0(tone/계층/전이) 기반, DB/DSC 배지·2계층·색상 적용 완료 + 진단평가 등원/탭 버그 픽스 (2026-05-27)
+- [담당자 표시·KST 12시간제 SSoT](feedback_staff_label_datetime_ssot.md) — @impact7/shared staff-label(staffLabel)·datetime(Asia/Seoul+12시간제) 단일소스로 통일, split('@') 전 앱 0건. 배포는 GitHub 태그 v1.26.0 push 대기 (2026-06-07)
 - [⏳ qbank 에코시스템 편입 보류](project_qbank_ecosystem_pending.md) — 사용자가 나중에 다시 물어봐 달라고 함. 에코시스템/qbank 화제 시 재질문할 것 (2026-05-27)
 - [⏳ '신규' status 일원화 보류](project_new_status_deferred.md) — 신규현황은 이미 ENROLL 이벤트로 집계됨 → status 마이그레이션 불필요. 재논의 시 이 결론서 출발 (2026-05-28)
 - [⏳ 에코시스템 SSO 보류](project_ecosystem_sso.md) — 구글 1회 로그인. Auth 세션 origin별 격리가 원인. 권장 B(One Tap 자동로그인). 인증 화제 시 재제안 (2026-05-28)
