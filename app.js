@@ -185,6 +185,7 @@ const _prefillNewStudentForm = (s) => {
         if (s.student_phone) f.student_phone.value = s.student_phone;
         if (s.parent_phone_1) f.parent_phone_1.value = s.parent_phone_1;
         if (s.parent_phone_2) f.parent_phone_2.value = s.parent_phone_2;
+        if (s.other_phone) f.other_phone.value = s.other_phone;
         if (s.level && window.handleLevelChange) window.handleLevelChange(s.level);
     }, 50);
 };
@@ -863,6 +864,7 @@ function searchPastStudents(term) {
         if (isPhoneSearch) {
             if (s.student_phone && s.student_phone.includes(term)) return true;
             if (s.parent_phone_1 && s.parent_phone_1.includes(term)) return true;
+            if (s.other_phone && s.other_phone.includes(term)) return true;
         }
         return false;
     });
@@ -1229,6 +1231,7 @@ function applyFilterAndRender() {
             schoolSearchTerms(s).some(v => v.toLowerCase().includes(term)) ||
             (s.student_phone && s.student_phone.includes(term)) ||
             (s.parent_phone_1 && s.parent_phone_1.includes(term)) ||
+            (s.other_phone && s.other_phone.includes(term)) ||
             allClassCodes(s).some(code => code.toLowerCase().includes(term))
         );
     }
@@ -1841,6 +1844,7 @@ _searchClearBtn?.addEventListener('keydown', (e) => {
         if (pastStudent.grade && !_form.grade.value) _form.grade.value = pastStudent.grade;
         if (pastStudent.student_phone && !_form.student_phone.value) _form.student_phone.value = pastStudent.student_phone;
         if (pastStudent.parent_phone_2 && !_form.parent_phone_2.value) _form.parent_phone_2.value = pastStudent.parent_phone_2;
+        if (pastStudent.other_phone && !_form.other_phone.value) _form.other_phone.value = pastStudent.other_phone;
         if (pastStudent.level && window.handleLevelChange) window.handleLevelChange(pastStudent.level);
 
         const hint = document.getElementById('contact-autofill-hint');
@@ -1930,6 +1934,16 @@ window.selectStudent = (studentId, studentData, targetElement) => {
     document.getElementById('profile-student-phone').textContent = studentData.student_phone || '—';
     document.getElementById('profile-parent-phone-1').textContent = studentData.parent_phone_1 || '—';
     document.getElementById('profile-parent-phone-2').textContent = studentData.parent_phone_2 || '—';
+    const otherPhoneRow = document.getElementById('profile-other-phone-row');
+    const otherPhoneEl = document.getElementById('profile-other-phone');
+    if (otherPhoneRow && otherPhoneEl) {
+        if (studentData.other_phone) {
+            otherPhoneEl.textContent = studentData.other_phone;
+            otherPhoneRow.style.display = '';
+        } else {
+            otherPhoneRow.style.display = 'none';
+        }
+    }
 
     // 형제 (부모 연락처 공유) — 클릭 시 해당 형제 상세로 이동
     const sibRow = document.getElementById('profile-sibling-row');
@@ -2124,6 +2138,7 @@ window.showEditForm = () => {
     f.student_phone.value = student.student_phone || '';
     f.parent_phone_1.value = student.parent_phone_1 || '';
     f.parent_phone_2.value = student.parent_phone_2 || '';
+    f.other_phone.value = student.other_phone || '';
 
     // 신규등록 static 필드 숨기고 동적 enrollment 카드 표시
     const staticFields = document.getElementById('static-enrollment-fields');
@@ -2288,6 +2303,7 @@ window.submitNewStudent = async () => {
             student_phone: f.student_phone.value.trim(),
             parent_phone_1: parentPhone1,
             parent_phone_2: f.parent_phone_2.value.trim(),
+            other_phone: f.other_phone.value.trim(),
             branch,
             status: f.status.value,
             enrollments: updatedEnrollments,
@@ -2334,6 +2350,7 @@ window.submitNewStudent = async () => {
             student_phone: f.student_phone.value.trim(),
             parent_phone_1: parentPhone1,
             parent_phone_2: f.parent_phone_2.value.trim(),
+            other_phone: f.other_phone.value.trim(),
         };
     }
 
@@ -3872,7 +3889,7 @@ async function runUpsertFromRows(rows, sourceName) {
 
     // 4) Compare and classify
     // 'school'은 학부별 필드(SCHOOL_FIELD[level])로 저장 — 비교/쓰기를 별도 처리.
-    const infoFields = ['name', 'level', 'grade', 'student_phone', 'parent_phone_1', 'parent_phone_2', 'guardian_name_1', 'guardian_name_2', 'branch', 'status', 'pause_start_date', 'pause_end_date', 'first_registered'];
+    const infoFields = ['name', 'level', 'grade', 'student_phone', 'parent_phone_1', 'parent_phone_2', 'other_phone', 'guardian_name_1', 'guardian_name_2', 'branch', 'status', 'pause_start_date', 'pause_end_date', 'first_registered'];
 
     // import 단계 작업용 .school → 학부별 필드로 옮기고 .school 키 제거.
     const toPersistFields = (obj) => {
