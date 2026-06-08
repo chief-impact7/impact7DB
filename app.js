@@ -881,6 +881,7 @@ async function loadLeaveRequests() {
         snapshot.forEach((docSnap) => {
             leaveRequests.push({ docId: docSnap.id, ...docSnap.data() });
         });
+        storeUpdate({ leaveRequests: [...leaveRequests] });
         console.log(`[loadLeaveRequests] ${leaveRequests.length}건 로드`);
     } catch (error) {
         console.error('[FIRESTORE ERROR] Failed to load leave_requests:', error);
@@ -1237,6 +1238,7 @@ function applyFilterAndRender() {
     }
 
     currentFilteredStudents = filtered;
+    storeUpdate({ currentFilteredStudents });
     updateFilterChips();
 
     // 비원생(퇴원/종강) — 로컬 캐시에서 동기 검색, 활성 목록과 중복 제외
@@ -5728,6 +5730,7 @@ window.submitReturnFromLeave = async () => {
 
         const docRef = await addDoc(collection(db, 'leave_requests'), data);
         leaveRequests.push({ docId: docRef.id, ...data, requested_at: new Date(), created_at: new Date() });
+        storeUpdate({ leaveRequests: [...leaveRequests] });
 
         document.getElementById('return-from-leave-modal').style.display = 'none';
         const savedId = _returnModalStudentId;
@@ -5756,6 +5759,7 @@ window.toggleCancelLeaveRequest = async (docId, studentId) => {
         });
         const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
         if (lrIdx >= 0) leaveRequests[lrIdx].status = isCancelled ? 'requested' : 'cancelled';
+        storeUpdate({ leaveRequests: [...leaveRequests] });
         const stu = allStudents.find(s => s.id === studentId);
         if (stu) window.selectStudent(studentId, stu);
     } catch (err) { alert('처리 실패: ' + err.message); }
@@ -5783,6 +5787,7 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
             await updateDoc(doc(db, 'leave_requests', docId), { teacher_approved_by: deleteField(), teacher_approved_at: deleteField(), updated_at: serverTimestamp() });
             const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
             if (lrIdx >= 0) { delete leaveRequests[lrIdx].teacher_approved_by; delete leaveRequests[lrIdx].teacher_approved_at; }
+            storeUpdate({ leaveRequests: [...leaveRequests] });
             const stu = allStudents.find(s => s.id === studentId);
             if (stu) window.selectStudent(studentId, stu);
         } catch (err) { alert('교수부 승인 취소 실패: ' + err.message); }
@@ -5810,6 +5815,7 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
             leaveRequests[lrIdx].teacher_approved_at = new Date();
             if (r.approved_by) leaveRequests[lrIdx].status = 'approved';
         }
+        storeUpdate({ leaveRequests: [...leaveRequests] });
 
         // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
         const stu = allStudents.find(s => s.id === studentId);
@@ -5830,6 +5836,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
             await updateDoc(doc(db, 'leave_requests', docId), { approved_by: deleteField(), approved_at: deleteField(), updated_at: serverTimestamp() });
             const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
             if (lrIdx >= 0) { delete leaveRequests[lrIdx].approved_by; delete leaveRequests[lrIdx].approved_at; }
+            storeUpdate({ leaveRequests: [...leaveRequests] });
             const stu = allStudents.find(s => s.id === studentId);
             if (stu) window.selectStudent(studentId, stu);
         } catch (err) { alert('행정부 승인 취소 실패: ' + err.message); }
@@ -5858,6 +5865,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
             leaveRequests[lrIdx].approved_at = new Date();
             if (r.teacher_approved_by) leaveRequests[lrIdx].status = 'approved';
         }
+        storeUpdate({ leaveRequests: [...leaveRequests] });
 
         // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
         const stu = allStudents.find(s => s.id === studentId);
@@ -5876,6 +5884,7 @@ window.cancelLeaveRequest = async (docId, studentId) => {
             updated_at: serverTimestamp()
         });
         leaveRequests = leaveRequests.filter(lr => lr.docId !== docId);
+        storeUpdate({ leaveRequests });
         const stu = allStudents.find(s => s.id === studentId);
         if (stu) window.selectStudent(studentId, stu);
     } catch (err) {

@@ -1,10 +1,24 @@
-// 내신/branch 자동 유도 헬퍼 — student-helpers.js의 핵심 함수 미러.
-// Cloud Function에서 자동 정리 시 자동 유도 학생을 정확히 카운트하기 위함.
+// 내신/branch 자동 유도 헬퍼 — @impact7/shared 계약의 인라인 미러.
+//
+// ⚠️  DRIFT 경고: 아래 함수/상수는 @impact7/shared의 대응 심볼과 1:1 미러다.
+//     leave-request Cloud Function은 @impact7/shared(프론트엔드 패키지)를 import할 수 없어
+//     필요한 로직을 여기에 복사해 둔다.
+//
+//  미러 대상 (shared → 이 파일):
+//    @impact7/shared/student-label :: SCHOOL_FIELD       → SCHOOL_FIELD
+//    @impact7/shared/student-label :: currentSchool()    → currentSchool()
+//    app.js :: branchFromStudent()                       → branchFromStudent() (export)
+//    app.js :: resolveNaesinCsKey()                      → resolveNaesinCsKey() (export)
+//
+//  유지보수 규칙:
+//    shared/student-label.js의 currentSchool·SCHOOL_FIELD 또는
+//    app.js의 branchFromStudent·resolveNaesinCsKey 로직이 바뀌면
+//    이 파일을 반드시 동기화한다.
 
 const LEVEL_SHORT = { '초등': '초', '중등': '중', '고등': '고' };
-// 현재 학부의 학교명 소스. @impact7/shared의 currentSchool과 동일(정규화 없는 raw).
-// functions(leave-request)는 @impact7/shared 미의존 → inline 미러.
+// mirror: @impact7/shared/student-label :: SCHOOL_FIELD
 const SCHOOL_FIELD = { '초등': 'school_elementary', '중등': 'school_middle', '고등': 'school_high' };
+// mirror: @impact7/shared/student-label :: currentSchool()
 function currentSchool(student) {
     return student?.[SCHOOL_FIELD[student?.level]] || '';
 }

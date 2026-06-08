@@ -20,7 +20,7 @@ const PAST_STATUSES = new Set(['퇴원', '종강']);
 const ACTIVE_STATUSES = new Set(['등원예정', '재원', '실휴원', '가휴원']);
 const LEVEL_SHORT = { '초등': '초', '중등': '중', '고등': '고', '졸업': '졸업' };
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }); }
 
 function cleanSchool(name) {
     if (!name) return '';
