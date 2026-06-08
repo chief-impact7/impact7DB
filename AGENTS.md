@@ -131,6 +131,21 @@ firebase deploy --only functions:shared --project impact7db
 
 **현재 배포 상태 (2026-05-22):** `llmGenerate`(AI 게이트웨이, Callable) **배포됨** — DSC가 호출, exam은 자체 서버에서 Vertex 직접(`@google-cloud/vertexai`). 카카오/결제/출결(`sendKakao`/`paymentHook`/`onAttendance`)은 골격만 작성, **미배포**(실 로직 시 배포). 상세: `.memory/project_shared_backend_foundation.md`.
 
+## 에코시스템 차트 표준
+
+**표준 라이브러리:** `echarts` + `echarts-for-react`
+
+| 앱 | 현황 |
+|----|------|
+| impact7newDSC | ✅ echarts + echarts-for-react |
+| impact7exam | ✅ echarts + echarts-for-react (2026-06-08 recharts에서 전환) |
+| impact7DB / impact7HR | 차트 없음 — 추가 시 동일 표준 적용 |
+
+- import: `import ReactECharts from 'echarts-for-react'`
+- option 객체를 `option` prop으로 전달, `notMerge={true}` 기본 사용
+- 애니메이션 불필요 시 option에 `animation: false` 설정 (PDF 렌더 등)
+- recharts·chart.js 등 다른 차트 라이브러리 추가 금지
+
 ## 메모리 (계정 공유)
 
 1인 개발. 여러 Claude 계정을 번갈아 사용하지만 동일 사용자.
