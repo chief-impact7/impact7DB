@@ -146,6 +146,12 @@ firebase deploy --only functions:shared --project impact7db
 - 애니메이션 불필요 시 option에 `animation: false` 설정 (PDF 렌더 등)
 - recharts·chart.js 등 다른 차트 라이브러리 추가 금지
 
+## codegraph 탐색 원칙
+
+코드를 탐색할 때 Read·grep 전에 **`codegraph_explore`를 먼저** 실행한다.
+`.memory/reference_codegraph_guide.md`에 도메인별 핵심 쿼리가 정리되어 있다.
+@impact7/shared 관련 작업은 shared-first 원칙 준수 (위 "impact7 검색 우선순위" 참조).
+
 ## 메모리 (계정 공유)
 
 1인 개발. 여러 Claude 계정을 번갈아 사용하지만 동일 사용자.

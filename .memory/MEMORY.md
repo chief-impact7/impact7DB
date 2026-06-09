@@ -52,3 +52,5 @@
 - [심예율 핸드오프 3이슈 완료](project_simyeyul_handoff_fixes.md) — 소속 csKey 오인(branchFromClassNumber)·퇴원 수업추가 가드(RETURN 로그)·재원기간 무로그 재등원 보정(deriveTenure v1.17.0 isCurrentlyEnrolled). DB/DSC/shared 배포, 데이터 미수정 (2026-05-30)
 - [학부별 학교명 + 라벨](project_school_by_level.md) — school_elementary/middle/high + studentFullLabel(예측 학부 기준 v1.15.0, 정규화 약어·지역명17·예외14) + 트리거 동기화+가드. 전체 15,032명 백필. 졸업생 "고(졸업+N)" 예측(B 완료). **전역 전환 전 항목 완료**(2026-05-30): ①표시·검색 3앱 통일 ②rules school_* 화이트리스트 버그 수정 ③구 school 미러 완전 제거(블로커 exam·내신키·newtest + read전환/write중단 + **데이터 15,675건 백업후 삭제** + rules school 제거) ④검색어 shared 공통화(v1.16.0, DB 회귀 교정) ⑤학년승급 캐시 동기화. DB/DSC/exam/newtest/shared/functions 전부 배포. 미러 백업 `_workspace/school-mirror-backup.json`
 - [HR 권한 설정 + simplify/code-review 하네스 강화](project_hr_permissions_quality_guard_2026_06_05.md) — HR owner/권한 설정 페이지, HR_users rules 강화, 4-repo rules sync, source/security pre-commit quality guard. 다음은 DB/DSC/Dashboard 인원현황 `canViewPopulationStats` 적용.
+
+- [codegraph 활용 가이드](reference_codegraph_guide.md) — 인덱스 현황, 도메인별 탐색 쿼리, 주요 모듈 위치
