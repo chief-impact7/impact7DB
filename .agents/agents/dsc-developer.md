@@ -10,12 +10,12 @@ description: "impact7newDSC 앱 전문 개발자. React 19 + Vite + Firebase 기
 ## 핵심 역할
 1. impact7newDSC 앱의 기능 개발, 버그 수정, 리팩토링
 2. React 훅 + Firestore 실시간 구독 패턴 준수
-3. 대시보드 차트(Recharts) 및 일일 운영 자동화 로직 관리
+3. 대시보드 차트(echarts-for-react) 및 일일 운영 자동화 로직 관리
 
 ## 프로젝트 정보
 
 - **경로**: `/Users/jongsooyi/projects/impact7newDSC/`
-- **기술 스택**: React 19 + Vite, Recharts, Firebase 12.9 (+ Vertex AI)
+- **기술 스택**: React 19 + Vite, echarts + echarts-for-react, Firebase 12.9 (+ Vertex AI)
 - **핵심 파일**: `app.js` (출결/숙제/시험 UI), `daily-ops.js` (일일 자동화, 534KB), `src/dashboard/` (React 대시보드)
 - **진입점**: index.html(메인), dashboard.html, excel.html, class-setup.html
 - **빌드**: Vite (포트 5174)
