@@ -459,6 +459,7 @@ async function loadUserRole(email) {
         console.warn('[ROLE] Failed to load user role:', e.code, e.message);
         currentUserRole = 'teacher';
     }
+    storeUpdate({ currentUserRole });
     applyRoleUI();
 }
 
@@ -1238,7 +1239,7 @@ function applyFilterAndRender() {
     }
 
     currentFilteredStudents = filtered;
-    storeUpdate({ currentFilteredStudents });
+    storeUpdate({ currentFilteredStudents, activeFilters: { ...activeFilters } });
     updateFilterChips();
 
     // 비원생(퇴원/종강) — 로컬 캐시에서 동기 검색, 활성 목록과 중복 제외
@@ -1308,6 +1309,7 @@ async function loadSemesterSettings() {
     const snap = await getDocs(collection(db, 'semester_settings'));
     semesterSettings = {};
     snap.forEach(d => { semesterSettings[d.id] = d.data(); });
+    storeUpdate({ semesterSettings: { ...semesterSettings } });
 }
 
 // 학부별 현재 학기 캐시 갱신. level 지정 시 해당 학부 값 반환.
@@ -4605,6 +4607,7 @@ function updateBulkEditSummary() {
 
 function enterBulkMode() {
     bulkMode = true;
+    storeUpdate({ bulkMode: true });
     document.getElementById('bulk-action-bar').style.display = 'flex';
     const btn = document.getElementById('bulk-mode-btn');
     if (btn) { btn.classList.add('active'); }
@@ -4625,6 +4628,7 @@ function updateBulkBar() {
     if (selectAllCb) selectAllCb.checked = allChecked;
 
     if (count > 0 && !bulkMode) enterBulkMode();
+    storeUpdate({ selectedStudentIds: new Set(selectedStudentIds) });
     updateBulkEditSummary();
 }
 
@@ -4650,6 +4654,7 @@ window.toggleSelectAll = (checked) => {
 window.exitBulkMode = () => {
     bulkMode = false;
     selectedStudentIds.clear();
+    storeUpdate({ bulkMode: false, selectedStudentIds: new Set() });
     document.getElementById('bulk-action-bar').style.display = 'none';
     const btn = document.getElementById('bulk-mode-btn');
     if (btn) btn.classList.remove('active');
