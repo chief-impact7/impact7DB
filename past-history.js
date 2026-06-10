@@ -21,6 +21,7 @@ import { state } from './store.js';
 import { db } from './firebase-config.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { staffLabel } from '@impact7/shared/staff-label';
+import { ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import {
     enrollmentCode,
@@ -32,9 +33,8 @@ import {
 // 상수
 // ---------------------------------------------------------------------------
 
-// 활성 상태 (DSC 미러 시 동일 정의 유지) — app.js 의 ACTIVE_STUDENT_STATUSES 와 동기.
-// app.js 가 분기 책임을 지지만, DSC 미러나 모듈 단독 사용을 대비해 같은 셋을 export.
-export const ACTIVE_STATES = new Set(['재원', '등원예정', '실휴원', '가휴원']);
+// 활성 상태 — shared ENROLLABLE_STATUSES SSoT
+export const ACTIVE_STATES = ENROLLABLE_STATUSES;
 export const isActiveStudent = (student) => ACTIVE_STATES.has(student?.status || '');
 
 // 휴원 사이클 식별용 request_type 셋

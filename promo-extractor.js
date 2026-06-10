@@ -8,6 +8,8 @@
  */
 import { state } from './store.js';
 import { currentSchool } from '@impact7/shared/student-label';
+import { ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
+import { todayKST } from '@impact7/shared/datetime';
 import {
     normalizeRealLevelGrade,
     gridKeyFor,
@@ -17,10 +19,10 @@ import {
 import { createGoogleSheet } from './sheet-export.js';
 
 const PAST_STATUSES = new Set(['퇴원', '종강']);
-const ACTIVE_STATUSES = new Set(['등원예정', '재원', '실휴원', '가휴원']);
+const ACTIVE_STATUSES = ENROLLABLE_STATUSES;
 const LEVEL_SHORT = { '초등': '초', '중등': '중', '고등': '고', '졸업': '졸업' };
 
-function todayStr() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }); }
+const todayStr = todayKST;
 
 function cleanSchool(name) {
     if (!name) return '';
