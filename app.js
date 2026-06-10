@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, getDocs, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
 import { auth, db } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
 import { cleanSchoolName, collectKnownSchoolNames, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
@@ -514,8 +514,7 @@ async function loadStudentList() {
     const listContainer = document.querySelector('.list-items');
     listContainer.innerHTML = '<p style="padding:16px;color:var(--text-sec)">Loading...</p>';
 
-    try {
-        const snapshot = await getDocs(collection(db, 'students'));
+    function renderStudents(snapshot) {
         allStudents = [];
         snapshot.forEach((docSnap) => {
             const data = { id: docSnap.id, ...docSnap.data() };
@@ -524,14 +523,6 @@ async function loadStudentList() {
         });
         allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
         storeUpdate({ allStudents });
-        // 내신/자유학기 기간 파생을 위해 첫 렌더 전에 class_settings를 로드한다.
-        // (미로드 시 getActiveEnrollments가 파생 없이 정규로 표시되므로 순서 보장 필수)
-        await loadClassSettings();
-        await promoteEnrollPending();
-        await handleScheduledLeaves();
-        await handleScheduledWithdrawals();
-        await handleScheduledSpecialClassEnds();
-        await backfillStudentNumbers();
         invalidateSemesterPool();
         buildSiblingMap();
         buildClassFilterSidebar();
@@ -541,6 +532,32 @@ async function loadStudentList() {
         updateLeaveCountBadges();
         loadMemoCacheAndRender();
         loadLeaveRequests();
+    }
+
+    async function runWriteSideEffects() {
+        // 내신/자유학기 기간 파생을 위해 class_settings를 먼저 로드한다.
+        // (미로드 시 getActiveEnrollments가 파생 없이 정규로 표시되므로 순서 보장 필수)
+        await loadClassSettings();
+        await promoteEnrollPending();
+        await handleScheduledLeaves();
+        await handleScheduledWithdrawals();
+        await handleScheduledSpecialClassEnds();
+        await backfillStudentNumbers();
+    }
+
+    try {
+        try {
+            const cachedSnapshot = await getDocsFromCache(collection(db, 'students'));
+            if (!cachedSnapshot.empty) {
+                renderStudents(cachedSnapshot);
+            }
+        } catch {
+            // 캐시 미스(첫 방문) 또는 IndexedDB 미지원 — 서버 로드로 이어진다
+        }
+
+        const snapshot = await getDocs(collection(db, 'students'));
+        renderStudents(snapshot);
+        await runWriteSideEffects();
     } catch (error) {
         console.error('[FIRESTORE ERROR] Failed to load students:', error);
         listContainer.innerHTML = '<p style="padding:16px;color:red">Failed to load students.</p>';
