@@ -22,6 +22,7 @@ import { db } from './firebase-config.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { staffLabel } from '@impact7/shared/staff-label';
 import { ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
+import { groupLeaveCycles } from '@impact7/shared/leave-cycles';
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import {
     enrollmentCode,
@@ -37,17 +38,13 @@ import {
 export const ACTIVE_STATES = ENROLLABLE_STATUSES;
 export const isActiveStudent = (student) => ACTIVE_STATES.has(student?.status || '');
 
-// 휴원 사이클 식별용 request_type 셋
-const LEAVE_START_TYPES = new Set(['휴원요청', '퇴원→휴원']);
-const LEAVE_EXTEND_TYPES = new Set(['휴원연장']);
-const RETURN_TYPES = new Set(['복귀요청', '재등원요청']);
-const WITHDRAW_TYPES = new Set(['퇴원요청', '휴원→퇴원']);
-
-// 사이클 카드 라벨 — 첫 요청 타입을 기준으로 묶음
+// 사이클 카드 라벨 — canonical type 기준 (groupLeaveCycles 반환값)
 const CYCLE_LABEL = {
     leave: { label: '휴원', color: '#2563eb', bg: '#dbeafe' },
     leave_to_withdraw: { label: '휴→퇴', color: '#dc2626', bg: '#fee2e2' },
     withdraw: { label: '퇴원', color: '#dc2626', bg: '#fee2e2' },
+    reenroll: { label: '재등원', color: '#16a34a', bg: '#dcfce7' },
+    other: { label: '기타', color: '#6b7280', bg: '#f3f4f6' },
 };
 
 const REQUEST_STATUS_LABEL = {
@@ -175,129 +172,6 @@ async function lookupCurrentTeacher(code) {
 }
 
 // ---------------------------------------------------------------------------
-// 휴원/퇴원 사이클 묶음 알고리즘
-// ---------------------------------------------------------------------------
-
-/**
- * leave_requests 를 시간순 (오래된 순) 으로 정렬한 뒤,
- * 휴원 사이클 = 시작 + (연장 N개) + 종료(복귀/휴→퇴) 로 묶고,
- * 퇴원 사이클 = 단일 퇴원요청을 그대로 1개 카드로 만든다.
- *
- * 단순화: 한 번 시작된 사이클은 다음 시작 요청을 만나거나 종료 요청을 만나면 닫는다.
- *
- * 정책 (DSC 와 통일, 05_qa_report.md §4 권장):
- *   • cancelled/rejected 는 제외 (취소된 요청은 발생하지 않은 사건)
- *   • consultation_note 는 누적 + prefix 방식으로 합쳐 줄바꿈 표시
- *       - 첫 요청: 노트 그대로
- *       - 휴원연장: [연장] {note}
- *       - 복귀요청: [복귀] {note}
- *       - 휴원→퇴원: [퇴원전환] {note}
- *
- * 반환: { type, startDate, endDate, requests: [r,...], summary } 배열
- */
-function groupLeaveRequestsIntoCycles(requests) {
-    // WARN-5: cancelled/rejected 제외 (DSC 와 통일)
-    const filtered = (requests || []).filter(r => r.status !== 'cancelled' && r.status !== 'rejected');
-
-    const sortKey = (r) => r.leave_start_date || r.requested_at?.toDate?.()?.toISOString() || '';
-    const sorted = [...filtered].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-
-    // WARN-7: prefix 누적 헬퍼
-    const appendNote = (current, prefix, note) => {
-        if (!note) return;
-        const tagged = prefix ? `[${prefix}] ${note}` : note;
-        current.lastNote = current.lastNote ? `${current.lastNote}\n${tagged}` : tagged;
-    };
-
-    const cycles = [];
-    let current = null;
-
-    const closeCurrent = () => {
-        if (current) {
-            cycles.push(current);
-            current = null;
-        }
-    };
-    const startLeaveCycle = (r) => {
-        closeCurrent();
-        current = {
-            type: 'leave',
-            requests: [r],
-            startDate: r.leave_start_date || null,
-            endDate: r.leave_end_date || null,
-            lastNote: r.consultation_note || '',
-        };
-    };
-
-    for (const r of sorted) {
-        const t = r.request_type;
-
-        if (LEAVE_START_TYPES.has(t)) {
-            // 새 휴원 사이클 시작 — 진행 중인 사이클이 있으면 닫는다
-            startLeaveCycle(r);
-        } else if (LEAVE_EXTEND_TYPES.has(t)) {
-            // 연장: 진행 중이면 흡수, 아니면 단독 사이클로 시작
-            if (!current || current.type !== 'leave') {
-                startLeaveCycle(r);
-            } else {
-                current.requests.push(r);
-                current.endDate = r.leave_end_date || current.endDate;
-                appendNote(current, '연장', r.consultation_note);
-            }
-        } else if (RETURN_TYPES.has(t)) {
-            // 복귀: 진행 중이면 닫고 endDate 를 복귀일로
-            if (current) {
-                current.requests.push(r);
-                current.endDate = r.return_date || current.endDate;
-                appendNote(current, '복귀', r.consultation_note);
-                closeCurrent();
-            } else {
-                // 사이클 없이 복귀가 단독으로 있을 수 있음 (드물게) — 단독 카드
-                cycles.push({
-                    type: 'return_only',
-                    requests: [r],
-                    startDate: r.return_date || null,
-                    endDate: r.return_date || null,
-                    lastNote: r.consultation_note || '',
-                });
-            }
-        } else if (WITHDRAW_TYPES.has(t)) {
-            // 퇴원: 진행 중인 휴원 사이클이 있으면 휴→퇴로 닫고, 없으면 단독 퇴원 카드
-            if (current && current.type === 'leave') {
-                current.requests.push(r);
-                current.endDate = r.withdrawal_date || current.endDate;
-                current.type = 'leave_to_withdraw';
-                appendNote(current, '퇴원전환', r.consultation_note);
-                closeCurrent();
-            } else {
-                closeCurrent();
-                cycles.push({
-                    type: 'withdraw',
-                    requests: [r],
-                    startDate: r.withdrawal_date || null,
-                    endDate: r.withdrawal_date || null,
-                    lastNote: r.consultation_note || '',
-                });
-            }
-        } else {
-            // 알 수 없는 타입 — 단독 카드로 그대로 노출
-            closeCurrent();
-            cycles.push({
-                type: 'other',
-                requests: [r],
-                startDate: r.leave_start_date || r.withdrawal_date || r.return_date || null,
-                endDate: r.leave_end_date || r.withdrawal_date || r.return_date || null,
-                lastNote: r.consultation_note || '',
-            });
-        }
-    }
-    closeCurrent();
-
-    // 최신이 위로
-    return cycles.slice().reverse();
-}
-
-// ---------------------------------------------------------------------------
 // 렌더링
 // ---------------------------------------------------------------------------
 
@@ -367,8 +241,10 @@ function renderEnrollmentCard(item, teacherName) {
 function renderCycleCard(cycle) {
     const labelMeta = CYCLE_LABEL[cycle.type] || { label: cycle.type || '기타', color: '#6b7280', bg: '#f3f4f6' };
     const start = cycle.startDate ? formatDate(cycle.startDate) : '—';
-    const end = cycle.endDate ? formatDate(cycle.endDate) : '—';
-    const note = cycle.lastNote || '';
+    // canonical: endDate=휴원 종료일, returnDate/withdrawalDate가 있으면 그것을 종료 표시로 사용
+    const endRaw = cycle.returnDate || cycle.withdrawalDate || cycle.endDate;
+    const end = endRaw ? formatDate(endRaw) : '—';
+    const note = cycle.note || '';
 
     // 사이클 안의 요청들 간단 요약
     const reqLines = cycle.requests.map(r => {
@@ -456,7 +332,7 @@ export async function renderPastHistory(student) {
     merged.sort((a, b) => (b.end_date || '').localeCompare(a.end_date || ''));
 
     // 3) 사이클 묶음
-    const cycles = groupLeaveRequestsIntoCycles(leaveReqs);
+    const cycles = groupLeaveCycles(leaveReqs);
 
     // 4) 마지막 활동일 — 통일된 공통 정책 (05_qa_report.md §4 권장):
     //    max(status_changed_at, 가장 최신 history_log.timestamp,
