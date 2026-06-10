@@ -7,7 +7,7 @@
  * 또는 Google Sheets로 내보낼 수 있다.
  */
 import { state } from './store.js';
-import { currentSchool } from '@impact7/shared/student-label';
+import { studentFullLabel } from '@impact7/shared/student-label';
 import { ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { todayKST } from '@impact7/shared/datetime';
 import {
@@ -20,24 +20,8 @@ import { createGoogleSheet } from './sheet-export.js';
 
 const PAST_STATUSES = new Set(['퇴원', '종강']);
 const ACTIVE_STATUSES = ENROLLABLE_STATUSES;
-const LEVEL_SHORT = { '초등': '초', '중등': '중', '고등': '고', '졸업': '졸업' };
 
 const todayStr = todayKST;
-
-function cleanSchool(name) {
-    if (!name) return '';
-    return String(name).replace(/(초등학교|중학교|고등학교|학교)$/, '').trim();
-}
-
-function buildSchoolGradeStr(school, norm) {
-    const s = cleanSchool(school);
-    const lv = LEVEL_SHORT[norm.level] || '';
-    if (norm.graduated) {
-        return s ? `${s}(졸업+${norm.grade})` : `졸업+${norm.grade}`;
-    }
-    if (!norm.grade) return s + lv;
-    return `${s}${lv}${norm.grade}`;
-}
 
 function enrollCode(e) {
     return `${e?.level_symbol || ''}${e?.class_number || ''}`;
@@ -317,7 +301,7 @@ function buildRows() {
             id: s.id,
             name: s.name || '',
             branch,
-            schoolGrade: buildSchoolGradeStr(currentSchool(s), norm),
+            schoolGrade: studentFullLabel(s),
             classCode: isPast ? pickLastCode(s) : pickActiveCodes(s),
             phone: anyPhone, // 정렬·병합 키 (선택 중 가장 우선순위 높은 번호)
             phones,          // { parent_phone_1: '010-1', student_phone: '' ... }
