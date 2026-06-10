@@ -7,6 +7,7 @@ import { finalize } from './src/finalize.js';
 import { runClassCleanup } from './src/cleanup.js';
 import { syncNaesinPeriod } from './src/syncNaesinPeriod.js';
 import { runScheduledWithdrawals } from './src/scheduledWithdrawals.js';
+import { generateDailyStats } from './src/dailyStats.js';
 
 initializeApp();
 getFirestore();
@@ -50,6 +51,26 @@ export const onScheduleWithdrawals = onSchedule(
       console.log('[onScheduleWithdrawals] 완료:', JSON.stringify(result));
     } catch (err) {
       console.error('[onScheduleWithdrawals] 실패:', err);
+      throw err;
+    }
+  }
+);
+
+// 매일 03:20 KST 인원현황 스냅샷 생성 — 예약 퇴원 처리(03:10) 이후 상태 기준.
+// 클라이언트 생성은 인원현황 권한자 로그인 시에만 동작하므로 서버에서 결손 없이 보장.
+export const onScheduleDailyStats = onSchedule(
+  {
+    schedule: '20 3 * * *',
+    timeZone: 'Asia/Seoul',
+    retryCount: 2,
+  },
+  async () => {
+    const db = getFirestore();
+    try {
+      const result = await generateDailyStats(db);
+      console.log('[onScheduleDailyStats] 완료:', JSON.stringify(result));
+    } catch (err) {
+      console.error('[onScheduleDailyStats] 실패:', err);
       throw err;
     }
   }
