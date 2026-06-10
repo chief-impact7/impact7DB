@@ -136,6 +136,11 @@ function getSemesterOptions(level, selectedSemester) {
 
 let currentUser = null;
 let currentUserRole = null; // 'admin' | 'teacher' | null
+// 인원현황 권한 (학원 기밀) — SSoT는 HR_users(impact7HR 권한설정). all=전체 집계, classCounts=반별 인원
+let popPerms = { all: false, classCounts: false };
+const canViewPopAll = () => popPerms.all;
+const canViewClassCounts = () => popPerms.all || popPerms.classCounts;
+const groupCountHtml = (n, allowed) => allowed ? `<span class="group-count">${n}명</span>` : '';
 let currentStudentId = null;
 let allStudents = [];
 // 타입별 독립 필터 — 다른 타입끼리 AND 복합 적용
@@ -440,12 +445,33 @@ async function loadUserRole(email) {
     applyRoleUI();
 }
 
-// 역할에 따른 UI 표시/숨김
-function applyRoleUI() {
-    const statsNav = document.querySelector('.stats-nav-item');
-    if (statsNav) {
-        statsNav.style.display = currentUserRole === 'admin' ? '' : 'none';
+// 인원현황 권한 로드 — HR_users/{uid} (없거나 읽기 거부면 차단)
+async function loadPopulationPerms(uid) {
+    let all = false, classCounts = false;
+    try {
+        const snap = await getDoc(doc(db, 'HR_users', uid));
+        if (snap.exists()) {
+            const d = snap.data();
+            const director = d.role === 'owner' || d.role === 'director';
+            all = director || d.permissions?.canViewPopulationStats === true;
+            classCounts = all || d.permissions?.canViewClassCounts === true;
+        }
+    } catch (e) {
+        console.warn('[PERMS] population perms load failed:', e.code || e.message);
     }
+    popPerms = { all, classCounts };
+    storeUpdate({ popPerms });
+    applyRoleUI();
+}
+
+// 역할/권한에 따른 UI 표시/숨김
+function applyRoleUI() {
+    const show = (sel, allowed) => {
+        const el = document.querySelector(sel);
+        if (el) el.style.display = allowed ? '' : 'none';
+    };
+    show('.stats-nav-item', canViewPopAll());
+    show('.analytics-nav-item', canViewPopAll());
 }
 
 function displayImpact7Email(email) {
@@ -470,6 +496,7 @@ onAuthStateChanged(auth, async (user) => {
         avatarBtn.textContent = user.email[0].toUpperCase();
         avatarBtn.title = `Logged in as ${displayImpact7Email(user.email)} (click to logout)`;
         await loadUserRole(email);
+        await loadPopulationPerms(user.uid);
         await loadSemesterSettings();
         getCurrentSemester();
         loadStudentList().then(() => generateDailyStatsIfNeeded());
@@ -477,6 +504,8 @@ onAuthStateChanged(auth, async (user) => {
         currentUser = null;
         storeUpdate({ currentUser: null });
         currentUserRole = null;
+        popPerms = { all: false, classCounts: false };
+        storeUpdate({ popPerms });
         applyRoleUI();
         avatarBtn.textContent = 'G';
         avatarBtn.title = 'Login with Google';
@@ -890,6 +919,7 @@ const toDateStrKST = (date) => date.toLocaleDateString('en-CA', { timeZone: 'Asi
 const getTodayDateStr = () => toDateStrKST(new Date());
 
 async function generateDailyStatsIfNeeded() {
+    if (!canViewPopAll()) return; // 서버 onScheduleDailyStats가 매일 생성 — 클라이언트는 권한자 폴백만
     const dateStr = getTodayDateStr();
     if (_statsGeneratedDate === dateStr) return;
     const statsRef = doc(db, 'daily_stats', dateStr);
@@ -1036,6 +1066,12 @@ function updateListItemIcons(studentId) {
 // On Leave 카운트 업데이트
 // ---------------------------------------------------------------------------
 function updateLeaveCountBadges() {
+    if (!canViewPopAll()) {
+        ['on-leave-count', 'on-leave-scheduled-count', 'on-leave-expected-count',
+         'on-leave-nonreturn-count', 'lv-exp-actual', 'lv-exp-pending']
+            .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+        return;
+    }
     const today = getTodayDateStr();
     let onLeave = 0, scheduled = 0, nonReturn = 0, expActual = 0, expPending = 0;
     for (const s of allStudents) {
@@ -1085,7 +1121,8 @@ function buildDynamicFilterSidebar({ listId, filterKey, emptyMsg, getItems, sort
         li.className = 'menu-l2 nav-item' + (activeFilters[filterKey] === value ? ' active' : '');
         li.dataset.filterType = filterKey;
         li.dataset.filterValue = value;
-        li.innerHTML = `<span class="class-filter-item"><span class="class-filter-code">${labelFn(value)}</span></span><span class="class-filter-count">${countMap[value]}</span>`;
+        const countHtml = canViewClassCounts() ? `<span class="class-filter-count">${countMap[value]}</span>` : '';
+        li.innerHTML = `<span class="class-filter-item"><span class="class-filter-code">${labelFn(value)}</span></span>${countHtml}`;
         li.addEventListener('click', () => {
             if (activeFilters[filterKey] === value) {
                 activeFilters[filterKey] = null;
@@ -1474,7 +1511,7 @@ function renderStudentList(students, pastResults) {
     if (enrolled.length > 0) {
         const header = document.createElement('div');
         header.className = 'group-header';
-        header.innerHTML = `<span class="group-label">재원생</span><span class="group-count">${enrolled.length}명</span>`;
+        header.innerHTML = `<span class="group-label">재원생</span>${groupCountHtml(enrolled.length, canViewPopAll())}`;
         listContainer.appendChild(header);
         enrolled.forEach(s => renderStudentItem(s, listContainer));
     }
@@ -1503,7 +1540,7 @@ function renderExpectedLeaveList(students, container) {
         if (list.length === 0) return;
         const header = document.createElement('div');
         header.className = 'group-header';
-        header.innerHTML = `<span class="group-label">${esc(label)}</span><span class="group-count">${list.length}명</span>`;
+        header.innerHTML = `<span class="group-label">${esc(label)}</span>${groupCountHtml(list.length, canViewPopAll())}`;
         container.appendChild(header);
         list.forEach(s => renderStudentItem(s, container));
     };
@@ -1593,7 +1630,7 @@ function renderPastStudentResults(pastStudents, container) {
     // 구분 헤더
     const header = document.createElement('div');
     header.className = 'group-header';
-    header.innerHTML = `<span class="group-label">비원생</span><span class="group-count">${pastStudents.length}명</span>`;
+    header.innerHTML = `<span class="group-label">비원생</span>${groupCountHtml(pastStudents.length, canViewPopAll())}`;
     container.appendChild(header);
 
     const visible = pastStudents.length <= PAST_LIMIT ? pastStudents : pastStudents.slice(0, PAST_LIMIT);
@@ -1657,7 +1694,8 @@ function renderGroupedList(students, container) {
     sortedKeys.forEach(key => {
         const header = document.createElement('div');
         header.className = 'group-header';
-        header.innerHTML = `<span class="group-label">${esc(key)}</span><span class="group-count">${groups[key].length}명</span>`;
+        const countAllowed = groupViewMode === 'branch' ? canViewPopAll() : canViewClassCounts();
+        header.innerHTML = `<span class="group-label">${esc(key)}</span>${groupCountHtml(groups[key].length, countAllowed)}`;
         container.appendChild(header);
         groups[key].forEach(s => renderStudentItem(s, container));
     });
@@ -1681,6 +1719,8 @@ window.toggleGroupView = () => {
 function updateCount(n) {
     const el = document.getElementById('student-count');
     if (!el) return;
+    if (!canViewPopAll()) { el.style.display = 'none'; return; }
+    el.style.display = '';
     el.textContent = n === null ? '—' : `${n}명`;
 }
 
@@ -5170,7 +5210,7 @@ window.confirmBulkDelete = async () => {
 // 일별 통계 뷰어 (Daily Stats Viewer)
 // ---------------------------------------------------------------------------
 window.showDailyStats = async () => {
-    if (currentUserRole !== 'admin') return;
+    if (!canViewPopAll()) return;
     const statsView = document.getElementById('daily-stats-view');
     const listPanel = document.querySelector('.list-panel');
     if (!statsView || !listPanel) return;
@@ -5204,6 +5244,7 @@ window.onStatsDateChange = async (dateStr) => {
 };
 
 async function loadStatsForDate(dateStr) {
+    if (!canViewPopAll()) return;
     const container = document.getElementById('stats-content');
     if (!container) return;
     container.innerHTML = '<p style="padding:16px;color:var(--text-sec)">로딩 중...</p>';

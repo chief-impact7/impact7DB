@@ -28,6 +28,7 @@ const _savedSemester = localStorage.getItem('semesterFilter');
 export const state = {
   currentUser: null,
   currentUserRole: null,       // 'admin' | 'teacher' | null
+  popPerms: { all: false, classCounts: false }, // 인원현황 권한 (HR_users SSoT)
   currentStudentId: null,
   allStudents: [],
   activeFilters: {
