@@ -12,6 +12,17 @@
     --bg: var(--sbux-warm);
     --bg-secondary: var(--sbux-ceramic);
 
+    /* Semantic status colors */
+    --danger: #ea4335;
+    --danger-strong: #c5221f;
+    --danger-bg: #fce8e6;
+    --warn: #b06000;
+    --warn-bg: #fef7e0;
+    --notice: #e65100;     /* 읽기전용 배너·오버라이드·신규 표시용 주황 (휴원 상태색 아님 — 휴원은 --warn) */
+    --notice-bg: #fff3e0;
+    --success: #137333;
+    --success-bg: #e6f4ea;
+
     /* Gold (Rewards only) */
     --sbux-gold: #cba258;
     --sbux-gold-light: #faf6ee;
@@ -483,7 +494,7 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .c-red {
-    background: #ea4335;
+    background: var(--danger);
 }
 
 .c-green {
@@ -653,8 +664,8 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .semester-readonly-banner {
-    background: #fff3e0;
-    color: #e65100;
+    background: var(--notice-bg);
+    color: var(--notice);
     font-size: 11px;
     font-weight: 600;
     padding: 4px 12px;
@@ -733,8 +744,8 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .filter-clear-btn:hover {
-    background: #fce8e6;
-    color: #c5221f;
+    background: var(--danger-bg);
+    color: var(--danger-strong);
 }
 
 .list-items {
@@ -1317,8 +1328,8 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .memo-delete-btn:hover {
-    background: #fce8e6;
-    color: #c5221f;
+    background: var(--danger-bg);
+    color: var(--danger-strong);
 }
 
 .memo-full {
@@ -1476,8 +1487,8 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .badge-withdraw {
-    background: #fce8e6;
-    color: #c5221f;
+    background: var(--danger-bg);
+    color: var(--danger-strong);
 }
 
 .history-change {
@@ -1631,8 +1642,8 @@ summary.menu-l2 .material-symbols-outlined {
 .enrollment-pending {
     font-size: 11px;
     font-weight: 600;
-    color: #b26a00;
-    background: #fff3e0;
+    color: var(--warn);
+    background: var(--warn-bg);
     padding: 1px 8px;
     border-radius: 100px;
     font-family: var(--font-heading);
@@ -1642,20 +1653,20 @@ summary.menu-l2 .material-symbols-outlined {
 .btn-end-class {
     margin-left: auto;
     background: transparent;
-    border: 1px solid #ea4335;
+    border: 1px solid var(--danger);
     border-radius: 16px;
     padding: 3px 12px;
     font-size: 12px;
     font-family: var(--font-heading);
     font-weight: 500;
-    color: #ea4335;
+    color: var(--danger);
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
 
 .btn-end-class:hover {
-    background: #fce8e6;
-    color: #c5221f;
+    background: var(--danger-bg);
+    color: var(--danger-strong);
 }
 
 .enrollment-card-body {
@@ -1774,7 +1785,7 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .btn-end-class-confirm {
-    background: #ea4335;
+    background: var(--danger);
     color: #fff;
     border: none;
     border-radius: 20px;
@@ -1787,7 +1798,7 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .btn-end-class-confirm:hover {
-    background: #c5221f;
+    background: var(--danger-strong);
     box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
 }
 
@@ -1798,12 +1809,12 @@ summary.menu-l2 .material-symbols-outlined {
 
 .btn-end-single {
     background: #fff;
-    color: #ea4335;
-    border: 1px solid #ea4335;
+    color: var(--danger);
+    border: 1px solid var(--danger);
 }
 
 .btn-end-single:hover {
-    background: #fce8e6;
+    background: var(--danger-bg);
     box-shadow: none;
 }
 
@@ -1813,8 +1824,8 @@ summary.menu-l2 .material-symbols-outlined {
 
 .end-class-warn {
     font-size: 13px;
-    color: #c5221f;
-    background: #fce8e6;
+    color: var(--danger-strong);
+    background: var(--danger-bg);
     padding: 8px 12px;
     border-radius: 8px;
     margin-top: 8px;
@@ -1878,8 +1889,8 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .btn-remove-pending:hover {
-    background: #fce8e6;
-    color: #c5221f;
+    background: var(--danger-bg);
+    color: var(--danger-strong);
 }
 
 /* ── Bulk Action Bar ───────────────────────────────────────────────────── */
@@ -2108,9 +2119,9 @@ summary.menu-l2 .material-symbols-outlined {
 
 .tone-active     { background: var(--sbux-light); color: var(--sbux-green); }
 .tone-scheduled  { background: var(--sbux-light); color: var(--sbux-accent); }
-.tone-paused     { background: #fef7e0; color: #b06000; }
+.tone-paused     { background: var(--warn-bg); color: var(--warn); }
 .tone-consult    { background: #ede7f6; color: #5e35b1; }
-.tone-ended-hard { background: #fce8e6; color: #c5221f; }
+.tone-ended-hard { background: var(--danger-bg); color: var(--danger-strong); }
 .tone-ended-soft { background: #eceff1; color: #546e7a; }
 
 /* 형제 링크 (상세 패널 연락처 카드) */
@@ -2144,8 +2155,8 @@ summary.menu-l2 .material-symbols-outlined {
 .on-leave-count {
     font-size: 11px;
     font-weight: 600;
-    background: #fef7e0;
-    color: #b06000;
+    background: var(--warn-bg);
+    color: var(--warn);
     padding: 1px 7px;
     border-radius: 100px;
     margin-left: auto;
@@ -2173,8 +2184,8 @@ summary.menu-l2 .material-symbols-outlined {
 /* ── List Item Pause Date ──────────────────────────────────────────────── */
 .item-pause-date {
     font-size: 10px;
-    color: #b06000;
-    background: #fef7e0;
+    color: var(--warn);
+    background: var(--warn-bg);
     padding: 1px 6px;
     border-radius: 100px;
     flex-shrink: 0;
@@ -2183,8 +2194,8 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .item-pause-date.overdue {
-    color: #c5221f;
-    background: #fce8e6;
+    color: var(--danger-strong);
+    background: var(--danger-bg);
 }
 
 /* ── Home View (초기 화면) ────────────────────────────────────────────────── */
@@ -2724,9 +2735,9 @@ summary.menu-l2 .material-symbols-outlined {
 }
 .naesin-chip:hover { border-color: var(--primary); }
 .naesin-chip.override {
-    background: #fff3e0;
-    border-color: #ff9800;
-    color: #e65100;
+    background: var(--notice-bg);
+    border-color: var(--notice);
+    color: var(--notice);
 }
 
 .naesin-add-subgroup {
@@ -2745,7 +2756,7 @@ summary.menu-l2 .material-symbols-outlined {
     cursor: pointer;
     line-height: 1;
 }
-.naesin-remove-sub:hover { color: #e53935; }
+.naesin-remove-sub:hover { color: var(--danger-strong); }
 
 .naesin-override-popup {
     position: absolute;
@@ -2872,8 +2883,8 @@ summary.menu-l2 .material-symbols-outlined {
     color: #1565c0;
 }
 .gs-student-chip.new-student {
-    background: #fff3e0;
-    color: #e65100;
+    background: var(--notice-bg);
+    color: var(--notice);
 }
 
 @media (max-width: 600px) {
@@ -3043,8 +3054,8 @@ summary.menu-l2 .material-symbols-outlined {
     margin-bottom: 8px;
 }
 .past-history-status-tag {
-    background: #fce8e6;
-    color: #c5221f;
+    background: var(--danger-bg);
+    color: var(--danger-strong);
     font-weight: 600;
 }
 .past-history-meta-row {
@@ -3123,8 +3134,8 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--sbux-green, #137333);
 }
 .past-enrollment-type-내신 {
-    background: #fef3c7;
-    color: #b45309;
+    background: var(--warn-bg);
+    color: var(--warn);
 }
 .past-enrollment-type-특강 {
     background: #ede9fe;
@@ -3507,8 +3518,8 @@ summary.menu-l2 .material-symbols-outlined {
     transform: translateY(8px);
 }
 .toast--success { background: var(--sbux-green); }
-.toast--error { background: #c5221f; }
-.toast--warn { background: #b06000; }
+.toast--error { background: var(--danger-strong); }
+.toast--warn { background: var(--warn); }
 .toast-icon {
     font-size: 18px;
     flex-shrink: 0;

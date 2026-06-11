@@ -22,6 +22,7 @@ import {
 import './naesin-schedule.js';
 import { showToast } from './toast.js';
 import './a11y-keys.js';
+import './modal-manager.js';
 import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -3285,7 +3286,7 @@ window.endEnrollment = (idx) => {
             <ul class="end-class-list">${affected.map(s => {
             const rem = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
             const isW = rem.length === 0;
-            return `<li>${esc(s.name)}${isW ? '<span class="end-class-remaining" style="background:#fce8e6;color:#c5221f;">퇴원</span>' : `<span class="end-class-remaining">${rem.map(e => enrollmentCode(e)).filter(Boolean).join(', ')}</span>`}</li>`;
+            return `<li>${esc(s.name)}${isW ? '<span class="end-class-remaining" style="background:var(--danger-bg);color:var(--danger-strong);">퇴원</span>' : `<span class="end-class-remaining">${rem.map(e => enrollmentCode(e)).filter(Boolean).join(', ')}</span>`}</li>`;
         }).join('')}</ul>
         </div>`;
     }
@@ -4146,30 +4147,7 @@ async function runUpsertFromRows(rows, sourceName) {
     _refreshUIAfterMutation();
 }
 
-// 메모 모달 상태 — ESC 핸들러보다 먼저 선언
 let _memoModalContext = null; // 'view' | 'form'
-
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        const isVisible = (el) => el && el.style.display === 'flex';
-        const endClassModal = document.getElementById('end-class-modal');
-        if (isVisible(endClassModal)) {
-            endClassModal.style.display = 'none';
-            _endClassTarget = null;
-            return;
-        }
-        const enrollModal = document.getElementById('enrollment-modal');
-        if (isVisible(enrollModal)) {
-            enrollModal.style.display = 'none';
-            return;
-        }
-        const modal = document.getElementById('memo-modal');
-        if (isVisible(modal)) {
-            modal.style.display = 'none';
-            _memoModalContext = null;
-        }
-    }
-});
 
 // ---------------------------------------------------------------------------
 // 메모 관리 (Firestore 서브컬렉션: students/{docId}/memos/{memoId})
@@ -5143,7 +5121,7 @@ window.bulkDelete = () => {
     if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
     const ids = [...selectedStudentIds];
     const desc = document.getElementById('bulk-delete-desc');
-    if (desc) desc.innerHTML = `선택한 <strong>${ids.length}명</strong>의 학생을 삭제합니다.<br><span style="color:#c5221f;font-size:13px;">이 작업은 되돌릴 수 없습니다.</span>`;
+    if (desc) desc.innerHTML = `선택한 <strong>${ids.length}명</strong>의 학생을 삭제합니다.<br><span style="color:var(--danger-strong);font-size:13px;">이 작업은 되돌릴 수 없습니다.</span>`;
 
     const listEl = document.getElementById('bulk-delete-list');
     if (listEl) {
@@ -5468,15 +5446,15 @@ function _leaveRequestTypeBadge(r, studentStatus = '') {
 }
 
 function _leaveRequestStatusBadge(r) {
-    if (r.status === 'approved') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#16a34a;background:#dcfce7;">승인완료</span>`;
+    if (r.status === 'approved') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:var(--success);background:var(--success-bg);">승인완료</span>`;
     if (r.status === 'cancelled') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#6b7280;background:#f3f4f6;">취소</span>`;
-    if (r.status === 'rejected') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#dc2626;background:#fee2e2;">반려</span>`;
+    if (r.status === 'rejected') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:var(--danger-strong);background:var(--danger-bg);">반려</span>`;
     // 미승인 부서 표시
     const pending = [];
     if (!r.teacher_approved_by) pending.push('교수부');
     if (!r.approved_by) pending.push('행정부');
     const label = pending.length > 0 ? `${pending.join('·')}대기` : '승인대기';
-    const s = { label, color: '#f59e0b', bg: '#fef3c7' };
+    const s = { label, color: 'var(--warn)', bg: 'var(--warn-bg)' };
     return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:${s.color};background:${s.bg};">${esc(s.label)}</span>`;
 }
 
@@ -5507,7 +5485,7 @@ function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
 
     // 서버 finalize 실패 배지
     const errorHtml = r.finalize_error
-        ? `<div style="margin-top:6px;padding:6px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:11px;">
+        ? `<div style="margin-top:6px;padding:6px 8px;background:var(--danger-bg);color:var(--danger-strong);border-radius:4px;font-size:11px;">
             <strong>서버 처리 실패</strong> (${r.finalize_attempts || 0}회 시도): ${esc(r.finalize_error)}
             <button class="btn-cancel" style="margin-left:8px;font-size:10px;padding:2px 6px;"
                 onclick="event.stopPropagation(); window._retryFinalize('${escAttr(r.docId)}')">재시도</button>

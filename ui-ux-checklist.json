@@ -15,10 +15,11 @@
     ],
     "method": "읽기 전용 코드 감사 3종 병렬 수행 (비주얼/레이아웃·CSS, 인터랙션/피드백·에러처리, 접근성/반응형·시맨틱)",
     "summary": {
-      "total": 33,
+      "total": 35,
       "high": 5,
-      "medium": 14,
-      "low": 14
+      "medium": 15,
+      "low": 15,
+      "done": 10
     }
   },
   "items": [
@@ -102,7 +103,8 @@
       "location": "style.css:734,1305-1320,1476-1479,1643-1657,1775-1819,2109-2112,2145-2186",
       "suggestion": "--danger/--danger-bg, --warn/--warn-bg, --success 등 시맨틱 토큰을 :root에 정의하고 하드코딩 hex를 일괄 치환한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-11"
     },
     {
       "id": "UX-08",
@@ -201,7 +203,8 @@
       "location": "app.js:4149-4169 / index.html:854,925,985,1014,1052,1097,1122",
       "suggestion": "모달 오픈 함수에서 첫 포커스 가능 요소(또는 모달 카드)에 .focus()를 주고, 닫을 때 트리거로 포커스를 복원한다. 공통 openModal/closeModal 유틸로 포커스 트랩(Tab 순환)을 일괄 적용한다. UX-19(Esc 닫기)와 함께 처리.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-11"
     },
     {
       "id": "UX-17",
@@ -245,7 +248,8 @@
       "location": "app.js:4149-4168",
       "suggestion": "공통 모달 스택/열림 레지스트리를 두어 Esc가 최상단 모달을 닫고 배경 클릭으로도 닫히도록 일괄 처리한다. 모달 표시를 style.display 직접 토글 대신 공통 open/close 헬퍼로 통일한다(UX-16과 동일 작업으로 묶음 처리 권장).",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-11"
     },
     {
       "id": "UX-21",
@@ -356,7 +360,8 @@
       "location": "index.html:184,199,206",
       "suggestion": "상태색을 --success/--warn/--danger 토큰으로 빼고 클래스로 적용한다. UX-07과 함께 처리.",
       "effort": "small",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-11"
     },
     {
       "id": "UX-31",
@@ -389,6 +394,28 @@
       "location": "app.js:1479,1839,1843",
       "suggestion": "0건 메시지 아래에 활성 필터 칩 요약 + '필터 초기화' 액션을 표시한다.",
       "effort": "small",
+      "done": false
+    },
+    {
+      "id": "UX-34",
+      "category": "error-handling",
+      "severity": "medium",
+      "title": "비동기 작업 진행 중 모달 닫힘(Esc/배경클릭) 가드 부재",
+      "description": "일괄 퇴원·복귀요청 제출 등 Firestore 쓰기가 진행되는 동안 확인 버튼만 disabled되고 Esc/배경클릭 닫기는 막히지 않는다. 모달이 닫혀도 batch는 계속 커밋되므로 사용자가 취소된 것으로 오인하고 재실행하면 중복 기록이 생길 수 있다. (modal-manager 도입으로 Esc 닫기가 전 모달로 확대되며 노출면이 커짐)",
+      "location": "app.js:5142(confirmBulkDelete), 3361(confirmEndClass), 5760(submitReturnFromLeave) / naesin-schedule.js:335",
+      "suggestion": "작업 시작 시 overlay에 data-busy 표시 → modal-manager Esc와 각 close 함수가 busy 중 닫기를 거부. 완료/실패 시 해제.",
+      "effort": "medium",
+      "done": false
+    },
+    {
+      "id": "UX-35",
+      "category": "interaction",
+      "severity": "low",
+      "title": "help-guide 오버레이가 modal-manager 체계 밖에 별도 구현",
+      "description": "help-guide.js는 class 토글(.help-guide-overlay--visible) 방식이라 modal-manager(display 감시)가 관리하지 못하고, 자체 Esc 핸들러·포커스 복원을 중복 구현하며 Tab 트랩은 없다. 모달과 가이드가 겹쳐 열리면 Esc 한 번에 둘 다 닫힐 수 있다.",
+      "location": "help-guide.js:402-422",
+      "suggestion": "help-guide를 .modal-overlay + display 토글 방식으로 통일하거나, modal-manager에 class 토글 감지를 추가해 단일 체계로 합친다.",
+      "effort": "medium",
       "done": false
     }
   ]
