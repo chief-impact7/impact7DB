@@ -19,7 +19,7 @@
       "high": 5,
       "medium": 15,
       "low": 15,
-      "done": 33
+      "done": 35
     }
   },
   "items": [
@@ -116,7 +116,9 @@
       "location": "index.html:116,141,184,199,206,546-548,1003-1044,1062-1088",
       "suggestion": "반복되는 인라인 패턴(모달 헤더, 필드 행, 정보 박스)을 .modal-header/.field-row 등 클래스로 추출한다. 색·간격은 토큰 사용.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12",
+      "note": "인라인 119→55곳 (display:none 상태 토글 41곳은 JS 계약상 유지). 반복 패턴 21개 클래스로 추출."
     },
     {
       "id": "UX-09",
@@ -151,7 +153,9 @@
       "location": "style.css:1 (:root, 라이트 단일)",
       "suggestion": "색을 모두 토큰화한 뒤 prefers-color-scheme 또는 [data-theme=dark]에서 토큰만 재정의하는 구조로 확장한다. 단기엔 토큰화(UX-07)가 선행 조건.",
       "effort": "large",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12",
+      "note": "[data-theme=dark] 토큰 오버라이드 + FOUC 방지 + theme.js 토글(localStorage·OS 기본). 시각 QA 필요 — 잔여 라이트 하드코딩은 발견 시 토큰 치환."
     },
     {
       "id": "UX-12",

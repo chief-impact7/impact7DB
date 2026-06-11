@@ -15,8 +15,8 @@ const STYLE = `
   z-index: 1200;
   width: 252px;
   padding: 10px;
-  background: #fff;
-  border: 1px solid #dde3da;
+  background: var(--surface-container, #fff);
+  border: 1px solid var(--border, #dde3da);
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   font-size: 13px;
@@ -37,7 +37,7 @@ const STYLE = `
   background: none;
   font-size: 18px;
   cursor: pointer;
-  color: #444;
+  color: var(--text-sec, #444);
 }
 .kdp-nav:hover { background: rgba(0, 0, 0, 0.06); }
 .kdp-grid {
@@ -58,11 +58,11 @@ const STYLE = `
   background: none;
   font-size: 13px;
   cursor: pointer;
-  color: #222;
+  color: var(--text-main, #222);
 }
 .kdp-day:hover { background: rgba(0, 0, 0, 0.07); }
-.kdp-day:disabled { color: #ccc; cursor: default; background: none; }
-.kdp-sun { color: #d93025; }
+.kdp-day:disabled { color: var(--outline, #ccc); cursor: default; background: none; }
+.kdp-sun { color: var(--danger-strong, #d93025); }
 .kdp-sat { color: #1a73e8; }
 .kdp-today { font-weight: 700; box-shadow: inset 0 0 0 1px var(--primary, #00754A); }
 .kdp-selected, .kdp-selected:hover { background: var(--primary, #00754A); color: #fff; }
@@ -71,7 +71,7 @@ const STYLE = `
   justify-content: flex-end;
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--border, #eee);
 }
 .kdp-today-btn {
   border: none;

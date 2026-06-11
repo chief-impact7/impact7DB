@@ -26,6 +26,7 @@ import './modal-manager.js';
 import './date-picker.js';
 import { promptModal, confirmModal } from './prompt-modal.js';
 import './form-enter.js';
+import './theme.js';
 import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(

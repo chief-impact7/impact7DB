@@ -11,6 +11,11 @@
     <link rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
     <link rel="stylesheet" href="style.css">
+    <script>/* 다크모드 FOUC 방지 — 저장값 또는 OS 설정을 첫 페인트 전에 적용 */
+        try { var t = localStorage.getItem('impact7db-theme');
+            if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches))
+                document.documentElement.dataset.theme = 'dark';
+        } catch (e) { }</script>
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -31,6 +36,7 @@
                 <span class="material-symbols-outlined search-clear-btn" id="searchClearBtn" role="button" tabindex="0" aria-label="검색 지우기" title="검색 지우기">close</span>
             </div>
             <span class="material-symbols-outlined icon-btn" title="사용 가이드" aria-label="도움말" role="button" tabindex="0">help</span>
+            <span class="material-symbols-outlined icon-btn" id="theme-toggle-btn" title="테마 전환" aria-label="테마 전환" role="button" tabindex="0" onclick="window.toggleTheme()">dark_mode</span>
             <span class="material-symbols-outlined icon-btn" aria-label="설정" role="button" tabindex="0" onclick="window.openAdminSettingsModal()">settings</span>
             <span class="material-symbols-outlined icon-btn" aria-label="앱 목록" role="button" tabindex="0">apps</span>
             <div class="avatar icon-btn" id="login-avatar-btn" onclick="window.handleLogin()" role="button" tabindex="0" aria-label="로그인" aria-disabled="true">G</div>
@@ -113,7 +119,7 @@
                     <span class="material-symbols-outlined" aria-hidden="true">format_list_numbered</span>Grade
                 </summary>
                 <ul class="nav-list" id="grade-filter-list">
-                    <li style="padding:8px 12px 8px 28px;font-size:12px;color:var(--text-sec);">로그인 후 표시됩니다</li>
+                    <li class="nav-placeholder">로그인 후 표시됩니다</li>
                 </ul>
             </details>
 
@@ -138,7 +144,7 @@
                     <span class="material-symbols-outlined" aria-hidden="true">class</span>Class
                 </summary>
                 <ul class="nav-list" id="class-filter-list">
-                    <li style="padding:8px 12px 8px 28px;font-size:12px;color:var(--text-sec);">로그인 후 표시됩니다</li>
+                    <li class="nav-placeholder">로그인 후 표시됩니다</li>
                 </ul>
             </details>
 
@@ -181,7 +187,7 @@
                 <!-- L2: Expected (복귀 예정) -->
                 <details class="l2-group">
                     <summary class="menu-l2 nav-item" data-filter-type="leave" data-filter-value="expected">
-                        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:var(--success);">event_upcoming</span>Expected
+                        <span class="material-symbols-outlined icon-sm" aria-hidden="true" style="color:var(--success);">event_upcoming</span>Expected
                         <span class="on-leave-sub-count" id="on-leave-expected-count"></span>
                     </summary>
                     <ul class="nav-list">
@@ -196,14 +202,14 @@
                 <!-- L2: Scheduled (휴원예정) -->
                 <details class="l2-group">
                     <summary class="menu-l2 nav-item" data-filter-type="leave" data-filter-value="scheduled">
-                        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:var(--warn);">schedule</span>휴원예정
+                        <span class="material-symbols-outlined icon-sm" aria-hidden="true" style="color:var(--warn);">schedule</span>휴원예정
                         <span class="on-leave-sub-count" id="on-leave-scheduled-count"></span>
                     </summary>
                 </details>
                 <!-- L2: Non-Return (미복귀) -->
                 <details class="l2-group">
                     <summary class="menu-l2 nav-item" data-filter-type="leave" data-filter-value="non_return">
-                        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:var(--danger-strong);">warning</span>Non-Return
+                        <span class="material-symbols-outlined icon-sm" aria-hidden="true" style="color:var(--danger-strong);">warning</span>Non-Return
                         <span class="on-leave-sub-count" id="on-leave-nonreturn-count"></span>
                     </summary>
                     <ul class="nav-list">
@@ -237,7 +243,7 @@
                     <div class="level-semester-dropdowns level-semester-dropdowns-mobile" id="level-semester-dropdowns-mobile" aria-label="학부별 학기 필터"></div>
                     <span id="filter-chips" class="filter-chips"></span>
                     <span id="filter-clear-btn" class="filter-clear-btn" onclick="window.clearFilters()" title="필터 초기화" style="display:none;" role="button" tabindex="0" aria-label="닫기">
-                        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">close</span>
+                        <span class="material-symbols-outlined icon-sm" aria-hidden="true">close</span>
                     </span>
                     <div class="actions">
                         <span class="material-symbols-outlined icon-btn" id="bulk-mode-btn" title="일괄 선택 모드" onclick="window.toggleBulkMode()" role="button" tabindex="0" aria-label="일괄 선택 모드">checklist</span>
@@ -272,7 +278,7 @@
                 <div id="daily-stats-view" class="daily-stats-view" style="display:none;">
                     <div class="stats-header">
                         <button class="btn-cancel stats-back-btn" onclick="window.hideDailyStats()">
-                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">arrow_back</span>
+                            <span class="material-symbols-outlined icon-back" aria-hidden="true">arrow_back</span>
                             목록으로
                         </button>
                         <h3 class="stats-title">
@@ -288,7 +294,7 @@
                 <div id="promo-extract-view" class="promo-extract-view" style="display:none;">
                     <div class="promo-view-header">
                         <button class="btn-cancel stats-back-btn" onclick="window.hidePromoExtractView()">
-                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">arrow_back</span>
+                            <span class="material-symbols-outlined icon-back" aria-hidden="true">arrow_back</span>
                             목록으로
                         </button>
                         <h3 class="promo-view-title">
@@ -371,11 +377,11 @@
                             </label>
                             <div class="promo-action-buttons">
                                 <button class="btn-cancel" id="promo-copy-btn">
-                                    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">content_copy</span>
+                                    <span class="material-symbols-outlined icon-sm" aria-hidden="true">content_copy</span>
                                     선택 복사
                                 </button>
                                 <button class="btn-save" id="promo-sheet-btn">
-                                    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">download</span>
+                                    <span class="material-symbols-outlined icon-sm" aria-hidden="true">download</span>
                                     구글시트 다운로드
                                 </button>
                             </div>
@@ -423,7 +429,7 @@
                     <div class="panel-header">
                         <span class="form-header-title" id="bulk-edit-title">일괄 변경</span>
                     </div>
-                    <div class="detail-content" style="padding:24px 28px;">
+                    <div class="detail-content">
                         <div class="bulk-edit-summary" id="bulk-edit-summary"></div>
 
                         <!-- 상태 일괄 변경 -->
@@ -451,8 +457,8 @@
                                 <span class="material-symbols-outlined" aria-hidden="true">class</span>반 이동
                             </h4>
                             <div class="bulk-edit-row">
-                                <input class="field-input" id="bulk-class-code" type="text" placeholder="예: HS103" aria-label="반 코드" style="flex:1;">
-                                <input class="field-input" id="bulk-class-startdate" type="date" title="이동 시작일 (선택)" aria-label="이동 시작일 (선택)" style="flex:1;">
+                                <input class="field-input flex-1" id="bulk-class-code" type="text" placeholder="예: HS103" aria-label="반 코드">
+                                <input class="field-input flex-1" id="bulk-class-startdate" type="date" title="이동 시작일 (선택)" aria-label="이동 시작일 (선택)">
                                 <button class="btn-save bulk-apply-btn" onclick="window.applyBulkClass()">적용</button>
                                 <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkClass()">초기화</button>
                             </div>
@@ -468,8 +474,8 @@
                                 <label class="day-check"><input type="radio" name="bulk-school-level" value="중등">중</label>
                                 <label class="day-check"><input type="radio" name="bulk-school-level" value="고등">고</label>
                             </div>
-                            <div class="bulk-edit-row" style="margin-top:8px;">
-                                <input class="field-input" id="bulk-school-name" type="text" placeholder="새 학교명" aria-label="새 학교명" style="flex:1;">
+                            <div class="bulk-edit-row mt-8">
+                                <input class="field-input flex-1" id="bulk-school-name" type="text" placeholder="새 학교명" aria-label="새 학교명">
                                 <button class="btn-save bulk-apply-btn" onclick="window.applyBulkSchool()">적용</button>
                                 <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkSchool()">초기화</button>
                             </div>
@@ -489,7 +495,7 @@
                                 <label class="day-check"><input type="checkbox" name="bulk_day" value="토">토</label>
                                 <label class="day-check"><input type="checkbox" name="bulk_day" value="일">일</label>
                             </div>
-                            <div class="bulk-edit-row" style="margin-top:8px;">
+                            <div class="bulk-edit-row mt-8">
                                 <button class="btn-save bulk-apply-btn" onclick="window.applyBulkDays()">적용</button>
                                 <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkDays()">초기화</button>
                             </div>
@@ -500,11 +506,11 @@
                             <h4 class="bulk-edit-section-title">
                                 <span class="material-symbols-outlined" aria-hidden="true">school</span>학년 승격
                             </h4>
-                            <p style="font-size:12px; color:#666; margin:0 0 6px;">전원 +1학년. 초6→중1, 중3→고1은 학부 자동 변경</p>
+                            <p style="font-size:12px; color:var(--text-sec); margin:0 0 6px;">전원 +1학년. 초6→중1, 중3→고1은 학부 자동 변경</p>
                             <div class="bulk-edit-row" style="gap:8px;">
-                                <input class="field-input" id="bulk-promote-school" type="text" placeholder="새 학교 (전환 학생만, 선택)" aria-label="새 학교 (전환 학생만, 선택)" style="flex:1;">
+                                <input class="field-input flex-1" id="bulk-promote-school" type="text" placeholder="새 학교 (전환 학생만, 선택)" aria-label="새 학교 (전환 학생만, 선택)">
                             </div>
-                            <div class="bulk-edit-row" style="margin-top:8px;">
+                            <div class="bulk-edit-row mt-8">
                                 <button class="btn-save bulk-apply-btn" onclick="window.applyBulkPromotion()">+1 학년 승격</button>
                                 <button class="btn-cancel bulk-reset-btn" onclick="window.resetBulkPromotion()">초기화</button>
                             </div>
@@ -549,9 +555,9 @@
                             <span id="profile-initial">S</span>
                         </div>
                         <div>
-                            <div style="display:flex;align-items:center;gap:6px;">
+                            <div class="profile-name-row">
                                 <h2 class="detail-title" id="profile-name">학생을 선택하세요</h2>
-                                <span id="profile-student-number" style="font-size:11px;color:#6b7280;font-family:monospace;display:none"></span>
+                                <span id="profile-student-number" style="font-size:11px;color:var(--text-sec);font-family:monospace;display:none"></span>
                             </div>
                             <div class="profile-tags">
                                 <span class="tag" id="profile-school">—</span>
@@ -652,7 +658,7 @@
                                 수강 현황
                             </h3>
                             <div class="form-fields" id="stay-stats">
-                                <p style="color:var(--text-sec);font-size:0.85em;">—</p>
+                                <p class="text-hint">—</p>
                             </div>
                         </div>
                         <!-- 메모 -->
@@ -665,7 +671,7 @@
                                 </button>
                             </h3>
                             <div id="memo-list" class="memo-list">
-                                <p style="color:var(--text-sec);font-size:0.85em;">학생을 선택하면 메모가 표시됩니다.</p>
+                                <p class="text-hint">학생을 선택하면 메모가 표시됩니다.</p>
                             </div>
                         </div>
                     </div>
@@ -674,7 +680,7 @@
                 <!-- 수업이력 탭 -->
                 <div class="detail-content" id="history-view" style="display:none">
                     <div id="history-list" class="history-list">
-                        <p style="color:var(--text-sec);font-size:0.9em;">학생을 선택하면 이력이 표시됩니다.</p>
+                        <p>학생을 선택하면 이력이 표시됩니다.</p>
                     </div>
                 </div>
 
@@ -708,11 +714,11 @@
                                     <div class="form-field">
                                         <label class="field-label" for="f-school-current">학교</label>
                                         <input class="field-input" id="f-school-current" name="school_current" type="text" placeholder="현재 학부 학교 (예: 봉영여중)">
-                                        <details class="prev-school-fold" style="margin-top:6px;">
-                                          <summary style="cursor:pointer;font-size:13px;color:var(--text-sec);">이전 학부 학교 입력</summary>
-                                          <input class="field-input" name="school_elementary" type="text" placeholder="초등 학교명" aria-label="초등 학교명" style="margin-top:6px;">
-                                          <input class="field-input" name="school_middle" type="text" placeholder="중등 학교명" aria-label="중등 학교명" style="margin-top:6px;">
-                                          <input class="field-input" name="school_high" type="text" placeholder="고등 학교명" aria-label="고등 학교명" style="margin-top:6px;">
+                                        <details class="prev-school-fold">
+                                          <summary>이전 학부 학교 입력</summary>
+                                          <input class="field-input" name="school_elementary" type="text" placeholder="초등 학교명" aria-label="초등 학교명">
+                                          <input class="field-input" name="school_middle" type="text" placeholder="중등 학교명" aria-label="중등 학교명">
+                                          <input class="field-input" name="school_high" type="text" placeholder="고등 학교명" aria-label="고등 학교명">
                                         </details>
                                     </div>
                                     <div class="form-field">
@@ -774,11 +780,11 @@
                                     </div>
                                     <div class="form-field" id="pause-period-container" style="display:none;">
                                         <label class="field-label">휴원 기간</label>
-                                        <div style="display: flex; gap: 8px;">
+                                        <div class="pause-date-row">
                                             <input class="field-input" name="pause_start_date" type="date"
                                                 title="휴원 시작일" aria-label="휴원 시작일"
                                                 onchange="window.checkDurationLimit && window.checkDurationLimit()">
-                                            <span style="align-self: flex-end; padding-bottom: 8px;">~</span>
+                                            <span class="date-sep">~</span>
                                             <input class="field-input" name="pause_end_date" type="date"
                                                 title="휴원 종료일 (예정)" aria-label="휴원 종료일 (예정)"
                                                 onchange="window.checkDurationLimit && window.checkDurationLimit()">
@@ -833,7 +839,7 @@
                                 <!-- 추가 수업 목록 (신규 등록 시) -->
                                 <div id="form-pending-enrollments" class="enrollment-list" style="display:none;"></div>
                                 <button type="button" class="btn-add-enrollment" id="form-add-enrollment-btn" onclick="window.openFormEnrollmentModal()" style="display:none;">
-                                    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">add</span>
+                                    <span class="material-symbols-outlined icon-sm" aria-hidden="true">add</span>
                                     수업 추가
                                 </button>
                             </div>
@@ -847,7 +853,7 @@
                                     </button>
                                 </h3>
                                 <div id="form-memo-list" class="memo-list">
-                                    <p style="color:var(--text-sec);font-size:0.85em;">저장 후 메모를 추가할 수 있습니다.</p>
+                                    <p class="text-hint">저장 후 메모를 추가할 수 있습니다.</p>
                                 </div>
                             </div>
                         </div>
@@ -934,8 +940,8 @@
                 <span class="material-symbols-outlined" aria-hidden="true">upload</span>
                 업로드 방식 선택
             </h3>
-            <p style="font-size:13px;color:#666;margin:0 0 16px;">아래 4가지 방법 중 하나를 선택하세요.</p>
-            <div style="display:flex;flex-direction:column;gap:10px;">
+            <p>아래 4가지 방법 중 하나를 선택하세요.</p>
+            <div class="upload-method-list">
                 <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleSheetPicker();">
                     <span class="material-symbols-outlined" aria-hidden="true">folder_open</span>
                     <div>
@@ -965,7 +971,7 @@
                     </div>
                 </button>
             </div>
-            <div class="modal-actions" style="margin-top:16px;">
+            <div class="modal-actions">
                 <button class="btn-cancel" onclick="window.closeUploadModal()">닫기</button>
             </div>
         </div>
@@ -976,11 +982,11 @@
     <div id="bulk-delete-modal" class="modal-overlay" style="display:none" onclick="window.closeBulkDeleteModal(event)" role="dialog" aria-modal="true" aria-label="일괄 삭제">
         <div class="modal-card">
             <h3 class="modal-title">
-                <span class="material-symbols-outlined" aria-hidden="true" style="color:var(--danger);">delete_forever</span>
+                <span class="material-symbols-outlined icon-danger" aria-hidden="true">delete_forever</span>
                 일괄 삭제
             </h3>
-            <div id="bulk-delete-desc" style="font-size:14px;margin-bottom:12px;"></div>
-            <div id="bulk-delete-list" style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:16px;"></div>
+            <div id="bulk-delete-desc"></div>
+            <div id="bulk-delete-list"></div>
             <div class="modal-actions">
                 <button class="btn-cancel" onclick="window.closeBulkDeleteModal()" aria-label="닫기">취소</button>
                 <button class="btn-end-class-confirm" onclick="window.confirmBulkDelete()">삭제</button>
@@ -991,7 +997,7 @@
     <div id="end-class-modal" class="modal-overlay" style="display:none" onclick="window.closeEndClassModal(event)" role="dialog" aria-modal="true" aria-label="종강 처리">
         <div class="modal-card">
             <h3 class="modal-title" id="end-class-title">
-                <span class="material-symbols-outlined" aria-hidden="true" style="color:var(--danger);">school</span>
+                <span class="material-symbols-outlined icon-danger" aria-hidden="true">school</span>
                 종강 처리
             </h3>
             <div id="end-class-body" class="end-class-body"></div>
@@ -1007,12 +1013,12 @@
     <div id="past-semester-modal" class="modal-overlay" onclick="window.closePastSemesterModal(event)" style="display:none;">
         <div class="modal-card" style="max-width:380px;">
             <div class="modal-header">
-                <h3 id="past-semester-title" style="margin:0;font-size:16px;">학기 조회</h3>
+                <h3 id="past-semester-title">학기 조회</h3>
                 <button class="btn-icon" onclick="window.closePastSemesterModal()" aria-label="닫기">
                     <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
             </div>
-            <div class="modal-body" id="past-semester-body" style="padding:16px;"></div>
+            <div class="modal-body" id="past-semester-body"></div>
         </div>
     </div>
 
@@ -1020,7 +1026,7 @@
     <div id="admin-settings-modal" class="modal-overlay" onclick="window.closeAdminSettingsModal(event)" style="display:none;">
         <div class="modal-card admin-settings-card">
             <div class="modal-header">
-                <h3 style="margin:0;font-size:16px;">설정</h3>
+                <h3>설정</h3>
                 <button class="btn-icon" onclick="window.closeAdminSettingsModal()" aria-label="닫기">
                     <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
@@ -1037,14 +1043,14 @@
                         <button class="admin-level-tab" onclick="window.switchLevelTab('중등')">중등</button>
                         <button class="admin-level-tab" onclick="window.switchLevelTab('고등')">고등</button>
                     </div>
-                    <div id="admin-semester-body" style="padding:16px;"></div>
+                    <div id="admin-semester-body"></div>
                 </div>
                 <!-- 자동 승급 탭 -->
                 <div id="admin-tab-promotion" class="admin-tab-panel" style="display:none;">
-                    <div style="padding:16px;">
+                    <div>
                         <p class="admin-promo-desc">학부와 학년은 자동수정됩니다. 학교이름만 변경해주세요.<br>승급 전 미리보기를 확인하세요.</p>
-                        <div id="admin-promo-preview" style="margin:12px 0;"></div>
-                        <div style="display:flex;gap:8px;">
+                        <div id="admin-promo-preview"></div>
+                        <div class="promo-btn-row">
                             <button class="btn-cancel" onclick="window.loadPromotionPreview()">미리보기</button>
                             <button class="btn-save" id="admin-promo-run-btn" onclick="window.runPromotion()" disabled>승급 실행</button>
                         </div>
@@ -1057,17 +1063,17 @@
     <!-- 복귀/재등원 요청 모달 -->
     <!-- 범용 입력 모달 (prompt 대체) -->
     <div id="prompt-modal" class="modal-overlay" style="display:none" onclick="window.closePromptModal(event)" role="dialog" aria-modal="true" aria-label="입력">
-        <div class="modal-card" style="max-width:420px;">
+        <div class="modal-card modal-sm">
             <div class="modal-header">
-                <h3 id="prompt-modal-title" style="margin:0;font-size:16px;"></h3>
+                <h3 id="prompt-modal-title"></h3>
                 <button class="btn-icon" onclick="window.closePromptModal()" aria-label="닫기">
                     <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
             </div>
-            <div class="modal-body" style="display:flex;flex-direction:column;gap:8px;padding:16px;">
+            <div class="modal-body">
                 <label class="field-label" id="prompt-modal-label" for="prompt-modal-input"></label>
-                <input type="text" id="prompt-modal-input" class="field-input" style="width:100%;">
-                <select id="prompt-modal-select" class="field-input" style="width:100%;display:none;"></select>
+                <input type="text" id="prompt-modal-input" class="field-input">
+                <select id="prompt-modal-select" class="field-input" style="display:none;"></select>
                 <p id="prompt-modal-hint" style="font-size:12px;color:var(--text-sec);margin:0;white-space:pre-line;"></p>
             </div>
             <div style="display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;">
@@ -1078,40 +1084,40 @@
     </div>
 
     <div id="return-from-leave-modal" class="modal-overlay" style="display:none" onclick="window.closeReturnFromLeaveModal(event)" role="dialog" aria-modal="true" aria-label="복귀요청">
-        <div class="modal-card" style="max-width:420px;">
+        <div class="modal-card modal-sm">
             <div class="modal-header">
-                <h3 style="margin:0;font-size:16px;">복귀 요청</h3>
+                <h3>복귀 요청</h3>
                 <button class="btn-icon" onclick="window.closeReturnFromLeaveModal()" aria-label="닫기">
                     <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
             </div>
-            <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;padding:16px;">
+            <div class="modal-body">
                 <!-- 학생 정보 -->
-                <div style="background:var(--bg-secondary);border-radius:8px;padding:10px;">
-                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-                        <span id="rfl-student-name" style="font-weight:600;font-size:14px;"></span>
-                        <span id="rfl-student-class" style="font-size:12px;color:var(--text-sec);"></span>
+                <div class="modal-info-box">
+                    <div class="rfl-student-row">
+                        <span id="rfl-student-name"></span>
+                        <span id="rfl-student-class" class="text-meta"></span>
                         <span id="rfl-student-status" style="font-size:11px;"></span>
                     </div>
-                    <div id="rfl-leave-period" style="font-size:12px;color:var(--text-sec);"></div>
+                    <div id="rfl-leave-period" class="text-meta"></div>
                 </div>
                 <!-- 날짜 -->
                 <div>
-                    <label id="rfl-date-label" for="rfl-return-date" style="font-size:12px;font-weight:600;margin-bottom:4px;display:block;">복귀일</label>
-                    <input type="date" id="rfl-return-date" class="field-input" style="width:100%;box-sizing:border-box;">
+                    <label id="rfl-date-label" for="rfl-return-date" class="rfl-label">복귀일</label>
+                    <input type="date" id="rfl-return-date" class="field-input field-full">
                 </div>
                 <!-- 복귀할 정규반 -->
                 <div id="rfl-target-class-wrap">
-                    <label for="rfl-target-class" style="font-size:12px;font-weight:600;margin-bottom:4px;display:block;">복귀할 정규반</label>
-                    <select id="rfl-target-class" class="field-input" style="width:100%;box-sizing:border-box;" onchange="window._onRflTargetClassChange?.()">
+                    <label for="rfl-target-class" class="rfl-label">복귀할 정규반</label>
+                    <select id="rfl-target-class" class="field-input field-full" onchange="window._onRflTargetClassChange?.()">
                         <option value="">-- 반 선택 --</option>
                     </select>
-                    <div id="rfl-target-class-hint" style="font-size:11px;color:var(--text-sec);margin-top:4px;"></div>
+                    <div id="rfl-target-class-hint"></div>
                 </div>
                 <!-- 상담내용 -->
                 <div>
-                    <label for="rfl-consultation-note" style="font-size:12px;font-weight:600;margin-bottom:4px;display:block;">상담내용</label>
-                    <textarea id="rfl-consultation-note" class="field-input" style="width:100%;min-height:60px;resize:vertical;box-sizing:border-box;" placeholder="상담 내용을 입력하세요..."></textarea>
+                    <label for="rfl-consultation-note" class="rfl-label">상담내용</label>
+                    <textarea id="rfl-consultation-note" class="field-input field-full" placeholder="상담 내용을 입력하세요..."></textarea>
                 </div>
             </div>
             <div class="modal-actions">
@@ -1162,12 +1168,12 @@
                     <label for="gs-end-date">종료일</label>
                     <input type="date" id="gs-end-date" class="field-input">
                     <label for="gs-week-count">주차 수</label>
-                    <input type="number" id="gs-week-count" class="field-input" value="3" min="1" max="8" style="width:60px;">
+                    <input type="number" id="gs-week-count" class="field-input" value="3" min="1" max="8">
                 </div>
             </div>
             <div class="grammar-special-actions-row">
-                <button class="btn-save" onclick="window.gsImportCSV()" style="gap:4px;display:inline-flex;align-items:center;">
-                    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">upload</span>
+                <button class="btn-save" onclick="window.gsImportCSV()">
+                    <span class="material-symbols-outlined icon-sm" aria-hidden="true">upload</span>
                     CSV 불러오기
                 </button>
                 <input type="file" id="gs-csv-input" accept=".csv" style="display:none;" onchange="window.gsHandleCSVFile(this)">
