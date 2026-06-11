@@ -19,7 +19,7 @@
       "high": 5,
       "medium": 15,
       "low": 15,
-      "done": 30
+      "done": 33
     }
   },
   "items": [
@@ -186,7 +186,9 @@
       "location": "app.js:1471,1516,1545,1700",
       "suggestion": "재원생 목록에 가상 스크롤(IntersectionObserver 기반 청크 렌더) 또는 증분 렌더를 도입한다. 최소한 필터 변경 시 전체 innerHTML 초기화 대신 변경분만 갱신한다.",
       "effort": "large",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12",
+      "note": "100명 청크 + IntersectionObserver. 일괄 모드는 전체선택 정합성을 위해 전체 렌더로 전환."
     },
     {
       "id": "UX-15",
@@ -391,7 +393,9 @@
       "location": "style.css:104,261,938,1822,2054,2229 등",
       "suggestion": "공통 .btn 베이스 + .btn--primary/.btn--ghost/.btn--danger modifier 체계로 재정렬한다.",
       "effort": "large",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12",
+      "note": "BEM 전면 개명 대신 위계별 상태(hover/active/disabled) 그룹 통일 + --primary-hover 토큰. 클래스명 유지로 HTML 무변경."
     },
     {
       "id": "UX-32",
@@ -438,8 +442,9 @@
       "location": "help-guide.js:402-422",
       "suggestion": "help-guide를 .modal-overlay + display 토글 방식으로 통일하거나, modal-manager에 class 토글 감지를 추가해 단일 체계로 합친다.",
       "effort": "medium",
-      "done": false,
-      "note": "보류 — help-guide는 동적 생성+클래스 토글이라 modal-manager 계약 밖. 모달과 동시 표시가 z-구조상 불가해 실위험 낮음. 정적 마크업 전환 시 함께 처리."
+      "done": true,
+      "note": "modal-manager에 body 동적 overlay 감지 추가, help-guide를 display 토글로 편입 — 자체 Esc/포커스 제거, fade 유지.",
+      "doneAt": "2026-06-12"
     }
   ]
 }

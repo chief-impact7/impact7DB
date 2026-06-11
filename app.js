@@ -521,6 +521,7 @@ onAuthStateChanged(auth, async (user) => {
         applyRoleUI();
         avatarBtn.textContent = 'G';
         avatarBtn.title = 'Login with Google';
+        if (_chunkObserver) { _chunkObserver.disconnect(); _chunkObserver = null; }
         document.querySelector('.list-items').innerHTML =
             '<p style="padding:16px;color:var(--text-sec)">Please log in to view students.</p>';
         updateCount(null);
@@ -1509,7 +1510,14 @@ window.closePastSemesterModal = (e) => {
     document.getElementById('past-semester-modal').style.display = 'none';
 };
 
+const CHUNK_SIZE = 100;
+let _chunkObserver = null;
+
 function renderStudentList(students, pastResults) {
+    if (_chunkObserver) {
+        _chunkObserver.disconnect();
+        _chunkObserver = null;
+    }
     const listContainer = document.querySelector('.list-items');
     listContainer.innerHTML = '';
     updateCount(students.length);
@@ -1559,10 +1567,42 @@ function renderStudentList(students, pastResults) {
         header.className = 'group-header';
         header.innerHTML = `<span class="group-label">재원생</span>${groupCountHtml(enrolled.length, canViewPopAll())}`;
         listContainer.appendChild(header);
-        enrolled.forEach(s => renderStudentItem(s, listContainer));
-    }
 
-    if (nonEnrolled.length > 0) renderPastStudentResults(nonEnrolled, listContainer);
+        // 일괄 모드는 전체선택·체크박스가 DOM 기준으로 동작하므로 청크 없이 전부 렌더
+        if (enrolled.length <= CHUNK_SIZE || bulkMode) {
+            const frag = document.createDocumentFragment();
+            enrolled.forEach(s => renderStudentItem(s, frag));
+            listContainer.appendChild(frag);
+            if (nonEnrolled.length > 0) renderPastStudentResults(nonEnrolled, listContainer);
+        } else {
+            const frag = document.createDocumentFragment();
+            enrolled.slice(0, CHUNK_SIZE).forEach(s => renderStudentItem(s, frag));
+            listContainer.appendChild(frag);
+
+            const sentinel = document.createElement('div');
+            sentinel.className = 'list-chunk-sentinel';
+            listContainer.appendChild(sentinel);
+            // 비원생 섹션은 sentinel 뒤에 즉시 표시 — 이후 청크는 sentinel 앞에 삽입돼 순서 유지
+            if (nonEnrolled.length > 0) renderPastStudentResults(nonEnrolled, listContainer);
+
+            let offset = CHUNK_SIZE;
+            _chunkObserver = new IntersectionObserver((entries) => {
+                if (!entries.some(e => e.isIntersecting)) return;
+                const nextFrag = document.createDocumentFragment();
+                enrolled.slice(offset, offset + CHUNK_SIZE).forEach(s => renderStudentItem(s, nextFrag));
+                offset += CHUNK_SIZE;
+                listContainer.insertBefore(nextFrag, sentinel);
+                if (offset >= enrolled.length) {
+                    sentinel.remove();
+                    _chunkObserver.disconnect();
+                    _chunkObserver = null;
+                }
+            }, { root: listContainer });
+            _chunkObserver.observe(sentinel);
+        }
+    } else {
+        if (nonEnrolled.length > 0) renderPastStudentResults(nonEnrolled, listContainer);
+    }
 }
 
 // Expected 화면: "10일 이내 / 10일 이후 / 복귀일 미설정" 섹션으로 그룹핑
@@ -4688,6 +4728,8 @@ function updateBulkEditSummary() {
 function enterBulkMode() {
     if (!confirmDiscardUnsaved()) return;
     bulkMode = true;
+    // 청크 렌더 중이었다면 전체 렌더로 전환 (전체선택이 DOM 체크박스 기준이므로)
+    if (_chunkObserver) applyFilterAndRender();
     storeUpdate({ bulkMode: true });
     document.getElementById('bulk-action-bar').style.display = 'flex';
     const btn = document.getElementById('bulk-mode-btn');

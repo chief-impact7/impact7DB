@@ -322,7 +322,7 @@
 
   function createModal() {
     const overlay = document.createElement('div');
-    overlay.className = 'help-guide-overlay';
+    overlay.className = 'help-guide-overlay modal-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', '사용 가이드');
@@ -343,7 +343,7 @@
             <span class="material-symbols-outlined">menu_book</span>
             사용 가이드
           </h2>
-          <button class="help-guide-close" aria-label="닫기">
+          <button class="help-guide-close" aria-label="닫기" autofocus>
             <span class="material-symbols-outlined">close</span>
           </button>
         </header>
@@ -352,6 +352,7 @@
       </div>
     `;
 
+    overlay.style.display = 'none';
     document.body.appendChild(overlay);
     return overlay;
   }
@@ -378,8 +379,6 @@
     renderContent();
   }
 
-  let _previousFocus = null;
-
   function openModal() {
     if (!overlayEl) {
       overlayEl = createModal();
@@ -399,28 +398,24 @@
       });
     }
 
-    _previousFocus = document.activeElement;
     activeTab = TABS[0].id;
     switchTab(activeTab);
-    overlayEl.classList.add('help-guide-overlay--visible');
+    overlayEl.style.display = 'flex';
+    // display 전환과 같은 프레임에 클래스를 켜면 fade-in이 생략됨 — 다음 프레임에 적용
+    requestAnimationFrame(() => overlayEl.classList.add('help-guide-overlay--visible'));
     document.body.style.overflow = 'hidden';
-    overlayEl.querySelector('.help-guide-close').focus();
   }
 
   function closeModal() {
     if (!overlayEl) return;
     overlayEl.classList.remove('help-guide-overlay--visible');
+    // fade-out(0.2s) 후 display:none — modal-manager는 none 시점에 닫힘으로 인식.
+    // 200ms 내 재오픈 시(visible 클래스 복귀) none을 건너뛴다
+    setTimeout(() => {
+      if (!overlayEl.classList.contains('help-guide-overlay--visible')) overlayEl.style.display = 'none';
+    }, 200);
     document.body.style.overflow = '';
-    if (_previousFocus) { _previousFocus.focus(); _previousFocus = null; }
   }
-
-  /* ── Keyboard ──────────────────────────────────────────────────────── */
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && overlayEl && overlayEl.classList.contains('help-guide-overlay--visible')) {
-      closeModal();
-    }
-  });
 
   /* ── Bind to help button ───────────────────────────────────────────── */
 

@@ -37,6 +37,7 @@
 
     /* Mapped to previous variable names for compatibility */
     --primary: #00754A;
+    --primary-hover: #005c38;
     --primary-light: #d4e9e2;
     --on-primary: #ffffff;
     --surface: #f2f0eb;
@@ -145,7 +146,7 @@ body {
 .action-chip-btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 3px 8px rgba(0, 117, 74, 0.45);
-    background: #00633e;
+    background: var(--primary-hover);
 }
 .action-chip-btn .material-symbols-outlined {
     font-size: 18px;
@@ -311,12 +312,8 @@ body {
 }
 
 .compose-btn:hover {
-    background: #005c38;
+    background: var(--primary-hover);
     box-shadow: 0 1px 3px rgba(0,0,0,0.18), 0 2px 4px rgba(0,0,0,0.12);
-}
-
-.compose-btn:active {
-    transform: scale(0.95);
 }
 
 .nav-list {
@@ -964,6 +961,25 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--text-main);
 }
 
+/* 버튼 위계 공통 상태 — 채움(primary/danger)·고스트 변형의 active/disabled 통일 (UX-31) */
+.btn-save:active,
+.btn-cancel:active,
+.compose-btn:active,
+.action-chip-btn:active,
+.btn-end-class-confirm:active {
+    transform: scale(0.95);
+}
+
+.btn-save:disabled,
+.btn-cancel:disabled,
+.compose-btn:disabled,
+.action-chip-btn:disabled,
+.btn-end-class-confirm:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+    transform: none;
+}
+
 .btn-save {
     background: var(--sbux-accent);
     color: #fff;
@@ -979,18 +995,9 @@ summary.menu-l2 .material-symbols-outlined {
 }
 
 .btn-save:hover {
-    background: #005c38;
-    border-color: #005c38;
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
     box-shadow: 0 1px 3px rgba(0,0,0,0.18);
-}
-
-.btn-save:active {
-    transform: scale(0.95);
-}
-
-.btn-save:disabled {
-    opacity: .6;
-    cursor: not-allowed;
 }
 
 .upload-method-btn {
@@ -1044,10 +1051,6 @@ summary.menu-l2 .material-symbols-outlined {
 .btn-cancel:hover {
     background: var(--sbux-ceramic);
     border-color: rgba(0,0,0,0.32);
-}
-
-.btn-cancel:active {
-    transform: scale(0.95);
 }
 
 /* 공통 버튼 포커스 스타일 */
@@ -1796,11 +1799,6 @@ summary.menu-l2 .material-symbols-outlined {
 .btn-end-class-confirm:hover {
     background: var(--danger-strong);
     box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
-}
-
-.btn-end-class-confirm:disabled {
-    opacity: .6;
-    cursor: not-allowed;
 }
 
 .btn-end-single {
