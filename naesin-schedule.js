@@ -1,4 +1,5 @@
 import { state } from './store.js';
+import { showToast } from './toast.js';
 import { db } from './firebase-config.js';
 import { writeBatch, doc, collection, serverTimestamp } from 'firebase/firestore';
 import { currentSchool, studentFullLabel } from '@impact7/shared/student-label';
@@ -256,7 +257,7 @@ window.applyNaesinOverride = (groupKey, studentId, btn) => {
     const popup = btn.closest('.naesin-override-popup');
     const days = [...popup.querySelectorAll('input[type="checkbox"]:checked')].map(cb => cb.value);
     const time = popup.querySelector('input[type="time"]').value;
-    if (days.length === 0) { alert('요일을 선택해주세요.'); return; }
+    if (days.length === 0) { showToast('요일을 선택해주세요.', 'warn'); return; }
     _naesinState.groups[groupKey].overrides[studentId] = { days, time };
     popup.remove();
     renderNaesinGroups();
@@ -273,8 +274,8 @@ window.clearNaesinOverride = (groupKey, studentId) => {
 // ---------------------------------------------------------------------------
 window.saveNaesinSchedule = async () => {
     const { startDate, endDate, groups } = _naesinState;
-    if (!startDate || !endDate) { alert('내신 기간을 설정해주세요.'); return; }
-    if (endDate <= startDate) { alert('종료일은 시작일 이후여야 합니다.'); return; }
+    if (!startDate || !endDate) { showToast('내신 기간을 설정해주세요.', 'warn'); return; }
+    if (endDate <= startDate) { showToast('종료일은 시작일 이후여야 합니다.', 'warn'); return; }
 
     const studentMap = new Map(state.allStudents.map(s => [s.id, s]));
     const writes = [];
@@ -304,15 +305,15 @@ window.saveNaesinSchedule = async () => {
     }
 
     if (dayWarnings.length > 0) {
-        alert(`요일 미설정 학생이 있습니다:\n${dayWarnings.join(', ')}\n\n요일을 설정하거나 서브그룹에서 제외해주세요.`);
+        showToast(`요일 미설정 학생이 있습니다:\n${dayWarnings.join(', ')}\n\n요일을 설정하거나 서브그룹에서 제외해주세요.`, 'warn', { sticky: true });
         return;
     }
     if (timeWarnings.length > 0) {
-        alert(`등원시간 미입력 학생이 있습니다:\n${timeWarnings.join(', ')}\n\n해당 서브그룹의 시간을 입력하거나 학생을 제외해주세요.`);
+        showToast(`등원시간 미입력 학생이 있습니다:\n${timeWarnings.join(', ')}\n\n해당 서브그룹의 시간을 입력하거나 학생을 제외해주세요.`, 'warn', { sticky: true });
         return;
     }
 
-    if (writes.length === 0) { alert('저장할 학생이 없습니다.'); return; }
+    if (writes.length === 0) { showToast('저장할 학생이 없습니다.', 'warn'); return; }
 
     const conflicts = [];
     for (const w of writes) {
@@ -392,10 +393,10 @@ window.saveNaesinSchedule = async () => {
 
         window.dispatchEvent(new CustomEvent('impact7:studentsChanged'));
         window.closeNaesinSchedule();
-        alert(`${writes.length}명의 내신 시간표를 저장했습니다.`);
+        showToast(`${writes.length}명의 내신 시간표를 저장했습니다.`, 'success');
     } catch (e) {
         console.error('[NAESIN SAVE ERROR]', e);
-        alert('내신 시간표 저장 실패: ' + e.message);
+        showToast('내신 시간표 저장 실패: ' + e.message, 'error');
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';

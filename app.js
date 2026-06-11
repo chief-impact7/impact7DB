@@ -22,7 +22,7 @@ import {
 import './naesin-schedule.js';
 import { showToast } from './toast.js';
 import './a11y-keys.js';
-import { markFormClean, confirmDiscardUnsaved } from './unsaved-guard.js';
+import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
     { db, writeBatch, doc, collection, serverTimestamp }
@@ -261,8 +261,8 @@ function blockOnEnrollmentConflicts(conflicts) {
     showToast(
         `⛔ 같은 시기에 동일한 반명이 ${conflicts.length}건 있습니다.\n\n` +
         `${lines.join('\n\n')}\n\n` +
-        `정규반과 특강반의 이름이 같으면 안 됩니다.\n저장할 수 없습니다.`
-    , 'error');
+        `정규반과 특강반의 이름이 같으면 안 됩니다.\n저장할 수 없습니다.`,
+        'error', { sticky: true });
     return false;
 }
 
@@ -489,6 +489,7 @@ onAuthStateChanged(auth, async (user) => {
         const email = user.email || '';
         const allowedDomain = email.endsWith('@impact7.kr') || email.endsWith('@gw.impact7.kr');
         if (!user.emailVerified || !allowedDomain) {
+            // 의도적 blocking alert — 직후 logout()으로 화면이 전환되므로 토스트는 못 본다
             alert('❌ 허용되지 않은 계정입니다.\n학원 계정(@impact7.kr 또는 @gw.impact7.kr)으로 다시 로그인해주세요.');
             await logout();
             return;
@@ -659,7 +660,7 @@ function findStudentNumberDuplicate(name, studentNumber, excludeId = null) {
 }
 
 function alertStudentNumberDuplicate(name, studentNumber, duplicate) {
-    showToast(`이름+학생번호가 이미 존재합니다.\n\n입력값: ${name} #${studentNumber}\n기존 학생: ${duplicate.name || duplicate.id} (${duplicate.status || '상태없음'})\n\n동명이인인 경우 이름 뒤에 숫자를 붙여 구분한 뒤 다시 저장하세요.`, 'warn');
+    showToast(`이름+학생번호가 이미 존재합니다.\n\n입력값: ${name} #${studentNumber}\n기존 학생: ${duplicate.name || duplicate.id} (${duplicate.status || '상태없음'})\n\n동명이인인 경우 이름 뒤에 숫자를 붙여 구분한 뒤 다시 저장하세요.`, 'warn', { sticky: true });
 }
 
 // 휴원 날짜 기반 자동 전환: 시작일 전이면 재원 유지, 시작일 도래 시 휴원 전환
@@ -2285,7 +2286,7 @@ window.submitNewStudent = async () => {
         if (nameChanged) {
             const dup = _suggestUniqueActiveName(name, excludeId);
             if (dup) {
-                showToast(`동일한 이름의 재원/휴원 학생이 있습니다.\n[${dup.conflicts.map(s => `${s.name} (${s.status})`).join(', ')}]\n\n이름 뒤에 숫자를 붙여 주세요. (예: ${dup.suggested})`, 'warn');
+                showToast(`동일한 이름의 재원/휴원 학생이 있습니다.\n[${dup.conflicts.map(s => `${s.name} (${s.status})`).join(', ')}]\n\n이름 뒤에 숫자를 붙여 주세요. (예: ${dup.suggested})`, 'warn', { sticky: true });
                 f.name.focus();
                 return;
             }
@@ -2770,6 +2771,7 @@ function renderPendingEnrollments() {
 
 window.removePendingEnrollment = (idx) => {
     _pendingEnrollments.splice(idx, 1);
+    markFormDirty();
     renderPendingEnrollments();
 };
 
@@ -2863,6 +2865,7 @@ function _rebuildEditEnrollmentCards() {
 
 window.removeEditEnrollment = (idx) => {
     _editEnrollments.splice(idx, 1);
+    markFormDirty();
     _rebuildEditEnrollmentCards();
 };
 
@@ -3172,6 +3175,7 @@ window.saveEnrollment = async () => {
     // 신규등록 폼에서 호출된 경우 → 로컬 배열에 추가
     if (modal?.dataset.context === 'form') {
         _pendingEnrollments.push(enrollment);
+        markFormDirty();
         renderPendingEnrollments();
         modal.style.display = 'none';
         delete modal.dataset.context;
@@ -3181,6 +3185,7 @@ window.saveEnrollment = async () => {
     // 수정 폼에서 호출된 경우 → 편집 중 배열에 추가
     if (modal?.dataset.context === 'edit') {
         _editEnrollments.push(enrollment);
+        markFormDirty();
         _rebuildEditEnrollmentCards();
         modal.style.display = 'none';
         delete modal.dataset.context;
@@ -3660,7 +3665,7 @@ window.handleSheetTemplate = async () => {
         if (!valResp.ok) console.warn('[TEMPLATE] 유효성 설정 실패:', await valResp.text());
 
         window.open(created.spreadsheetUrl, '_blank');
-        showToast('내 드라이브에 템플릿이 생성되었습니다!\n\n데이터를 입력한 후:\n• "시트 URL로 업로드" → 주소창 URL 붙여넣기\n• "드라이브에서 선택" → 템플릿 파일 선택', 'success');
+        showToast('내 드라이브에 템플릿이 생성되었습니다!\n\n데이터를 입력한 후:\n• "시트 URL로 업로드" → 주소창 URL 붙여넣기\n• "드라이브에서 선택" → 템플릿 파일 선택', 'success', { sticky: true });
     } catch (e) {
         showToast('템플릿 생성 실패: ' + e.message + '\n\n로그아웃 후 다시 로그인하면 해결될 수 있습니다.', 'error');
     }
@@ -3911,7 +3916,7 @@ async function runUpsertFromRows(rows, sourceName) {
         showToast(
             `업로드 파일에 반 생성 마법사에서 생성되지 않은 반이 있습니다.\n` +
             `학생 데이터는 저장하지 않았습니다.\n\n${invalidClasses.slice(0, 20).join('\n')}`,
-            'warn');
+            'warn', { sticky: true });
         return;
     }
 
@@ -4094,7 +4099,7 @@ async function runUpsertFromRows(rows, sourceName) {
             `인식된 학생: ${totalRows}명\n` +
             `건너뜀: ${results.skipped.length}명\n` +
             `헤더: ${detectedKeys || '(없음)'}`,
-            'warn');
+            'warn', { sticky: true });
         return;
     }
 
@@ -4638,6 +4643,7 @@ function updateBulkEditSummary() {
 }
 
 function enterBulkMode() {
+    if (!confirmDiscardUnsaved()) return;
     bulkMode = true;
     storeUpdate({ bulkMode: true });
     document.getElementById('bulk-action-bar').style.display = 'flex';
@@ -4859,7 +4865,8 @@ window.applyBulkClass = async () => {
         let msg = `${changes.length}명의 반을 '${raw}'(으)로 이동했습니다. (${sem} 정규)`;
         if (skipped.length) msg += `\n\n⚠️ 제외 ${skipped.length}명: ${skipped.join(', ')}\n(해당 학기 정규 수업이 없거나 반명 충돌)`;
         if (warnings.length) msg += `\n\n⚠️ 내신 매핑 주의:\n${warnings.join('\n')}`;
-        showToast(msg, skipped.length || warnings.length ? 'warn' : 'success');
+        const hasIssues = skipped.length > 0 || warnings.length > 0;
+        showToast(msg, hasIssues ? 'warn' : 'success', { sticky: hasIssues });
     } catch (e) {
         console.error('[BULK CLASS ERROR]', e);
         showToast('일괄 반 변경 실패: ' + e.message, 'error');
@@ -4937,7 +4944,7 @@ window.applyBulkDays = async () => {
         updateBulkEditSummary();
         let msg = `${changes.length}명의 등원요일을 변경했습니다. (${sem} 수업)`;
         if (skipped.length) msg += `\n\n⚠️ 제외 ${skipped.length}명: ${skipped.join(', ')}\n(해당 학기 수업 없음)`;
-        showToast(msg, skipped.length ? 'warn' : 'success');
+        showToast(msg, skipped.length ? 'warn' : 'success', { sticky: skipped.length > 0 });
     } catch (e) {
         console.error('[BULK DAYS ERROR]', e);
         showToast('일괄 요일 변경 실패: ' + e.message, 'error');
@@ -5007,7 +5014,7 @@ window.applyBulkPromotion = async () => {
         changes.push({ id, name: student.name, before: beforeParts, after: afterParts, updateData, afterLevel, afterGrade, isTransition });
     });
 
-    if (changes.length === 0) { showToast('승격할 학생이 없습니다.' + (skipped.length ? `\n\n건너뜀:\n${skipped.join('\n')}` : ''), 'warn'); return; }
+    if (changes.length === 0) { showToast('승격할 학생이 없습니다.' + (skipped.length ? `\n\n건너뜀:\n${skipped.join('\n')}` : ''), 'warn', { sticky: skipped.length > 0 }); return; }
 
     // 확인 메시지 구성
     const normal = changes.filter(c => !c.isTransition);
@@ -6364,7 +6371,8 @@ window.saveGrammarSpecial = async () => {
         const skipNote = skippedWithdrawn.length > 0
             ? `\n\n비원생(퇴원/종강/상담) ${skippedWithdrawn.length}명은 제외됨 — 재등원 처리 후 추가하세요:\n${skippedWithdrawn.join(', ')}`
             : '';
-        showToast(`${savedCount}명의 문법 특강을 저장했습니다.${skipNote}`, 'success');
+        const hasSkips = skippedWithdrawn.length > 0;
+        showToast(`${savedCount}명의 문법 특강을 저장했습니다.${skipNote}`, hasSkips ? 'warn' : 'success', { sticky: hasSkips });
     } catch (e) {
         console.error('[GS SAVE ERROR]', e);
         showToast('문법 특강 저장 실패: ' + e.message, 'error');

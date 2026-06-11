@@ -10,11 +10,12 @@
  * 토큰 없으면 alert 후 null 반환.
  */
 import { ensureGoogleAccessToken } from './auth.js';
+import { showToast } from './toast.js';
 
 export async function createGoogleSheet(title, headers, rows) {
     const token = await ensureGoogleAccessToken();
     if (!token) {
-        alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
+        showToast('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.', 'warn');
         return null;
     }
 
@@ -61,7 +62,7 @@ export async function createGoogleSheet(title, headers, rows) {
         window.open(created.spreadsheetUrl, '_blank');
         return created.spreadsheetUrl;
     } catch (e) {
-        alert('시트 내보내기 실패: ' + e.message + '\n\n로그아웃 후 다시 로그인하면 해결될 수 있습니다.');
+        showToast('시트 내보내기 실패: ' + e.message + '\n\n로그아웃 후 다시 로그인하면 해결될 수 있습니다.', 'error');
         return null;
     }
 }

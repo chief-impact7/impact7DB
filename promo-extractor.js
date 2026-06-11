@@ -7,6 +7,7 @@
  * 또는 Google Sheets로 내보낼 수 있다.
  */
 import { state } from './store.js';
+import { showToast } from './toast.js';
 import { studentFullLabel } from '@impact7/shared/student-label';
 import { ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { todayKST } from '@impact7/shared/datetime';
@@ -434,7 +435,7 @@ function getCheckedRows() {
 async function handleCopy() {
     const rows = getCheckedRows();
     if (rows.length === 0) {
-        alert('선택된 행이 없습니다.');
+        showToast('선택된 행이 없습니다.', 'warn');
         return;
     }
     // 선택된 모든 전화 필드의 번호를 평탄화 (공란 제외, 전체 중복 제거)
@@ -448,7 +449,7 @@ async function handleCopy() {
 
     try {
         await navigator.clipboard.writeText(text);
-        alert(`${rows.length}개 번호를 복사했습니다.`);
+        showToast(`${rows.length}개 번호를 복사했습니다.`, 'success');
     } catch (e) {
         // fallback: textarea + execCommand
         const ta = document.createElement('textarea');
@@ -459,9 +460,9 @@ async function handleCopy() {
         ta.select();
         try {
             document.execCommand('copy');
-            alert(`${rows.length}개 번호를 복사했습니다.`);
+            showToast(`${rows.length}개 번호를 복사했습니다.`, 'success');
         } catch (fallbackErr) {
-            alert('복사 실패: ' + fallbackErr.message);
+            showToast('복사 실패: ' + fallbackErr.message, 'error');
         } finally {
             document.body.removeChild(ta);
         }
@@ -471,7 +472,7 @@ async function handleCopy() {
 async function handleSheetExport() {
     const rows = getCheckedRows();
     if (rows.length === 0) {
-        alert('선택된 행이 없습니다.');
+        showToast('선택된 행이 없습니다.', 'warn');
         return;
     }
 
