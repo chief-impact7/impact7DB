@@ -1,6 +1,6 @@
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
-import { auth, db } from './firebase-config.js';
+import { auth, db, dataAuthReady } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
 import { cleanSchoolName, collectKnownSchoolNames, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
@@ -486,6 +486,8 @@ onAuthStateChanged(auth, async (user) => {
     const avatarBtn = document.querySelector('.avatar');
 
     if (user) {
+        // dataApp(Firestore) auth 미러링 완료 보장 — 미완이면 첫 쿼리가 unauthenticated로 거부됨
+        await dataAuthReady();
         // 도메인 체크: impact7.kr 또는 gw.impact7.kr 인증된 계정만 허용
         const email = user.email || '';
         const allowedDomain = email.endsWith('@impact7.kr') || email.endsWith('@gw.impact7.kr');
