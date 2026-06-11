@@ -24,7 +24,8 @@ import { showToast } from './toast.js';
 import './a11y-keys.js';
 import './modal-manager.js';
 import './date-picker.js';
-import { promptModal } from './prompt-modal.js';
+import { promptModal, confirmModal } from './prompt-modal.js';
+import './form-enter.js';
 import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -555,7 +556,6 @@ document.getElementById('login-avatar-btn')?.removeAttribute('aria-disabled');
 // ---------------------------------------------------------------------------
 async function loadStudentList() {
     const listContainer = document.querySelector('.list-items');
-    listContainer.innerHTML = '<p style="padding:16px;color:var(--text-sec)">Loading...</p>';
 
     function renderStudents(snapshot) {
         allStudents = [];
@@ -586,6 +586,11 @@ async function loadStudentList() {
         await handleScheduledWithdrawals();
         await handleScheduledSpecialClassEnds();
         await backfillStudentNumbers();
+    }
+
+    // 첫 방문(캐시 미스) 동안 빈 화면 대신 스켈레톤 표시 — renderStudents가 덮어쓴다
+    if (!listContainer.querySelector('.list-item')) {
+        listContainer.innerHTML = '<div class="skeleton-item"></div>'.repeat(8);
     }
 
     try {
@@ -1322,6 +1327,12 @@ function updateFilterChips() {
     if (clearBtn) clearBtn.style.display = 'flex';
 }
 
+window.resetSearchAndFilters = () => {
+    const searchInput = document.getElementById('studentSearchInput');
+    if (searchInput) searchInput.value = '';
+    window.clearFilters();
+};
+
 window.clearFilters = () => {
     Object.keys(activeFilters).forEach(k => activeFilters[k] = null);
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -1506,7 +1517,12 @@ function renderStudentList(students, pastResults) {
     const hasPastResults = pastResults && pastResults.length > 0;
 
     if (students.length === 0 && !hasPastResults) {
-        listContainer.innerHTML = '<p style="padding:16px;color:var(--text-sec)">No matches found.</p>';
+        const hasTerm = !!document.getElementById('studentSearchInput')?.value.trim();
+        const showReset = hasNonSemesterFilter() || hasTerm;
+        listContainer.innerHTML = `<div class="list-empty">
+            <p>일치하는 학생이 없습니다.</p>
+            ${showReset ? '<button class="btn-cancel" onclick="window.resetSearchAndFilters()">검색·필터 초기화</button>' : ''}
+        </div>`;
         return;
     }
 
@@ -3783,7 +3799,7 @@ async function importFromSheetId(sheetId, sheetName) {
             selectedTab = tabs[idx];
         }
 
-        if (!confirm(`"${sheetName}" → [${selectedTab}] 탭에서 데이터를 가져올까요?`)) return;
+        if (!(await confirmModal({ title: '시트 가져오기', message: `"${sheetName}" → [${selectedTab}] 탭에서 데이터를 가져올까요?`, confirmText: '가져오기' }))) return;
 
         // 선택된 탭에서 데이터 읽기
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(selectedTab)}!A:Z`;
@@ -4154,8 +4170,7 @@ async function runUpsertFromRows(rows, sourceName) {
         return;
     }
 
-    msg += `\n적용하시겠습니까?`;
-    if (!confirm(msg)) return;
+    if (!(await confirmModal({ title: '업로드 적용', message: msg, confirmText: '적용' }))) return;
 
     // 6) Write to Firestore in batches (학생 write + history log = 2 ops/item, 500 한도)
     const BATCH_SIZE = 200;
@@ -4742,7 +4757,7 @@ window.applyBulkStatus = async () => {
     if (!newStatus) { showToast('변경할 상태를 선택해주세요.', 'warn'); return; }
     if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
 
-    if (!confirm(`선택한 ${selectedStudentIds.size}명의 상태를 '${newStatus}'(으)로 변경합니다.`)) return;
+    if (!(await confirmModal({ title: '일괄 상태 변경', message: `선택한 ${selectedStudentIds.size}명의 상태를 '${newStatus}'(으)로 변경합니다.`, confirmText: '변경' }))) return;
 
     const ids = [...selectedStudentIds];
     try {
@@ -4822,7 +4837,7 @@ window.applyBulkClass = async () => {
 
     const startDate = document.getElementById('bulk-class-startdate')?.value || '';
 
-    if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${sem} 정규반을 '${raw}'(으)로 이동합니다.`)) return;
+    if (!(await confirmModal({ title: '일괄 반 이동', message: `선택한 ${selectedStudentIds.size}명의 ${sem} 정규반을 '${raw}'(으)로 이동합니다.`, confirmText: '이동' }))) return;
 
     const ids = [...selectedStudentIds];
     const newBranch = branchFromClassNumber(classNumber);
@@ -4917,7 +4932,7 @@ window.applyBulkDays = async () => {
         return;
     }
 
-    if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${sem} 등원요일을 '${checked.join(', ')}'(으)로 변경합니다.`)) return;
+    if (!(await confirmModal({ title: '일괄 요일 변경', message: `선택한 ${selectedStudentIds.size}명의 ${sem} 등원요일을 '${checked.join(', ')}'(으)로 변경합니다.`, confirmText: '변경' }))) return;
 
     const ids = [...selectedStudentIds];
     try {
@@ -5051,7 +5066,7 @@ window.applyBulkPromotion = async () => {
     if (normal.length) desc += `\n• 일반 승격: ${normal.length}명`;
     if (transition.length) desc += `\n• 학부 전환: ${transition.length}명 (${transition.map(c => `${c.name}: ${c.before} → ${c.after}`).join(', ')})`;
     if (skipped.length) desc += `\n\n건너뜀 ${skipped.length}명:\n${skipped.join('\n')}`;
-    if (!confirm(desc)) return;
+    if (!(await confirmModal({ title: '일괄 학년 승격', message: desc, confirmText: '승격' }))) return;
 
     try {
         const BATCH_SIZE = 200;
@@ -5120,7 +5135,7 @@ window.applyBulkSchool = async () => {
 
     if (changes.length === 0) { showToast('변경할 학생이 없습니다.', 'warn'); return; }
 
-    if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${level} 학교를 '${schoolName}'(으)로 설정합니다.`)) return;
+    if (!(await confirmModal({ title: '일괄 학교 변경', message: `선택한 ${selectedStudentIds.size}명의 ${level} 학교를 '${schoolName}'(으)로 설정합니다.`, confirmText: '설정' }))) return;
 
     try {
         const BATCH_SIZE = 200;
@@ -6320,12 +6335,12 @@ window.saveGrammarSpecial = async () => {
         }
     }
     if (conflicts.length > 0) {
-        if (!confirm(`다음 학생에 동일 기간 문법 특강이 이미 있습니다:\n${conflicts.join(', ')}\n\n기존 특강을 덮어쓰시겠습니까?`)) return;
+        if (!(await confirmModal({ title: '기존 특강 덮어쓰기', message: `다음 학생에 동일 기간 문법 특강이 이미 있습니다:\n${conflicts.join(', ')}\n\n기존 특강을 덮어쓰시겠습니까?`, confirmText: '덮어쓰기' }))) return;
     }
 
     const existCount = toSave.filter(e => e.isExisting).length;
     const newCount = toSave.length - existCount;
-    if (!confirm(`${toSave.length}명 문법 특강을 저장합니다.\n(재원 ${existCount} + 비원 ${newCount})\n기간: ${startDate} ~ ${endDate}\n\n진행하시겠습니까?`)) return;
+    if (!(await confirmModal({ title: '문법 특강 저장', message: `${toSave.length}명 문법 특강을 저장합니다.\n(재원 ${existCount} + 비원 ${newCount})\n기간: ${startDate} ~ ${endDate}`, confirmText: '저장' }))) return;
 
     const saveBtn = document.getElementById('gs-save-btn');
     saveBtn.disabled = true;
@@ -6562,7 +6577,7 @@ window.loadPromotionPreview = () => {
 
 window.runPromotion = async () => {
     const runBtn = document.getElementById('admin-promo-run-btn');
-    if (!confirm('전체 재원생의 학년을 1 승급합니다. 계속하시겠습니까?')) return;
+    if (!(await confirmModal({ title: '전체 학년 승급', message: '전체 재원생의 학년을 1 승급합니다.\n이 작업은 모든 재원생에게 적용됩니다.', confirmText: '승급 실행' }))) return;
     runBtn.disabled = true;
     runBtn.textContent = '처리 중...';
     try {

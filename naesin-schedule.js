@@ -1,5 +1,6 @@
 import { state } from './store.js';
 import { showToast } from './toast.js';
+import { confirmModal } from './prompt-modal.js';
 import { db } from './firebase-config.js';
 import { writeBatch, doc, collection, serverTimestamp } from 'firebase/firestore';
 import { currentSchool, studentFullLabel } from '@impact7/shared/student-label';
@@ -326,10 +327,10 @@ window.saveNaesinSchedule = async () => {
         if (hasNaesin) conflicts.push(s.name);
     }
     if (conflicts.length > 0) {
-        if (!confirm(`다음 학생에 동일 기간 내신이 이미 있습니다:\n${conflicts.join(', ')}\n\n기존 내신을 덮어쓰시겠습니까?`)) return;
+        if (!(await confirmModal({ title: '기존 내신 덮어쓰기', message: `다음 학생에 동일 기간 내신이 이미 있습니다:\n${conflicts.join(', ')}\n\n기존 내신을 덮어쓰시겠습니까?`, confirmText: '덮어쓰기' }))) return;
     }
 
-    if (!confirm(`${writes.length}명에게 내신 시간표를 적용합니다.\n기간: ${startDate} ~ ${endDate}\n\n진행하시겠습니까?`)) return;
+    if (!(await confirmModal({ title: '내신 시간표 적용', message: `${writes.length}명에게 내신 시간표를 적용합니다.\n기간: ${startDate} ~ ${endDate}`, confirmText: '적용' }))) return;
 
     const saveBtn = document.getElementById('naesin-save-btn');
     saveBtn.disabled = true;

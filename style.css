@@ -49,7 +49,12 @@
     --active-bg: #d4e9e2;
     --active-text: #006241;
     --border: rgba(0,0,0,0.12);
+    /* radius 토큰 — 시각 무변경 보장을 위해 동일값(6/8/12/100px)만 치환함.
+       9·10·16·18·20·24px 잔존은 의도적 보존 — 토큰으로 스냅하면 라운딩이 변형됨 */
+    --radius-sm: 6px;
+    --radius-md: 8px;
     --radius-lg: 12px;
+    --radius-pill: 999px;
     --btn-radius: 50px;
     --font-heading: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
     --font-body: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -553,7 +558,7 @@ summary.menu-l2 .material-symbols-outlined {
     font-weight: 600;
     color: var(--sbux-green);
     background: var(--sbux-light);
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     flex-shrink: 0;
     font-family: var(--font-heading);
     letter-spacing: -0.01em;
@@ -613,7 +618,7 @@ summary.menu-l2 .material-symbols-outlined {
     height: 28px;
     padding: 0 18px 0 8px;
     border: none;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     background: var(--sbux-light) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24'%3E%3Cpath fill='%23006241' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 6px center;
     color: var(--sbux-green);
     font-size: 11px;
@@ -659,7 +664,7 @@ summary.menu-l2 .material-symbols-outlined {
     height: 28px;
     padding: 0 12px;
     border: 1px solid var(--border);
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     background: var(--surface);
     color: var(--text-main);
     font-family: var(--font-body);
@@ -689,7 +694,7 @@ summary.menu-l2 .material-symbols-outlined {
     padding: 4px 12px;
     text-align: center;
     margin: 0 8px 4px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
 }
 
 .semester-setting-row {
@@ -726,7 +731,7 @@ summary.menu-l2 .material-symbols-outlined {
     font-size: 12px;
     padding: 4px 6px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     font-family: var(--font-body);
 }
 
@@ -757,7 +762,11 @@ summary.menu-l2 .material-symbols-outlined {
     transition: background 0.15s, color 0.15s;
 }
 
-.filter-clear-btn:hover {
+/* 위험(삭제·종료) 아이콘 버튼 공통 hover */
+.filter-clear-btn:hover,
+.memo-delete-btn:hover,
+.btn-end-class:hover,
+.btn-remove-pending:hover {
     background: var(--danger-bg);
     color: var(--danger-strong);
 }
@@ -920,7 +929,7 @@ summary.menu-l2 .material-symbols-outlined {
 .tag {
     background: var(--surface-hover);
     padding: 4px 12px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     font-size: 13px;
     font-weight: 500;
     color: var(--text-sec);
@@ -1171,7 +1180,7 @@ summary.menu-l2 .material-symbols-outlined {
     font-size: 12px;
     color: var(--sbux-green);
     background: var(--sbux-light);
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
 }
 
 /* ── Contact item in search results ─────────────────────────────────────── */
@@ -1253,7 +1262,7 @@ summary.menu-l2 .material-symbols-outlined {
     background-color: #dadce0;
     border: 2px solid transparent;
     background-clip: padding-box;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -1325,7 +1334,7 @@ summary.menu-l2 .material-symbols-outlined {
 .memo-delete-btn {
     background: none;
     border: none;
-    color: #999;
+    color: var(--text-sec);
     cursor: pointer;
     padding: 2px;
     display: flex;
@@ -1334,10 +1343,6 @@ summary.menu-l2 .material-symbols-outlined {
     transition: background 0.15s, color 0.15s;
 }
 
-.memo-delete-btn:hover {
-    background: var(--danger-bg);
-    color: var(--danger-strong);
-}
 
 .memo-full {
     border-top: 1px solid var(--border);
@@ -1478,7 +1483,7 @@ summary.menu-l2 .material-symbols-outlined {
     font-weight: 600;
     font-family: var(--font-heading);
     padding: 2px 10px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     letter-spacing: 0.3px;
     flex-shrink: 0;
 }
@@ -1540,7 +1545,7 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--text-sec);
     background: var(--surface-hover);
     padding: 1px 8px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
 }
 
 .icon-btn.active {
@@ -1640,7 +1645,7 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--warn);
     background: var(--warn-bg);
     padding: 1px 8px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     font-family: var(--font-heading);
     flex-shrink: 0;
 }
@@ -1659,10 +1664,6 @@ summary.menu-l2 .material-symbols-outlined {
     transition: background 0.15s, color 0.15s;
 }
 
-.btn-end-class:hover {
-    background: var(--danger-bg);
-    color: var(--danger-strong);
-}
 
 .enrollment-card-body {
     display: flex;
@@ -1745,7 +1746,7 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--text-sec);
     background: var(--surface-hover);
     padding: 2px 10px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     margin-bottom: 6px;
 }
 
@@ -1774,7 +1775,7 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--primary);
     background: var(--primary-light);
     padding: 1px 8px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     font-family: var(--font-heading);
     font-weight: 500;
 }
@@ -1822,7 +1823,7 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--danger-strong);
     background: var(--danger-bg);
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     margin-top: 8px;
 }
 
@@ -1874,7 +1875,7 @@ summary.menu-l2 .material-symbols-outlined {
 .btn-remove-pending {
     background: none;
     border: none;
-    color: #999;
+    color: var(--text-sec);
     cursor: pointer;
     padding: 2px;
     display: flex;
@@ -1883,10 +1884,6 @@ summary.menu-l2 .material-symbols-outlined {
     transition: background 0.15s, color 0.15s;
 }
 
-.btn-remove-pending:hover {
-    background: var(--danger-bg);
-    color: var(--danger-strong);
-}
 
 /* ── Bulk Action Bar ───────────────────────────────────────────────────── */
 .bulk-action-bar {
@@ -2026,7 +2023,7 @@ summary.menu-l2 .material-symbols-outlined {
 .bulk-edit-section {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     padding: 16px;
     margin-bottom: 12px;
 }
@@ -2100,7 +2097,7 @@ summary.menu-l2 .material-symbols-outlined {
     font-weight: 600;
     font-family: var(--font-heading);
     padding: 1px 6px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     margin-left: 6px;
     vertical-align: middle;
     letter-spacing: 0.2px;
@@ -2147,7 +2144,7 @@ summary.menu-l2 .material-symbols-outlined {
     background: var(--warn-bg);
     color: var(--warn);
     padding: 1px 7px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     margin-left: auto;
     margin-right: 24px;
 }
@@ -2162,7 +2159,7 @@ summary.menu-l2 .material-symbols-outlined {
     background: var(--surface-hover);
     color: var(--text-sec);
     padding: 1px 6px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     margin-left: auto;
 }
 
@@ -2176,7 +2173,7 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--warn);
     background: var(--warn-bg);
     padding: 1px 6px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     flex-shrink: 0;
     white-space: nowrap;
     font-weight: 500;
@@ -2455,7 +2452,7 @@ summary.menu-l2 .material-symbols-outlined {
 .stats-bar-highlight {
     background: var(--primary-light);
     padding: 4px 8px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     margin: 2px -8px;
 }
 
@@ -2648,7 +2645,7 @@ summary.menu-l2 .material-symbols-outlined {
 
 .naesin-group {
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     padding: 12px 14px;
     background: var(--surface);
 }
@@ -2682,7 +2679,7 @@ summary.menu-l2 .material-symbols-outlined {
     padding: 8px 10px;
     background: #fff;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     flex-wrap: wrap;
 }
 .naesin-subgroup-controls {
@@ -2714,7 +2711,7 @@ summary.menu-l2 .material-symbols-outlined {
     width: 70px;
     padding: 4px 6px;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     font-size: 13px;
     text-align: center;
 }
@@ -2829,7 +2826,7 @@ summary.menu-l2 .material-symbols-outlined {
 
 .gs-week-section {
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     padding: 12px 14px;
     background: var(--surface);
 }
@@ -2849,7 +2846,7 @@ summary.menu-l2 .material-symbols-outlined {
 .gs-slot-card {
     background: #fff;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     padding: 8px 10px;
 }
 .gs-slot-title {
@@ -2866,7 +2863,7 @@ summary.menu-l2 .material-symbols-outlined {
     background: var(--primary-light);
     color: var(--primary);
     padding: 1px 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     font-weight: 500;
 }
 .gs-slot-students {
@@ -2904,7 +2901,7 @@ summary.menu-l2 .material-symbols-outlined {
     gap: 6px;
     margin: 8px 12px 12px;
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font-size: 13px;
     font-weight: 500;
@@ -2984,7 +2981,7 @@ summary.menu-l2 .material-symbols-outlined {
 /* 승급 미리보기 */
 .promo-preview-box {
     background: var(--bg-light, #f8f9fa);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     padding: 12px 16px;
     display: flex;
     flex-direction: column;
@@ -3082,7 +3079,7 @@ summary.menu-l2 .material-symbols-outlined {
 .past-history-section {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     padding: 16px 18px;
 }
 .past-history-section-title {
@@ -3109,7 +3106,7 @@ summary.menu-l2 .material-symbols-outlined {
 .past-enrollment-card {
     background: var(--bg-light, #f8f9fa);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     padding: 10px 12px;
 }
 .past-enrollment-card-head {
@@ -3129,7 +3126,7 @@ summary.menu-l2 .material-symbols-outlined {
     font-size: 11px;
     font-weight: 600;
     padding: 1px 8px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     background: var(--primary-light, #d4e9e2);
     color: var(--primary, #00754A);
 }
@@ -3186,7 +3183,7 @@ summary.menu-l2 .material-symbols-outlined {
 .past-cycle-card {
     background: var(--bg-light, #f8f9fa);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     padding: 10px 12px;
 }
 .past-cycle-card-head {
@@ -3198,7 +3195,7 @@ summary.menu-l2 .material-symbols-outlined {
     font-size: 11px;
     font-weight: 600;
     padding: 2px 10px;
-    border-radius: 100px;
+    border-radius: var(--radius-pill);
     letter-spacing: 0.3px;
 }
 .past-cycle-period {
@@ -3209,7 +3206,7 @@ summary.menu-l2 .material-symbols-outlined {
     margin-top: 6px;
     padding: 6px 10px;
     background: var(--surface);
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     font-size: 12px;
     color: var(--text-main);
     line-height: 1.5;
@@ -3337,7 +3334,7 @@ summary.menu-l2 .material-symbols-outlined {
     border-spacing: 0;
     font-size: 13px;
     border: 1px solid #e8eaed;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     overflow: hidden;
 }
 .promo-grid th, .promo-grid td {
@@ -3426,7 +3423,7 @@ summary.menu-l2 .material-symbols-outlined {
     max-height: 480px;
     overflow-y: auto;
     border: 1px solid #e8eaed;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     background: #fff;
 }
 
@@ -3503,7 +3500,7 @@ summary.menu-l2 .material-symbols-outlined {
     gap: 8px;
     max-width: 360px;
     padding: 10px 14px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
     font-size: 13px;
     line-height: 1.45;
     color: #fff;
@@ -3568,7 +3565,7 @@ summary.menu-l2 .material-symbols-outlined {
     margin-left: auto;
     padding: 3px 10px;
     border: 1px solid var(--primary);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--surface-container);
     color: var(--primary);
     font-size: 12px;
@@ -3601,4 +3598,35 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .modal-overlay[data-busy] .btn-icon {
     pointer-events: none;
     opacity: .6;
+}
+
+/* ── 목록 스켈레톤 (첫 로드) ─────────────────────────────────────────────── */
+.skeleton-item {
+    height: 56px;
+    margin: 8px 12px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(90deg, var(--surface-hover) 25%, var(--surface) 50%, var(--surface-hover) 75%);
+    background-size: 200% 100%;
+    animation: skeleton-pulse 1.4s ease infinite;
+}
+@keyframes skeleton-pulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* ── 목록 0건 안내 ──────────────────────────────────────────────────────── */
+.list-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 32px 16px;
+    color: var(--text-sec);
+    font-size: 13px;
+}
+
+/* prompt/confirm 모달 본문 — 장문 메시지(업로드 diff·건너뜀 목록)는 스크롤 */
+#prompt-modal .modal-body {
+    max-height: 60vh;
+    overflow-y: auto;
 }

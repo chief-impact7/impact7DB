@@ -43,21 +43,21 @@
         <!-- Sidebar -->
         <nav class="sidebar">
             <button class="compose-btn" onclick="window.showNewStudentForm()">
-                <span class="material-symbols-outlined">person_add</span>
+                <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
                 Registration
             </button>
 
             <!-- L1: All Students (필터 + L2 토글) -->
             <details class="l1-group">
                 <summary class="menu-l1 nav-item" data-filter-type="all">
-                    <span class="material-symbols-outlined">people</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">people</span>
                     All Students
                 </summary>
 
                 <!-- L2: 상태 (L3 토글) -->
                 <details class="l2-group">
                     <summary class="menu-l2">
-                        <span class="material-symbols-outlined">toggle_on</span>상태
+                        <span class="material-symbols-outlined" aria-hidden="true">toggle_on</span>상태
                     </summary>
                     <ul class="nav-list">
                         <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="등원예정">등원예정</li>
@@ -71,7 +71,7 @@
                 <!-- L2: 수업종류 (L3 토글) -->
                 <details class="l2-group">
                     <summary class="menu-l2">
-                        <span class="material-symbols-outlined">menu_book</span>수업종류
+                        <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>수업종류
                     </summary>
                     <ul class="nav-list">
                         <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="정규">정규</li>
@@ -84,7 +84,7 @@
             <!-- L1: Semester (학부별 학기 드롭다운) -->
             <details class="l1-group">
                 <summary class="menu-l1">
-                    <span class="material-symbols-outlined">event_note</span>Semester
+                    <span class="material-symbols-outlined" aria-hidden="true">event_note</span>Semester
                 </summary>
                 <ul class="nav-list" id="level-semester-dropdowns" aria-label="학부별 학기 필터"></ul>
             </details>
@@ -92,7 +92,7 @@
             <!-- L1: School (L2 토글) -->
             <details class="l1-group">
                 <summary class="menu-l1">
-                    <span class="material-symbols-outlined">school</span>School
+                    <span class="material-symbols-outlined" aria-hidden="true">school</span>School
                 </summary>
                 <ul class="nav-list">
                     <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="초등">
@@ -110,7 +110,7 @@
             <!-- L1: 학년별 필터 (동적) -->
             <details class="l1-group" id="grade-filter-group">
                 <summary class="menu-l1">
-                    <span class="material-symbols-outlined">format_list_numbered</span>Grade
+                    <span class="material-symbols-outlined" aria-hidden="true">format_list_numbered</span>Grade
                 </summary>
                 <ul class="nav-list" id="grade-filter-list">
                     <li style="padding:8px 12px 8px 28px;font-size:12px;color:var(--text-sec);">로그인 후 표시됩니다</li>
@@ -120,14 +120,14 @@
             <!-- L1: Branch (L2 토글) -->
             <details class="l1-group">
                 <summary class="menu-l1">
-                    <span class="material-symbols-outlined">location_city</span>Branch
+                    <span class="material-symbols-outlined" aria-hidden="true">location_city</span>Branch
                 </summary>
                 <ul class="nav-list">
                     <li class="menu-l2 nav-item" data-filter-type="branch" data-filter-value="2단지">
-                        <span class="material-symbols-outlined">apartment</span>2단지
+                        <span class="material-symbols-outlined" aria-hidden="true">apartment</span>2단지
                     </li>
                     <li class="menu-l2 nav-item" data-filter-type="branch" data-filter-value="10단지">
-                        <span class="material-symbols-outlined">apartment</span>10단지
+                        <span class="material-symbols-outlined" aria-hidden="true">apartment</span>10단지
                     </li>
                 </ul>
             </details>
@@ -135,7 +135,7 @@
             <!-- L1: Class (반별 필터 - 동적 생성) -->
             <details class="l1-group" id="class-filter-group">
                 <summary class="menu-l1">
-                    <span class="material-symbols-outlined">class</span>Class
+                    <span class="material-symbols-outlined" aria-hidden="true">class</span>Class
                 </summary>
                 <ul class="nav-list" id="class-filter-list">
                     <li style="padding:8px 12px 8px 28px;font-size:12px;color:var(--text-sec);">로그인 후 표시됩니다</li>
@@ -145,7 +145,7 @@
             <!-- L1: Scheduled (L2 토글) -->
             <details class="l1-group">
                 <summary class="menu-l1">
-                    <span class="material-symbols-outlined">calendar_month</span>Scheduled
+                    <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>Scheduled
                 </summary>
                 <ul class="nav-list">
                     <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="월">
@@ -175,13 +175,13 @@
             <!-- L1: On Leave (휴원 관리) -->
             <details class="l1-group" id="on-leave-group">
                 <summary class="menu-l1 nav-item" data-filter-type="leave" data-filter-value="all">
-                    <span class="material-symbols-outlined">hotel</span>On Leave
+                    <span class="material-symbols-outlined" aria-hidden="true">hotel</span>On Leave
                     <span class="on-leave-count" id="on-leave-count"></span>
                 </summary>
                 <!-- L2: Expected (복귀 예정) -->
                 <details class="l2-group">
                     <summary class="menu-l2 nav-item" data-filter-type="leave" data-filter-value="expected">
-                        <span class="material-symbols-outlined" style="font-size:16px;color:var(--success);">event_upcoming</span>Expected
+                        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:var(--success);">event_upcoming</span>Expected
                         <span class="on-leave-sub-count" id="on-leave-expected-count"></span>
                     </summary>
                     <ul class="nav-list">
@@ -196,14 +196,14 @@
                 <!-- L2: Scheduled (휴원예정) -->
                 <details class="l2-group">
                     <summary class="menu-l2 nav-item" data-filter-type="leave" data-filter-value="scheduled">
-                        <span class="material-symbols-outlined" style="font-size:16px;color:var(--warn);">schedule</span>휴원예정
+                        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:var(--warn);">schedule</span>휴원예정
                         <span class="on-leave-sub-count" id="on-leave-scheduled-count"></span>
                     </summary>
                 </details>
                 <!-- L2: Non-Return (미복귀) -->
                 <details class="l2-group">
                     <summary class="menu-l2 nav-item" data-filter-type="leave" data-filter-value="non_return">
-                        <span class="material-symbols-outlined" style="font-size:16px;color:var(--danger-strong);">warning</span>Non-Return
+                        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;color:var(--danger-strong);">warning</span>Non-Return
                         <span class="on-leave-sub-count" id="on-leave-nonreturn-count"></span>
                     </summary>
                     <ul class="nav-list">
@@ -216,14 +216,14 @@
             <!-- L1: Daily Stats (일별 통계) -->
             <div class="l1-group stats-nav-item" style="display:none">
                 <div class="menu-l1 nav-item" onclick="window.showDailyStats()">
-                    <span class="material-symbols-outlined">bar_chart</span>Daily Stats
+                    <span class="material-symbols-outlined" aria-hidden="true">bar_chart</span>Daily Stats
                 </div>
             </div>
 
             <!-- L1: Analytics — 학생 인원현황 분석/추출 (필터 메뉴와 분리된 도구) -->
             <div class="l1-group analytics-nav-item" style="display:none">
                 <div class="menu-l1 nav-item" onclick="window.openPromoExtractView()">
-                    <span class="material-symbols-outlined">analytics</span>Analytics
+                    <span class="material-symbols-outlined" aria-hidden="true">analytics</span>Analytics
                 </div>
             </div>
         </nav>
@@ -237,7 +237,7 @@
                     <div class="level-semester-dropdowns level-semester-dropdowns-mobile" id="level-semester-dropdowns-mobile" aria-label="학부별 학기 필터"></div>
                     <span id="filter-chips" class="filter-chips"></span>
                     <span id="filter-clear-btn" class="filter-clear-btn" onclick="window.clearFilters()" title="필터 초기화" style="display:none;" role="button" tabindex="0" aria-label="닫기">
-                        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                        <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">close</span>
                     </span>
                     <div class="actions">
                         <span class="material-symbols-outlined icon-btn" id="bulk-mode-btn" title="일괄 선택 모드" onclick="window.toggleBulkMode()" role="button" tabindex="0" aria-label="일괄 선택 모드">checklist</span>
@@ -264,7 +264,7 @@
                     </label>
                     <div class="bulk-actions">
                         <button class="bulk-btn-close" onclick="window.exitBulkMode()" title="선택 해제" aria-label="닫기">
-                            <span class="material-symbols-outlined">close</span>
+                            <span class="material-symbols-outlined" aria-hidden="true">close</span>
                         </button>
                     </div>
                 </div>
@@ -272,11 +272,11 @@
                 <div id="daily-stats-view" class="daily-stats-view" style="display:none;">
                     <div class="stats-header">
                         <button class="btn-cancel stats-back-btn" onclick="window.hideDailyStats()">
-                            <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">arrow_back</span>
                             목록으로
                         </button>
                         <h3 class="stats-title">
-                            <span class="material-symbols-outlined">bar_chart</span>
+                            <span class="material-symbols-outlined" aria-hidden="true">bar_chart</span>
                             일별 통계
                         </h3>
                         <input type="date" id="stats-date-input" class="field-input stats-date-input"
@@ -288,11 +288,11 @@
                 <div id="promo-extract-view" class="promo-extract-view" style="display:none;">
                     <div class="promo-view-header">
                         <button class="btn-cancel stats-back-btn" onclick="window.hidePromoExtractView()">
-                            <span class="material-symbols-outlined" style="font-size:18px;">arrow_back</span>
+                            <span class="material-symbols-outlined" aria-hidden="true" style="font-size:18px;">arrow_back</span>
                             목록으로
                         </button>
                         <h3 class="promo-view-title">
-                            <span class="material-symbols-outlined">analytics</span>
+                            <span class="material-symbols-outlined" aria-hidden="true">analytics</span>
                             Analytics
                         </h3>
                     </div>
@@ -322,12 +322,12 @@
                         <!-- 학부×학년 그리드 -->
                         <div class="promo-filter-row">
                             <label class="promo-filter-label">학부×학년</label>
-                            <table class="promo-grid">
+                            <table class="promo-grid" aria-label="학부×학년 필터 그리드">
                                 <thead>
                                     <tr>
-                                        <th></th>
-                                        <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th>
-                                        <th class="promo-grid-toggle-col">
+                                        <th scope="col"></th>
+                                        <th scope="col">1</th><th scope="col">2</th><th scope="col">3</th><th scope="col">4</th><th scope="col">5</th><th scope="col">6</th>
+                                        <th scope="col" class="promo-grid-toggle-col">
                                             <input type="checkbox" id="promo-grid-all" checked aria-label="전체 토글">
                                         </th>
                                     </tr>
@@ -371,18 +371,18 @@
                             </label>
                             <div class="promo-action-buttons">
                                 <button class="btn-cancel" id="promo-copy-btn">
-                                    <span class="material-symbols-outlined" style="font-size:16px;">content_copy</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">content_copy</span>
                                     선택 복사
                                 </button>
                                 <button class="btn-save" id="promo-sheet-btn">
-                                    <span class="material-symbols-outlined" style="font-size:16px;">download</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">download</span>
                                     구글시트 다운로드
                                 </button>
                             </div>
                         </div>
 
                         <div class="promo-table-wrap">
-                            <table class="promo-table">
+                            <table class="promo-table" aria-label="추출 결과 목록">
                                 <thead id="promo-table-head"></thead>
                                 <tbody id="promo-table-body"></tbody>
                             </table>
@@ -396,16 +396,16 @@
                 <!-- 초기 홈 화면 (모든 L1 닫힌 상태) -->
                 <div id="home-view" class="home-view" style="display:none;">
                     <div class="home-content">
-                        <span class="material-symbols-outlined home-icon">school</span>
+                        <span class="material-symbols-outlined home-icon" aria-hidden="true">school</span>
                         <h2 class="home-title">impact7DB Dashboard</h2>
                         <p class="home-desc">좌측 메뉴에서 카테고리를 선택하여<br>학생 목록을 확인하세요.</p>
                         <div class="home-shortcuts">
                             <button class="home-shortcut-btn" onclick="document.querySelector('.l1-group').open=true; window.clearFilters();">
-                                <span class="material-symbols-outlined">people</span>
+                                <span class="material-symbols-outlined" aria-hidden="true">people</span>
                                 All Students
                             </button>
                             <button class="home-shortcut-btn" onclick="window.showNewStudentForm()">
-                                <span class="material-symbols-outlined">person_add</span>
+                                <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
                                 신규 등록
                             </button>
                         </div>
@@ -429,7 +429,7 @@
                         <!-- 상태 일괄 변경 -->
                         <div class="bulk-edit-section">
                             <h4 class="bulk-edit-section-title">
-                                <span class="material-symbols-outlined">toggle_on</span>상태 변경
+                                <span class="material-symbols-outlined" aria-hidden="true">toggle_on</span>상태 변경
                             </h4>
                             <div class="bulk-edit-row">
                                 <select class="field-select" id="bulk-status-select-panel">
@@ -448,7 +448,7 @@
                         <!-- 반 일괄 이동 -->
                         <div class="bulk-edit-section">
                             <h4 class="bulk-edit-section-title">
-                                <span class="material-symbols-outlined">class</span>반 이동
+                                <span class="material-symbols-outlined" aria-hidden="true">class</span>반 이동
                             </h4>
                             <div class="bulk-edit-row">
                                 <input class="field-input" id="bulk-class-code" type="text" placeholder="예: HS103" aria-label="반 코드" style="flex:1;">
@@ -461,7 +461,7 @@
                         <!-- 학교이름 변경 -->
                         <div class="bulk-edit-section">
                             <h4 class="bulk-edit-section-title">
-                                <span class="material-symbols-outlined">school</span>학교이름 변경
+                                <span class="material-symbols-outlined" aria-hidden="true">school</span>학교이름 변경
                             </h4>
                             <div class="bulk-edit-row" style="gap:12px;">
                                 <label class="day-check"><input type="radio" name="bulk-school-level" value="초등">초</label>
@@ -478,7 +478,7 @@
                         <!-- 등원요일 일괄 변경 -->
                         <div class="bulk-edit-section">
                             <h4 class="bulk-edit-section-title">
-                                <span class="material-symbols-outlined">calendar_month</span>등원요일 변경
+                                <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>등원요일 변경
                             </h4>
                             <div class="day-checkboxes" id="bulk-day-checkboxes">
                                 <label class="day-check"><input type="checkbox" name="bulk_day" value="월">월</label>
@@ -498,7 +498,7 @@
                         <!-- 학년 승격 일괄 변경 -->
                         <div class="bulk-edit-section">
                             <h4 class="bulk-edit-section-title">
-                                <span class="material-symbols-outlined">school</span>학년 승격
+                                <span class="material-symbols-outlined" aria-hidden="true">school</span>학년 승격
                             </h4>
                             <p style="font-size:12px; color:#666; margin:0 0 6px;">전원 +1학년. 초6→중1, 중3→고1은 학부 자동 변경</p>
                             <div class="bulk-edit-row" style="gap:8px;">
@@ -519,7 +519,7 @@
                     <div class="actions">
                         <button class="action-chip-btn" id="reenroll-btn" style="display:none"
                             onclick="window.reenrollCurrentStudent()" title="재등록 (자동채움)" aria-label="재등록">
-                            <span class="material-symbols-outlined">person_add</span>
+                            <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
                             <span id="reenroll-btn-label">재등록</span>
                         </button>
                         <span class="material-symbols-outlined icon-btn" title="Edit"
@@ -563,7 +563,7 @@
                         <!-- 기본 정보 -->
                         <div class="form-card">
                             <h3 class="info-card-title">
-                                <span class="material-symbols-outlined">person</span>
+                                <span class="material-symbols-outlined" aria-hidden="true">person</span>
                                 기본 정보
                             </h3>
                             <div class="form-fields">
@@ -587,7 +587,7 @@
                         <!-- 연락처 -->
                         <div class="form-card">
                             <h3 class="info-card-title">
-                                <span class="material-symbols-outlined">contact_phone</span>
+                                <span class="material-symbols-outlined" aria-hidden="true">contact_phone</span>
                                 연락처
                             </h3>
                             <div class="form-fields">
@@ -616,7 +616,7 @@
                         <!-- 수업 정보 -->
                         <div class="form-card">
                             <h3 class="info-card-title">
-                                <span class="material-symbols-outlined">school</span>
+                                <span class="material-symbols-outlined" aria-hidden="true">school</span>
                                 수업 정보
                             </h3>
                             <div class="form-fields">
@@ -648,7 +648,7 @@
                         <!-- 수강 현황 -->
                         <div class="form-card">
                             <h3 class="info-card-title">
-                                <span class="material-symbols-outlined">timeline</span>
+                                <span class="material-symbols-outlined" aria-hidden="true">timeline</span>
                                 수강 현황
                             </h3>
                             <div class="form-fields" id="stay-stats">
@@ -658,10 +658,10 @@
                         <!-- 메모 -->
                         <div class="form-card">
                             <h3 class="info-card-title">
-                                <span class="material-symbols-outlined">sticky_note_2</span>
+                                <span class="material-symbols-outlined" aria-hidden="true">sticky_note_2</span>
                                 메모
-                                <button class="memo-add-btn" onclick="window.addMemo()" title="메모 추가">
-                                    <span class="material-symbols-outlined">add</span>
+                                <button class="memo-add-btn" onclick="window.addMemo()" title="메모 추가" aria-label="메모 추가">
+                                    <span class="material-symbols-outlined" aria-hidden="true">add</span>
                                 </button>
                             </h3>
                             <div id="memo-list" class="memo-list">
@@ -688,7 +688,7 @@
                             <!-- 기본 정보 -->
                             <div class="form-card">
                                 <h3 class="info-card-title" id="form-card-title-basic">
-                                    <span class="material-symbols-outlined">person</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true">person</span>
                                     기본 정보
                                 </h3>
                                 <div class="form-fields">
@@ -709,7 +709,7 @@
                                         <label class="field-label" for="f-school-current">학교</label>
                                         <input class="field-input" id="f-school-current" name="school_current" type="text" placeholder="현재 학부 학교 (예: 봉영여중)">
                                         <details class="prev-school-fold" style="margin-top:6px;">
-                                          <summary style="cursor:pointer;font-size:13px;color:#888;">이전 학부 학교 입력</summary>
+                                          <summary style="cursor:pointer;font-size:13px;color:var(--text-sec);">이전 학부 학교 입력</summary>
                                           <input class="field-input" name="school_elementary" type="text" placeholder="초등 학교명" aria-label="초등 학교명" style="margin-top:6px;">
                                           <input class="field-input" name="school_middle" type="text" placeholder="중등 학교명" aria-label="중등 학교명" style="margin-top:6px;">
                                           <input class="field-input" name="school_high" type="text" placeholder="고등 학교명" aria-label="고등 학교명" style="margin-top:6px;">
@@ -724,7 +724,7 @@
                             <!-- 연락처 -->
                             <div class="form-card">
                                 <h3 class="info-card-title" id="form-card-title-contact">
-                                    <span class="material-symbols-outlined">contact_phone</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true">contact_phone</span>
                                     연락처
                                 </h3>
                                 <div class="form-fields">
@@ -754,7 +754,7 @@
                             <!-- 수업/등록 정보 -->
                             <div class="form-card" id="enrollment-fields-container">
                                 <h3 class="info-card-title" id="form-card-title-class">
-                                    <span class="material-symbols-outlined">school</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true">school</span>
                                     수업 정보
                                 </h3>
                                 <div class="form-fields">
@@ -833,17 +833,17 @@
                                 <!-- 추가 수업 목록 (신규 등록 시) -->
                                 <div id="form-pending-enrollments" class="enrollment-list" style="display:none;"></div>
                                 <button type="button" class="btn-add-enrollment" id="form-add-enrollment-btn" onclick="window.openFormEnrollmentModal()" style="display:none;">
-                                    <span class="material-symbols-outlined" style="font-size:16px;">add</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">add</span>
                                     수업 추가
                                 </button>
                             </div>
                             <!-- 메모 -->
                             <div class="form-card form-memo-card">
                                 <h3 class="info-card-title">
-                                    <span class="material-symbols-outlined">sticky_note_2</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true">sticky_note_2</span>
                                     메모
-                                    <button class="memo-add-btn" onclick="window.addFormMemo()" title="메모 추가">
-                                        <span class="material-symbols-outlined">add</span>
+                                    <button class="memo-add-btn" onclick="window.addFormMemo()" title="메모 추가" aria-label="메모 추가">
+                                        <span class="material-symbols-outlined" aria-hidden="true">add</span>
                                     </button>
                                 </h3>
                                 <div id="form-memo-list" class="memo-list">
@@ -860,7 +860,7 @@
     <div id="memo-modal" class="modal-overlay" style="display:none" onclick="window.closeMemoModal(event)" role="dialog" aria-modal="true" aria-label="메모 추가">
         <div class="modal-card">
             <h3 class="modal-title">
-                <span class="material-symbols-outlined">sticky_note_2</span>
+                <span class="material-symbols-outlined" aria-hidden="true">sticky_note_2</span>
                 메모 추가
             </h3>
             <textarea id="memo-modal-input" class="modal-textarea" placeholder="메모 내용을 입력하세요..." rows="6" aria-label="메모 내용"></textarea>
@@ -875,7 +875,7 @@
     <div id="enrollment-modal" class="modal-overlay" style="display:none" onclick="window.closeEnrollmentModal(event)" role="dialog" aria-modal="true" aria-label="수업 추가">
         <div class="modal-card">
             <h3 class="modal-title">
-                <span class="material-symbols-outlined">add_circle</span>
+                <span class="material-symbols-outlined" aria-hidden="true">add_circle</span>
                 수업 추가
             </h3>
             <form id="enrollment-form" onsubmit="return false">
@@ -922,7 +922,7 @@
             </form>
             <div class="modal-actions">
                 <button class="btn-cancel" onclick="window.closeEnrollmentModal()" aria-label="닫기">취소</button>
-                <button class="btn-save" onclick="window.saveEnrollment()">추가</button>
+                <button class="btn-save" id="enrollment-save-btn" onclick="window.saveEnrollment()">추가</button>
             </div>
         </div>
     </div>
@@ -931,34 +931,34 @@
     <div id="upload-modal" class="modal-overlay" style="display:none" onclick="window.closeUploadModal(event)" role="dialog" aria-modal="true" aria-label="업로드 방식 선택">
         <div class="modal-card" style="max-width:360px">
             <h3 class="modal-title">
-                <span class="material-symbols-outlined">upload</span>
+                <span class="material-symbols-outlined" aria-hidden="true">upload</span>
                 업로드 방식 선택
             </h3>
             <p style="font-size:13px;color:#666;margin:0 0 16px;">아래 4가지 방법 중 하나를 선택하세요.</p>
             <div style="display:flex;flex-direction:column;gap:10px;">
                 <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleSheetPicker();">
-                    <span class="material-symbols-outlined">folder_open</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">folder_open</span>
                     <div>
                         <div class="upload-method-title">드라이브에서 선택</div>
                         <div class="upload-method-desc">구글 드라이브에서 시트를 선택해 가져오기</div>
                     </div>
                 </button>
                 <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleSheetUrlUpload();">
-                    <span class="material-symbols-outlined">link</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">link</span>
                     <div>
                         <div class="upload-method-title">시트 URL로 업로드</div>
                         <div class="upload-method-desc">구글시트 URL을 붙여넣어 바로 업로드</div>
                     </div>
                 </button>
                 <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleCsvUpsert();">
-                    <span class="material-symbols-outlined">description</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">description</span>
                     <div>
                         <div class="upload-method-title">CSV 파일 업로드</div>
                         <div class="upload-method-desc">PC에 저장된 CSV 파일로 업로드</div>
                     </div>
                 </button>
                 <button class="upload-method-btn" onclick="window.closeUploadModal();window.handleSheetTemplate();">
-                    <span class="material-symbols-outlined">table</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">table</span>
                     <div>
                         <div class="upload-method-title">빈 템플릿 시트 만들기</div>
                         <div class="upload-method-desc">양식이 준비된 구글시트를 새로 생성</div>
@@ -976,7 +976,7 @@
     <div id="bulk-delete-modal" class="modal-overlay" style="display:none" onclick="window.closeBulkDeleteModal(event)" role="dialog" aria-modal="true" aria-label="일괄 삭제">
         <div class="modal-card">
             <h3 class="modal-title">
-                <span class="material-symbols-outlined" style="color:var(--danger);">delete_forever</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="color:var(--danger);">delete_forever</span>
                 일괄 삭제
             </h3>
             <div id="bulk-delete-desc" style="font-size:14px;margin-bottom:12px;"></div>
@@ -991,7 +991,7 @@
     <div id="end-class-modal" class="modal-overlay" style="display:none" onclick="window.closeEndClassModal(event)" role="dialog" aria-modal="true" aria-label="종강 처리">
         <div class="modal-card">
             <h3 class="modal-title" id="end-class-title">
-                <span class="material-symbols-outlined" style="color:var(--danger);">school</span>
+                <span class="material-symbols-outlined" aria-hidden="true" style="color:var(--danger);">school</span>
                 종강 처리
             </h3>
             <div id="end-class-body" class="end-class-body"></div>
@@ -1008,8 +1008,8 @@
         <div class="modal-card" style="max-width:380px;">
             <div class="modal-header">
                 <h3 id="past-semester-title" style="margin:0;font-size:16px;">학기 조회</h3>
-                <button class="btn-icon" onclick="window.closePastSemesterModal()">
-                    <span class="material-symbols-outlined">close</span>
+                <button class="btn-icon" onclick="window.closePastSemesterModal()" aria-label="닫기">
+                    <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
             </div>
             <div class="modal-body" id="past-semester-body" style="padding:16px;"></div>
@@ -1021,8 +1021,8 @@
         <div class="modal-card admin-settings-card">
             <div class="modal-header">
                 <h3 style="margin:0;font-size:16px;">설정</h3>
-                <button class="btn-icon" onclick="window.closeAdminSettingsModal()">
-                    <span class="material-symbols-outlined">close</span>
+                <button class="btn-icon" onclick="window.closeAdminSettingsModal()" aria-label="닫기">
+                    <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
             </div>
             <div class="admin-settings-tabs">
@@ -1060,8 +1060,8 @@
         <div class="modal-card" style="max-width:420px;">
             <div class="modal-header">
                 <h3 id="prompt-modal-title" style="margin:0;font-size:16px;"></h3>
-                <button class="btn-icon" onclick="window.closePromptModal()">
-                    <span class="material-symbols-outlined">close</span>
+                <button class="btn-icon" onclick="window.closePromptModal()" aria-label="닫기">
+                    <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
             </div>
             <div class="modal-body" style="display:flex;flex-direction:column;gap:8px;padding:16px;">
@@ -1072,7 +1072,7 @@
             </div>
             <div style="display:flex;justify-content:flex-end;gap:8px;padding:0 16px 16px;">
                 <button class="btn-cancel" onclick="window.closePromptModal()">취소</button>
-                <button class="btn-save" onclick="window.confirmPromptModal()">확인</button>
+                <button class="btn-save" id="prompt-modal-ok" onclick="window.confirmPromptModal()">확인</button>
             </div>
         </div>
     </div>
@@ -1081,8 +1081,8 @@
         <div class="modal-card" style="max-width:420px;">
             <div class="modal-header">
                 <h3 style="margin:0;font-size:16px;">복귀 요청</h3>
-                <button class="btn-icon" onclick="window.closeReturnFromLeaveModal()">
-                    <span class="material-symbols-outlined">close</span>
+                <button class="btn-icon" onclick="window.closeReturnFromLeaveModal()" aria-label="닫기">
+                    <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
             </div>
             <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;padding:16px;">
@@ -1127,7 +1127,7 @@
          role="dialog" aria-modal="true" aria-label="내신 시간표 설정">
         <div class="modal-card naesin-modal-card">
             <h3 class="modal-title">
-                <span class="material-symbols-outlined">event_note</span>
+                <span class="material-symbols-outlined" aria-hidden="true">event_note</span>
                 내신 시간표 일괄 설정
             </h3>
             <div class="naesin-period">
@@ -1152,7 +1152,7 @@
          role="dialog" aria-modal="true" aria-label="문법 특강 관리">
         <div class="modal-card grammar-special-modal-card">
             <h3 class="modal-title">
-                <span class="material-symbols-outlined">school</span>
+                <span class="material-symbols-outlined" aria-hidden="true">school</span>
                 비내신 문법 특강 관리
             </h3>
             <div class="grammar-special-period">
@@ -1167,7 +1167,7 @@
             </div>
             <div class="grammar-special-actions-row">
                 <button class="btn-save" onclick="window.gsImportCSV()" style="gap:4px;display:inline-flex;align-items:center;">
-                    <span class="material-symbols-outlined" style="font-size:16px;">upload</span>
+                    <span class="material-symbols-outlined" aria-hidden="true" style="font-size:16px;">upload</span>
                     CSV 불러오기
                 </button>
                 <input type="file" id="gs-csv-input" accept=".csv" style="display:none;" onchange="window.gsHandleCSVFile(this)">
