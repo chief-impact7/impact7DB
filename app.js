@@ -24,6 +24,7 @@ import { showToast } from './toast.js';
 import './a11y-keys.js';
 import './modal-manager.js';
 import './date-picker.js';
+import { promptModal } from './prompt-modal.js';
 import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -42,6 +43,7 @@ async function loadClassSettings() {
         snap.forEach(d => { _classSettingsCache[d.id] = d.data(); });
     } catch (err) {
         console.error('class_settings 로드 실패:', err);
+        showToast('수업 설정 로드 실패: ' + err.message, 'warn');
         _classSettingsCache = _classSettingsCache || {};
     }
     return _classSettingsCache;
@@ -165,6 +167,7 @@ let currentSemesterByLevel = Object.fromEntries(LEVELS.map(l => [l, null]));
 let _semesterPoolCache = null;
 let currentFilteredStudents = null; // 필터 적용 후 학생 목록 (내보내기용)
 let leaveRequests = []; // leave_requests 컬렉션 캐시
+const _inflightLeaveActions = new Set(); // docId 기반 연타 방지
 let _statsGeneratedDate = null; // daily stats 중복 생성 방지 (날짜 기반)
 let _memoSubcollectionCache = {}; // studentId → memo[] (서브컬렉션 읽기 결과 캐시)
 
@@ -912,8 +915,14 @@ async function loadLeaveRequests() {
         console.log(`[loadLeaveRequests] ${leaveRequests.length}건 로드`);
     } catch (error) {
         console.error('[FIRESTORE ERROR] Failed to load leave_requests:', error);
+        // 캐시/서버 스냅샷에서 연속 호출되므로 같은 실패 토스트의 단시간 중복은 억제
+        if (Date.now() - _lrFailToastAt > 5000) {
+            _lrFailToastAt = Date.now();
+            showToast('휴퇴원 요청 로드 실패: ' + error.message, 'error');
+        }
     }
 }
+let _lrFailToastAt = 0;
 
 // ---------------------------------------------------------------------------
 // 일별 통계 스냅샷 (Daily Stats)
@@ -1574,6 +1583,8 @@ function renderStudentItem(s, container) {
     const div = document.createElement('div');
     div.className = 'list-item' + (bulkMode ? ' bulk-mode' : '') + (selectedStudentIds.has(s.id) ? ' bulk-selected' : '');
     div.dataset.id = s.id;
+    div.setAttribute('role', 'button');
+    div.tabIndex = 0;
     const branch = activeBranchesFromStudent(s).join(', ') || branchFromStudent(s);
     const schoolShort = abbreviateSchool(s);
     const subLine = [branch, schoolShort !== '—' ? schoolShort : ''].filter(Boolean).join(' · ');
@@ -1659,6 +1670,8 @@ function renderPastStudentResults(pastStudents, container) {
         const div = document.createElement('div');
         div.className = 'list-item contact-item';
         div.dataset.contactId = s.id;
+        div.setAttribute('role', 'button');
+        div.tabIndex = 0;
         const schoolShort = abbreviateSchool(s);
         const phone = s.parent_phone_1 || s.student_phone || '';
         const last4 = phone.replace(/\D/g, '').slice(-4);
@@ -1681,6 +1694,8 @@ function renderPastStudentResults(pastStudents, container) {
     if (pastStudents.length > PAST_LIMIT) {
         const moreBtn = document.createElement('div');
         moreBtn.className = 'list-item';
+        moreBtn.setAttribute('role', 'button');
+        moreBtn.tabIndex = 0;
         moreBtn.style.cssText = 'justify-content:center;cursor:pointer;color:var(--primary)';
         moreBtn.innerHTML = `<span>+ ${pastStudents.length - PAST_LIMIT}명 더보기</span>`;
         moreBtn.addEventListener('click', () => {
@@ -2685,6 +2700,7 @@ window.submitNewStudent = async () => {
             }
         } catch (refreshErr) {
             console.warn('[POST-SAVE REFRESH]', refreshErr);
+            showToast('저장됨, 화면 갱신 실패 — 새로고침 하세요.', 'warn');
         }
     } catch (err) {
         console.error('[SAVE ERROR]', err);
@@ -3328,6 +3344,9 @@ window.confirmEndClassSingle = async () => {
 
     singleBtn.disabled = true;
     singleBtn.textContent = '처리 중...';
+    const allBtn = document.getElementById('end-class-confirm-btn');
+    if (allBtn) allBtn.disabled = true;
+    modal.dataset.busy = '1';
 
     try {
         const student = allStudents.find(s => s.id === studentId);
@@ -3373,6 +3392,9 @@ window.confirmEndClassSingle = async () => {
     } finally {
         singleBtn.disabled = false;
         singleBtn.textContent = '해당 학생만';
+        const aBtn = document.getElementById('end-class-confirm-btn');
+        if (aBtn) aBtn.disabled = false;
+        delete modal.dataset.busy;
     }
 };
 
@@ -3387,6 +3409,7 @@ window.confirmEndClass = async () => {
     confirmBtn.textContent = '처리 중...';
     const singleBtn = document.getElementById('end-class-single-btn');
     if (singleBtn) singleBtn.disabled = true;
+    modal.dataset.busy = '1';
 
     try {
         const BATCH_SIZE = 200;
@@ -3455,6 +3478,7 @@ window.confirmEndClass = async () => {
         confirmBtn.textContent = '전체 종강처리';
         const sBtn = document.getElementById('end-class-single-btn');
         if (sBtn) { sBtn.disabled = false; sBtn.textContent = '해당 학생만'; }
+        delete modal.dataset.busy;
     }
 };
 
@@ -3597,8 +3621,13 @@ window.closeUploadModal = (e) => {
     document.getElementById('upload-modal').style.display = 'none';
 };
 
-window.handleSheetUrlUpload = () => {
-    const url = prompt('구글시트 URL을 붙여넣으세요:\n(예: https://docs.google.com/spreadsheets/d/...)');
+window.handleSheetUrlUpload = async () => {
+    const url = await promptModal({
+        title: '시트 URL로 업로드',
+        label: '구글시트 URL',
+        placeholder: 'https://docs.google.com/spreadsheets/d/...',
+        hint: '구글시트가 열린 상태에서 주소창의 URL을 복사해 붙여넣으세요.',
+    });
     if (!url) return;
     const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
     if (!m) {
@@ -3743,11 +3772,14 @@ async function importFromSheetId(sheetId, sheetName) {
 
         let selectedTab = tabs[0];
         if (tabs.length > 1) {
-            const tabList = tabs.map((t, i) => `${i + 1}. ${t}`).join('\n');
-            const choice = prompt(`"${sheetName}"에 탭이 ${tabs.length}개 있습니다.\n가져올 탭 번호를 입력하세요:\n\n${tabList}`);
-            if (!choice) return;
-            const idx = parseInt(choice, 10) - 1;
-            if (idx < 0 || idx >= tabs.length) { showToast('올바른 번호를 입력해주세요.', 'warn'); return; }
+            const choice = await promptModal({
+                title: '가져올 탭 선택',
+                label: `"${sheetName}"에 탭이 ${tabs.length}개 있습니다.`,
+                options: tabs,
+            });
+            if (choice === null) return;
+            const idx = Number(choice);
+            if (!Number.isInteger(idx) || idx < 0 || idx >= tabs.length) { showToast('올바른 탭을 선택해주세요.', 'warn'); return; }
             selectedTab = tabs[idx];
         }
 
@@ -5161,6 +5193,8 @@ window.confirmBulkDelete = async () => {
     const ids = [...selectedStudentIds];
     const confirmBtn = document.querySelector('#bulk-delete-modal .btn-end-class-confirm');
     if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '퇴원 처리 중...'; }
+    const bulkDeleteOverlay = document.getElementById('bulk-delete-modal');
+    bulkDeleteOverlay.dataset.busy = '1';
 
     try {
         // 퇴원 처리 전에 학생 이름을 미리 수집
@@ -5204,6 +5238,7 @@ window.confirmBulkDelete = async () => {
         showToast('일괄 퇴원 처리 실패: ' + e.message, 'error');
     } finally {
         if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '퇴원'; }
+        delete bulkDeleteOverlay.dataset.busy;
     }
 };
 
@@ -5553,7 +5588,9 @@ function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
 window._retryFinalize = async (docId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
     if (!r) return;
+    if (_inflightLeaveActions.has(docId)) return;
     if (!confirm(`${r.student_name} — 서버 처리 재시도할까요?`)) return;
+    _inflightLeaveActions.add(docId);
     const auditFields = { updated_at: serverTimestamp(), updated_by: currentUser?.email || '' };
     try {
         await updateDoc(doc(db, 'leave_requests', docId), { status: 'requested', ...auditFields });
@@ -5562,6 +5599,8 @@ window._retryFinalize = async (docId) => {
     } catch (err) {
         showToast('재시도 실패: ' + err.message, 'error');
         console.error(err);
+    } finally {
+        _inflightLeaveActions.delete(docId);
     }
 };
 
@@ -5744,6 +5783,10 @@ window.submitReturnFromLeave = async () => {
 
     const note = document.getElementById('rfl-consultation-note').value.trim();
 
+    const rflOverlay = document.getElementById('return-from-leave-modal');
+    const rflSubmitBtn = document.getElementById('rfl-submit-btn');
+    rflOverlay.dataset.busy = '1';
+    if (rflSubmitBtn) { rflSubmitBtn.disabled = true; rflSubmitBtn.textContent = '요청 중...'; }
     try {
         // 재등원·복귀 시 finalize가 만들 정규 enrollment의 semester를
         // 학생 학부의 현재 학기로 자동 결정 (사용자가 모달에서 학기를 입력하지 않음).
@@ -5784,6 +5827,9 @@ window.submitReturnFromLeave = async () => {
     } catch (err) {
         showToast('요청 실패: ' + err.message, 'error');
         console.error(err);
+    } finally {
+        delete rflOverlay.dataset.busy;
+        if (rflSubmitBtn) { rflSubmitBtn.disabled = false; rflSubmitBtn.textContent = '요청'; }
     }
 };
 
@@ -5792,6 +5838,8 @@ window.submitReturnFromLeave = async () => {
 window.toggleCancelLeaveRequest = async (docId, studentId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
     if (!r) return;
+    if (_inflightLeaveActions.has(docId)) return;
+    _inflightLeaveActions.add(docId);
     const isCancelled = r.status === 'cancelled';
     try {
         await updateDoc(doc(db, 'leave_requests', docId), {
@@ -5803,7 +5851,11 @@ window.toggleCancelLeaveRequest = async (docId, studentId) => {
         storeUpdate({ leaveRequests: [...leaveRequests] });
         const stu = allStudents.find(s => s.id === studentId);
         if (stu) window.selectStudent(studentId, stu);
-    } catch (err) { showToast('처리 실패: ' + err.message, 'error'); }
+    } catch (err) {
+        showToast('처리 실패: ' + err.message, 'error');
+    } finally {
+        _inflightLeaveActions.delete(docId);
+    }
 };
 
 // 방어 가드: 최종 승인 시 RETURN 유형(복귀/재등원)은 반드시 target_class_code 필요
@@ -5822,48 +5874,54 @@ function _checkLegacyReturnTarget(r, willFinalize) {
 window.teacherApproveLeaveRequest = async (docId, studentId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
     if (!r) return;
-    // 토글: 이미 승인 → 취소
-    if (r.teacher_approved_by) {
+    if (_inflightLeaveActions.has(docId)) return;
+    _inflightLeaveActions.add(docId);
+    try {
+        // 토글: 이미 승인 → 취소
+        if (r.teacher_approved_by) {
+            try {
+                await updateDoc(doc(db, 'leave_requests', docId), { teacher_approved_by: deleteField(), teacher_approved_at: deleteField(), updated_at: serverTimestamp() });
+                const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
+                if (lrIdx >= 0) { delete leaveRequests[lrIdx].teacher_approved_by; delete leaveRequests[lrIdx].teacher_approved_at; }
+                storeUpdate({ leaveRequests: [...leaveRequests] });
+                const stu = allStudents.find(s => s.id === studentId);
+                if (stu) window.selectStudent(studentId, stu);
+            } catch (err) { showToast('교수부 승인 취소 실패: ' + err.message, 'error'); }
+            return;
+        }
+        const isFinal = !!r.approved_by;
+        // 레거시 가드 (최종 승인 시점에만 체크)
+        if (!_checkLegacyReturnTarget(r, isFinal)) return;
+        const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
+        if (!confirm(`${r.student_name} — ${typeLabel}\n교수부 승인하시겠습니까?`)) return;
+
         try {
-            await updateDoc(doc(db, 'leave_requests', docId), { teacher_approved_by: deleteField(), teacher_approved_at: deleteField(), updated_at: serverTimestamp() });
+            const updates = {
+                teacher_approved_by: currentUser?.email || '',
+                teacher_approved_at: serverTimestamp(),
+                updated_at: serverTimestamp()
+            };
+            // 행정부가 이미 승인했으면 → 최종 승인
+            if (r.approved_by) updates.status = 'approved';
+            await updateDoc(doc(db, 'leave_requests', docId), updates);
+
             const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
-            if (lrIdx >= 0) { delete leaveRequests[lrIdx].teacher_approved_by; delete leaveRequests[lrIdx].teacher_approved_at; }
+            if (lrIdx >= 0) {
+                leaveRequests[lrIdx].teacher_approved_by = currentUser?.email || '';
+                leaveRequests[lrIdx].teacher_approved_at = new Date();
+                if (r.approved_by) leaveRequests[lrIdx].status = 'approved';
+            }
             storeUpdate({ leaveRequests: [...leaveRequests] });
+
+            // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
             const stu = allStudents.find(s => s.id === studentId);
             if (stu) window.selectStudent(studentId, stu);
-        } catch (err) { showToast('교수부 승인 취소 실패: ' + err.message, 'error'); }
-        return;
-    }
-    const isFinal = !!r.approved_by;
-    // 레거시 가드 (최종 승인 시점에만 체크)
-    if (!_checkLegacyReturnTarget(r, isFinal)) return;
-    const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
-    if (!confirm(`${r.student_name} — ${typeLabel}\n교수부 승인하시겠습니까?`)) return;
-
-    try {
-        const updates = {
-            teacher_approved_by: currentUser?.email || '',
-            teacher_approved_at: serverTimestamp(),
-            updated_at: serverTimestamp()
-        };
-        // 행정부가 이미 승인했으면 → 최종 승인
-        if (r.approved_by) updates.status = 'approved';
-        await updateDoc(doc(db, 'leave_requests', docId), updates);
-
-        const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
-        if (lrIdx >= 0) {
-            leaveRequests[lrIdx].teacher_approved_by = currentUser?.email || '';
-            leaveRequests[lrIdx].teacher_approved_at = new Date();
-            if (r.approved_by) leaveRequests[lrIdx].status = 'approved';
+        } catch (err) {
+            showToast('교수부 승인 실패: ' + err.message, 'error');
+            console.error(err);
         }
-        storeUpdate({ leaveRequests: [...leaveRequests] });
-
-        // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
-        const stu = allStudents.find(s => s.id === studentId);
-        if (stu) window.selectStudent(studentId, stu);
-    } catch (err) {
-        showToast('교수부 승인 실패: ' + err.message, 'error');
-        console.error(err);
+    } finally {
+        _inflightLeaveActions.delete(docId);
     }
 };
 
@@ -5871,49 +5929,55 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
 window.approveLeaveRequest = async (docId, studentId) => {
     const r = leaveRequests.find(lr => lr.docId === docId);
     if (!r) return;
-    // 토글: 이미 승인 → 취소
-    if (r.approved_by) {
+    if (_inflightLeaveActions.has(docId)) return;
+    _inflightLeaveActions.add(docId);
+    try {
+        // 토글: 이미 승인 → 취소
+        if (r.approved_by) {
+            try {
+                await updateDoc(doc(db, 'leave_requests', docId), { approved_by: deleteField(), approved_at: deleteField(), updated_at: serverTimestamp() });
+                const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
+                if (lrIdx >= 0) { delete leaveRequests[lrIdx].approved_by; delete leaveRequests[lrIdx].approved_at; }
+                storeUpdate({ leaveRequests: [...leaveRequests] });
+                const stu = allStudents.find(s => s.id === studentId);
+                if (stu) window.selectStudent(studentId, stu);
+            } catch (err) { showToast('행정부 승인 취소 실패: ' + err.message, 'error'); }
+            return;
+        }
+
+        const isFinal = !!r.teacher_approved_by;
+        // 레거시 가드
+        if (!_checkLegacyReturnTarget(r, isFinal)) return;
+        const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
+        if (!confirm(`${r.student_name} — ${typeLabel}\n행정부 승인하시겠습니까?`)) return;
+
         try {
-            await updateDoc(doc(db, 'leave_requests', docId), { approved_by: deleteField(), approved_at: deleteField(), updated_at: serverTimestamp() });
+            const updates = {
+                approved_by: currentUser?.email || '',
+                approved_at: serverTimestamp(),
+                updated_at: serverTimestamp()
+            };
+            // 교수부가 이미 승인했으면 → 최종 승인
+            if (r.teacher_approved_by) updates.status = 'approved';
+            await updateDoc(doc(db, 'leave_requests', docId), updates);
+
             const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
-            if (lrIdx >= 0) { delete leaveRequests[lrIdx].approved_by; delete leaveRequests[lrIdx].approved_at; }
+            if (lrIdx >= 0) {
+                leaveRequests[lrIdx].approved_by = currentUser?.email || '';
+                leaveRequests[lrIdx].approved_at = new Date();
+                if (r.teacher_approved_by) leaveRequests[lrIdx].status = 'approved';
+            }
             storeUpdate({ leaveRequests: [...leaveRequests] });
+
+            // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
             const stu = allStudents.find(s => s.id === studentId);
             if (stu) window.selectStudent(studentId, stu);
-        } catch (err) { showToast('행정부 승인 취소 실패: ' + err.message, 'error'); }
-        return;
-    }
-
-    const isFinal = !!r.teacher_approved_by;
-    // 레거시 가드
-    if (!_checkLegacyReturnTarget(r, isFinal)) return;
-    const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
-    if (!confirm(`${r.student_name} — ${typeLabel}\n행정부 승인하시겠습니까?`)) return;
-
-    try {
-        const updates = {
-            approved_by: currentUser?.email || '',
-            approved_at: serverTimestamp(),
-            updated_at: serverTimestamp()
-        };
-        // 교수부가 이미 승인했으면 → 최종 승인
-        if (r.teacher_approved_by) updates.status = 'approved';
-        await updateDoc(doc(db, 'leave_requests', docId), updates);
-
-        const lrIdx = leaveRequests.findIndex(lr => lr.docId === docId);
-        if (lrIdx >= 0) {
-            leaveRequests[lrIdx].approved_by = currentUser?.email || '';
-            leaveRequests[lrIdx].approved_at = new Date();
-            if (r.teacher_approved_by) leaveRequests[lrIdx].status = 'approved';
+        } catch (err) {
+            showToast('행정부 승인 실패: ' + err.message, 'error');
+            console.error(err);
         }
-        storeUpdate({ leaveRequests: [...leaveRequests] });
-
-        // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
-        const stu = allStudents.find(s => s.id === studentId);
-        if (stu) window.selectStudent(studentId, stu);
-    } catch (err) {
-        showToast('행정부 승인 실패: ' + err.message, 'error');
-        console.error(err);
+    } finally {
+        _inflightLeaveActions.delete(docId);
     }
 };
 

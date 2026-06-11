@@ -45,6 +45,13 @@ const observer = new MutationObserver((mutations) => {
 document.querySelectorAll('.modal-overlay').forEach(el =>
     observer.observe(el, { attributes: true, attributeFilter: ['style'] }));
 
+// busy 모달은 배경 클릭 닫기도 차단 — capture 단계라 overlay의 inline onclick보다 먼저 실행됨
+document.addEventListener('click', (e) => {
+    if (e.target.classList?.contains('modal-overlay') && e.target.dataset.busy) {
+        e.stopPropagation();
+    }
+}, true);
+
 document.addEventListener('keydown', (e) => {
     const top = openStack[openStack.length - 1]?.overlay;
     if (!top) return;
@@ -54,6 +61,7 @@ document.addEventListener('keydown', (e) => {
         // Chromium은 열린 select/date picker를 Esc로 닫을 때 keydown을 페이지에도 전파한다
         if (e.target.matches?.('select, input[type="date"], input[type="month"]')) return;
         if (document.querySelector('.kdp-popover')) return; // 한국어 캘린더가 열려 있으면 그쪽만 닫는다
+        if (top.dataset.busy) return; // 비동기 작업 진행 중 — 닫으면 취소된 것으로 오인
         e.preventDefault();
         top.click(); // 배경 클릭과 동일 경로 — 각 모달의 close 함수가 상태 정리까지 수행
         return;

@@ -334,6 +334,8 @@ window.saveNaesinSchedule = async () => {
     const saveBtn = document.getElementById('naesin-save-btn');
     saveBtn.disabled = true;
     saveBtn.textContent = '저장 중...';
+    const naesinOverlay = document.getElementById('naesin-modal');
+    if (naesinOverlay) naesinOverlay.dataset.busy = '1';
 
     try {
         const filterSemester = state.activeFilters.semester || '';
@@ -400,5 +402,6 @@ window.saveNaesinSchedule = async () => {
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
+        if (naesinOverlay) delete naesinOverlay.dataset.busy;
     }
 };

@@ -19,7 +19,7 @@
       "high": 5,
       "medium": 15,
       "low": 15,
-      "done": 10
+      "done": 20
     }
   },
   "items": [
@@ -92,7 +92,8 @@
       "location": "style.css:2944,2961,2978,3287,3337,1962,2134",
       "suggestion": "fallback 색을 실제 Starbucks 토큰으로 통일하고, 선택/하이라이트 잔여 블루(#e8f0fe,#1967d2,#1565c0)를 --sbux-light/--primary 계열로 교체한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-07",
@@ -126,7 +127,8 @@
       "location": "style.css:525-534,702-714,798-808,1571-1580,1596-1607,1972-1981",
       "suggestion": "공통 .chip 베이스 클래스를 만들고 색 변형만 modifier(.chip--tone)로 분리한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-10",
@@ -137,7 +139,8 @@
       "location": "style.css:817,1382,1507,2510,2523,2576,2755",
       "suggestion": "--z-base/--z-sticky/--z-overlay/--z-modal/--z-popup 스케일을 정의하고, 모바일 detail-panel과 사이드바의 적층 순서를 명시적으로 정리한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-11",
@@ -159,7 +162,8 @@
       "location": "app.js:3579, app.js:3725",
       "suggestion": "URL 입력은 모달 폼 + 실시간 형식 검증(붙여넣기 시 docs.google.com 패턴 확인)으로, 탭 선택은 번호 입력 대신 라디오/셀렉트 리스트로 교체한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-13",
@@ -170,7 +174,8 @@
       "location": "app.js:650,911,2669 외 콘솔 전용 catch 약 27곳",
       "suggestion": "사용자 행동 결과(저장/로드/배치)에 직접 연결된 catch는 최소한 토스트로 실패를 알린다. 순수 백그라운드 자동화 작업과 표시 보조 작업만 콘솔 전용으로 남긴다는 일관된 규칙을 적용한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-14",
@@ -192,7 +197,8 @@
       "location": "app.js:5555,5791,5821,5890",
       "suggestion": "승인/취소/재시도 토글 핸들러에도 진입 시 버튼 disabled 또는 in-flight 플래그를 두고 finally에서 해제한다.",
       "effort": "small",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-16",
@@ -215,7 +221,8 @@
       "location": "app.js:1552-1625,1638-1655 / index.html:63-67,77-79",
       "suggestion": "list-item에 role=\"button\" tabindex=\"0\"과 Enter/Space keydown을 추가하거나 항목을 button으로 감싼다. 목록 컨테이너에는 시맨틱 ul/li 구조 또는 role=\"list\"/listitem을 고려한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-18",
@@ -226,7 +233,8 @@
       "location": "index.html:276-277,448-449,466,499,689-715,725-744",
       "suggestion": "각 input에 id를 부여하고 label에 for를 연결하거나 label로 input을 감싼다. title/placeholder만 있는 입력에는 aria-label 또는 보이는 라벨을 추가한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-19",
@@ -237,7 +245,8 @@
       "location": "style.css:511-523,2550-2597 / index.html:235-251",
       "suggestion": "모바일 브레이크포인트에서 .actions를 overflow 스크롤 또는 '더보기' 메뉴로 접거나, filter-chips 영역에 flex-wrap/스크롤을 부여하고 헤더 고정 높이를 완화한다.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-20",
@@ -405,7 +414,8 @@
       "location": "app.js:5142(confirmBulkDelete), 3361(confirmEndClass), 5760(submitReturnFromLeave) / naesin-schedule.js:335",
       "suggestion": "작업 시작 시 overlay에 data-busy 표시 → modal-manager Esc와 각 close 함수가 busy 중 닫기를 거부. 완료/실패 시 해제.",
       "effort": "medium",
-      "done": false
+      "done": true,
+      "doneAt": "2026-06-12"
     },
     {
       "id": "UX-35",
