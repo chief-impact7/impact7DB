@@ -23,6 +23,7 @@ import './naesin-schedule.js';
 import { showToast } from './toast.js';
 import './a11y-keys.js';
 import './modal-manager.js';
+import './date-picker.js';
 import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
@@ -542,6 +543,9 @@ window.handleLogin = async () => {
         showToast(msg, 'error');
     }
 };
+
+// 모듈(수 MB) 로드 완료 전 클릭은 무반응이므로 HTML에서 aria-disabled로 시작, 할당 직후 활성화
+document.getElementById('login-avatar-btn')?.removeAttribute('aria-disabled');
 
 // ---------------------------------------------------------------------------
 // Load all students from Firestore, sort by name (Korean-aware)
@@ -1288,12 +1292,24 @@ function updateFilterChips() {
     const chipsEl = document.getElementById('filter-chips');
     const clearBtn = document.getElementById('filter-clear-btn');
     if (!chipsEl) return;
+
+    const label = nonSemester.map(([, v]) => v).join(' · ');
+
+    // 필터가 걸린 채 검색 중이면 범위 안내 배너 표시 (검색은 의도적으로 현재 필터 안에서 동작)
+    const scopeBanner = document.getElementById('search-scope-banner');
+    if (scopeBanner) {
+        const term = document.getElementById('studentSearchInput')?.value.trim() || '';
+        const show = !!term && nonSemester.length > 0;
+        scopeBanner.style.display = show ? '' : 'none';
+        if (show) document.getElementById('search-scope-text').textContent = `${label} 내 검색 결과`;
+    }
+
     if (nonSemester.length === 0) {
         chipsEl.textContent = '';
         if (clearBtn) clearBtn.style.display = 'none';
         return;
     }
-    chipsEl.textContent = nonSemester.map(([, v]) => v).join(' · ');
+    chipsEl.textContent = label;
     if (clearBtn) clearBtn.style.display = 'flex';
 }
 

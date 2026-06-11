@@ -9,5 +9,6 @@ document.addEventListener('keydown', (e) => {
     const target = t.closest('[role="button"]');
     if (!target) return;
     e.preventDefault();
+    if (target.getAttribute('aria-disabled') === 'true') return;
     target.click();
 });

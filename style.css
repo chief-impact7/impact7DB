@@ -3536,3 +3536,53 @@ summary.menu-l2 .material-symbols-outlined {
     margin-top: 1px;
     opacity: 0.7;
 }
+
+/* ── 터치 타깃 (coarse pointer에서 44×44 확보) ──────────────────────────── */
+@media (pointer: coarse) {
+    .icon-btn {
+        min-width: 44px;
+        min-height: 44px;
+        justify-content: center;
+    }
+}
+
+/* ── 검색 범위 안내 배너 (필터 활성 + 검색 중) ───────────────────────────── */
+.search-scope-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--surface-container);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-sec);
+    font-size: 12px;
+}
+.search-scope-banner .material-symbols-outlined {
+    font-size: 16px;
+}
+.search-scope-btn {
+    margin-left: auto;
+    padding: 3px 10px;
+    border: 1px solid var(--primary);
+    border-radius: 12px;
+    background: var(--surface-container);
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.search-scope-btn:hover {
+    background: var(--primary-light);
+}
+
+/* native date picker 인디케이터 숨김 — 클릭 시 한국어 캘린더(date-picker.js)가 대신 뜬다 */
+input[type="date"]::-webkit-calendar-picker-indicator {
+    display: none;
+}
+
+/* 모듈 로드 전 비활성 컨트롤 (예: 로그인 버튼) — 활성화는 aria-disabled 제거로 */
+[role="button"][aria-disabled="true"] {
+    pointer-events: none;
+    opacity: .6;
+}

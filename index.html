@@ -9,7 +9,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
     <link rel="stylesheet" href="style.css">
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -33,7 +33,7 @@
             <span class="material-symbols-outlined icon-btn" title="사용 가이드" aria-label="도움말" role="button" tabindex="0">help</span>
             <span class="material-symbols-outlined icon-btn" aria-label="설정" role="button" tabindex="0" onclick="window.openAdminSettingsModal()">settings</span>
             <span class="material-symbols-outlined icon-btn" aria-label="앱 목록" role="button" tabindex="0">apps</span>
-            <div class="avatar icon-btn" onclick="window.handleLogin()" role="button" tabindex="0" aria-label="로그인">G</div>
+            <div class="avatar icon-btn" id="login-avatar-btn" onclick="window.handleLogin()" role="button" tabindex="0" aria-label="로그인" aria-disabled="true">G</div>
         </div>
     </header>
 
@@ -249,6 +249,12 @@
                         <span class="material-symbols-outlined icon-btn" title="데이터 업로드" onclick="window.handleUpload()" role="button" tabindex="0" aria-label="데이터 업로드">upload</span>
                         <span class="material-symbols-outlined icon-btn" title="구글시트로 다운로드" onclick="window.handleSheetExport()" role="button" tabindex="0" aria-label="구글시트로 다운로드">download</span>
                     </div>
+                </div>
+                <!-- 검색 범위 안내 배너 (필터 활성 + 검색 중) -->
+                <div class="search-scope-banner" id="search-scope-banner" style="display:none;">
+                    <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+                    <span id="search-scope-text"></span>
+                    <button class="search-scope-btn" onclick="window.clearFilters()">전체에서 검색</button>
                 </div>
                 <!-- 일괄처리 액션 바 -->
                 <div id="bulk-action-bar" class="bulk-action-bar" style="display:none;">

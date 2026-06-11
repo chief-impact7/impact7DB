@@ -53,6 +53,7 @@ document.addEventListener('keydown', (e) => {
         if (e.isComposing) return; // IME 조합 취소 Esc가 모달을 닫으면 안 됨
         // Chromium은 열린 select/date picker를 Esc로 닫을 때 keydown을 페이지에도 전파한다
         if (e.target.matches?.('select, input[type="date"], input[type="month"]')) return;
+        if (document.querySelector('.kdp-popover')) return; // 한국어 캘린더가 열려 있으면 그쪽만 닫는다
         e.preventDefault();
         top.click(); // 배경 클릭과 동일 경로 — 각 모달의 close 함수가 상태 정리까지 수행
         return;
