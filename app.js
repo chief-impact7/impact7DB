@@ -20,6 +20,9 @@ import {
     validateExistingClass,
 } from './class-enrollment-policy.js';
 import './naesin-schedule.js';
+import { showToast } from './toast.js';
+import './a11y-keys.js';
+import { markFormClean, confirmDiscardUnsaved } from './unsaved-guard.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
     { db, writeBatch, doc, collection, serverTimestamp }
@@ -243,7 +246,7 @@ function findEnrollmentConflicts(list) {
     return conflicts;
 }
 
-function _formatEnrollmentForAlert(e) {
+function _formatEnrollmentLine(e) {
     const days = (e.day || []).join('·') || '요일미정';
     const range = e.end_date ? `${e.start_date || '?'} ~ ${e.end_date}` : `${e.start_date || '?'} ~`;
     return `${e.class_type || '정규'} ${enrollmentCode(e)} (${days}, ${range})`;
@@ -253,13 +256,13 @@ function _formatEnrollmentForAlert(e) {
 function blockOnEnrollmentConflicts(conflicts) {
     if (conflicts.length === 0) return true;
     const lines = conflicts.map(([a, b]) =>
-        `• ${_formatEnrollmentForAlert(a)}\n  ${_formatEnrollmentForAlert(b)}`
+        `• ${_formatEnrollmentLine(a)}\n  ${_formatEnrollmentLine(b)}`
     );
-    alert(
+    showToast(
         `⛔ 같은 시기에 동일한 반명이 ${conflicts.length}건 있습니다.\n\n` +
         `${lines.join('\n\n')}\n\n` +
         `정규반과 특강반의 이름이 같으면 안 됩니다.\n저장할 수 없습니다.`
-    );
+    , 'error');
     return false;
 }
 
@@ -452,7 +455,7 @@ async function loadPopulationPerms(uid) {
         const snap = await getDoc(doc(db, 'HR_users', uid));
         if (snap.exists()) {
             const d = snap.data();
-            const director = d.role === 'owner' || d.role === 'director';
+            const director = d.role === 'owner' || d.role === 'principal';
             all = director || d.permissions?.canViewPopulationStats === true;
             classCounts = all || d.permissions?.canViewClassCounts === true;
         }
@@ -532,7 +535,7 @@ window.handleLogin = async () => {
         };
         const msg = messages[error.code] || `❌ 로그인 실패: ${error.code}`;
         console.error('[AUTH ERROR]', error.code, error.message);
-        alert(msg);
+        showToast(msg, 'error');
     }
 };
 
@@ -609,14 +612,6 @@ async function promoteEnrollPending() {
     }
 }
 
-function _showToast(message) {
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#374151;color:#fff;padding:10px 16px;border-radius:6px;font-size:13px;z-index:9999;max-width:360px;box-shadow:0 2px 8px rgba(0,0,0,.3)';
-    el.textContent = message;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 5000);
-}
-
 async function backfillStudentNumbers() {
     const targets = allStudents.filter(s => ENROLLABLE_STATUSES.has(s.status) && !s.studentNumber);
     if (targets.length === 0) return;
@@ -653,7 +648,7 @@ async function backfillStudentNumbers() {
     if (duplicates.length > 0) {
         const msg = `이름+학생번호 중복 발생 — 수동 확인 필요: ${duplicates.join(', ')}`;
         console.warn('[backfillStudentNumbers]', msg);
-        _showToast(msg);
+        showToast(msg, 'warn');
     }
 }
 
@@ -664,7 +659,7 @@ function findStudentNumberDuplicate(name, studentNumber, excludeId = null) {
 }
 
 function alertStudentNumberDuplicate(name, studentNumber, duplicate) {
-    alert(`이름+학생번호가 이미 존재합니다.\n\n입력값: ${name} #${studentNumber}\n기존 학생: ${duplicate.name || duplicate.id} (${duplicate.status || '상태없음'})\n\n동명이인인 경우 이름 뒤에 숫자를 붙여 구분한 뒤 다시 저장하세요.`);
+    showToast(`이름+학생번호가 이미 존재합니다.\n\n입력값: ${name} #${studentNumber}\n기존 학생: ${duplicate.name || duplicate.id} (${duplicate.status || '상태없음'})\n\n동명이인인 경우 이름 뒤에 숫자를 붙여 구분한 뒤 다시 저장하세요.`, 'warn');
 }
 
 // 휴원 날짜 기반 자동 전환: 시작일 전이면 재원 유지, 시작일 도래 시 휴원 전환
@@ -1362,6 +1357,12 @@ function isPastSemester() {
     return !Object.values(currentSemesterByLevel).includes(activeFilters.semester);
 }
 
+function pastSemesterBlocked() {
+    if (!isPastSemester()) return false;
+    showToast('과거 학기는 수정할 수 없습니다.', 'warn');
+    return true;
+}
+
 function updateReadonlyBanner() {
     const banner = document.getElementById('semester-readonly-banner');
     if (banner) banner.style.display = isPastSemester() ? '' : 'none';
@@ -1847,13 +1848,6 @@ _searchClearBtn?.addEventListener('click', () => {
     applyFilterAndRender();
 });
 
-_searchClearBtn?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        _searchClearBtn.click();
-    }
-});
-
 // ---------------------------------------------------------------------------
 // 등록 폼: 이름 + 전화번호로 기존 학생(활성·퇴원 무관) 자동채움
 // ---------------------------------------------------------------------------
@@ -1916,6 +1910,7 @@ window.goToStudent = (studentId) => {
 };
 
 window.selectStudent = (studentId, studentData, targetElement) => {
+    if (!confirmDiscardUnsaved()) return;
     currentStudentId = studentId;
     storeUpdate({ currentStudentId: studentId });
 
@@ -2055,6 +2050,7 @@ const makeDocId = (name, parentPhone) => {
 // 신규 등록 폼 표시 / 숨김
 // ---------------------------------------------------------------------------
 window.showNewStudentForm = () => {
+    if (!confirmDiscardUnsaved()) return;
     isEditMode = false;
     currentStudentId = null;
     pauseAlertTriggered = false;
@@ -2208,6 +2204,7 @@ window.showEditForm = () => {
 };
 
 window.hideForm = () => {
+    if (!confirmDiscardUnsaved()) return;
     isEditMode = false;
     document.getElementById('form-header').style.display = 'none';
     document.getElementById('detail-header').style.display = 'flex';
@@ -2249,7 +2246,7 @@ function _suggestUniqueActiveName(candidateName, excludeDocId = null) {
 }
 
 window.submitNewStudent = async () => {
-    if (isEditMode && isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (isEditMode && pastSemesterBlocked()) return;
     const f = document.getElementById('new-student-form');
     const name = f.name.value.trim();
     const parentPhone1 = f.parent_phone_1.value.trim();
@@ -2274,11 +2271,11 @@ window.submitNewStudent = async () => {
     }
     const school = schoolByLevel[curField] || ''; // 현재 학부 학교 (입력 검증용)
 
-    if (!name) { alert('이름을 입력하세요.'); f.name.focus(); return; }
-    if (!parentPhone1) { alert('학부모 연락처를 입력하세요.'); f.parent_phone_1.focus(); return; }
-    if (!school) { alert('학교를 입력하세요.'); f.school_current.focus(); return; }
-    if (!grade) { alert('학년을 입력하세요.'); f.grade.focus(); return; }
-    if (!level) { alert('학부(초/중/고)를 선택하세요.'); f.level.focus(); return; }
+    if (!name) { showToast('이름을 입력하세요.', 'warn'); f.name.focus(); return; }
+    if (!parentPhone1) { showToast('학부모 연락처를 입력하세요.', 'warn'); f.parent_phone_1.focus(); return; }
+    if (!school) { showToast('학교를 입력하세요.', 'warn'); f.school_current.focus(); return; }
+    if (!grade) { showToast('학년을 입력하세요.', 'warn'); f.grade.focus(); return; }
+    if (!level) { showToast('학부(초/중/고)를 선택하세요.', 'warn'); f.level.focus(); return; }
 
     // 이름 중복 체크 — 신규 등록, 또는 수정 모드에서 이름을 변경한 경우
     {
@@ -2288,7 +2285,7 @@ window.submitNewStudent = async () => {
         if (nameChanged) {
             const dup = _suggestUniqueActiveName(name, excludeId);
             if (dup) {
-                alert(`동일한 이름의 재원/휴원 학생이 있습니다.\n[${dup.conflicts.map(s => `${s.name} (${s.status})`).join(', ')}]\n\n이름 뒤에 숫자를 붙여 주세요. (예: ${dup.suggested})`);
+                showToast(`동일한 이름의 재원/휴원 학생이 있습니다.\n[${dup.conflicts.map(s => `${s.name} (${s.status})`).join(', ')}]\n\n이름 뒤에 숫자를 붙여 주세요. (예: ${dup.suggested})`, 'warn');
                 f.name.focus();
                 return;
             }
@@ -2305,7 +2302,7 @@ window.submitNewStudent = async () => {
         // 정합성 가드 — saveEnrollment(별도 모달)와 동일 규칙. 카드 직접 편집 경로도 통과 차단.
         for (const e of editedEnrollments) {
             const err = _validateEnrollmentFields(e);
-            if (err) { alert(err); return; }
+            if (err) { showToast(err, 'warn'); return; }
         }
 
         // 비활성(상담/퇴원/종강/휴원 등) → 활성(재원/등원예정) 전환 시,
@@ -2367,13 +2364,13 @@ window.submitNewStudent = async () => {
                 (oldStudent.pause_start_date || '') !== (studentData.pause_start_date || '') ||
                 (oldStudent.pause_end_date || '') !== (studentData.pause_end_date || '');
             if (!LEAVE_STATUSES.includes(statusVal)) {
-                alert('휴원 중인 학생의 상태는 직접 변경할 수 없습니다.\n복귀는 휴퇴원요청의 복귀요청으로, 퇴원은 휴원→퇴원으로 처리하세요.');
+                showToast('휴원 중인 학생의 상태는 직접 변경할 수 없습니다.\n복귀는 휴퇴원요청의 복귀요청으로, 퇴원은 휴원→퇴원으로 처리하세요.', 'warn');
                 f.status.value = oldStudent.status;
                 if (window.handleStatusChange) window.handleStatusChange(oldStudent.status);
                 return;
             }
             if (wasLeavePeriodChanged) {
-                alert('휴원 기간은 직접 변경할 수 없습니다.\n휴원 종료일 변경은 휴퇴원요청의 휴원연장으로 처리하세요.');
+                showToast('휴원 기간은 직접 변경할 수 없습니다.\n휴원 종료일 변경은 휴퇴원요청의 휴원연장으로 처리하세요.', 'warn');
                 f.pause_start_date.value = oldStudent.pause_start_date || '';
                 f.pause_end_date.value = oldStudent.pause_end_date || '';
                 return;
@@ -2403,7 +2400,7 @@ window.submitNewStudent = async () => {
             const staticDays = Array.from(f.querySelectorAll('input[name="day"]:checked')).map(cb => cb.value);
             const staticClassType = f.class_type?.value || '정규';
             const classError = validateExistingClass(_classSettingsCache, staticClassType, staticClassCode);
-            if (classError) { alert(classError); return; }
+            if (classError) { showToast(classError, 'warn'); return; }
             const { levelSymbol, classNumber } = enrollmentClassParts(staticClassType, staticClassCode);
             const staticStartDate = f.start_date?.value || '';
             const staticSemester = f.initial_semester?.value || currentSemesterByLevel[level] || '';
@@ -2429,7 +2426,7 @@ window.submitNewStudent = async () => {
         const finalStatus = isEditMode ? studentData.status : (f.status?.value || _newStatusForCreate);
         const finalEnrolls = isEditMode ? (studentData.enrollments || []) : _newEnrollmentsForCreate;
         const { enrollments: reconciled, valid, reason } = reconcileEnrollments(finalStatus, finalEnrolls);
-        if (!valid) { alert(reason); return; }
+        if (!valid) { showToast(reason, 'warn'); return; }
         if (isEditMode) studentData.enrollments = reconciled;
         else _newEnrollmentsForCreate = reconciled;
     }
@@ -2654,6 +2651,7 @@ window.submitNewStudent = async () => {
         }
 
         _pendingEnrollments = [];
+        markFormClean();
         hideForm();
 
         // 저장 성공 후 UI 갱신 — 로컬 캐시 업데이트 (전체 재조회 없이)
@@ -2670,7 +2668,7 @@ window.submitNewStudent = async () => {
         }
     } catch (err) {
         console.error('[SAVE ERROR]', err);
-        alert('저장 실패: ' + err.message);
+        showToast('저장 실패: ' + err.message, 'error');
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
@@ -3127,14 +3125,14 @@ function _validateEnrollmentFields(e) {
 }
 
 window.saveEnrollment = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (pastSemesterBlocked()) return;
     const modal = document.getElementById('enrollment-modal');
     const form = document.getElementById('enrollment-form');
     const classType = form.enroll_class_type.value;
     if (!_classSettingsCache) await loadClassSettings();
     const classCode = form.enroll_class_code.value.trim();
     const classError = validateExistingClass(_classSettingsCache, classType, classCode);
-    if (classError) { alert(classError); return; }
+    if (classError) { showToast(classError, 'warn'); return; }
     const { levelSymbol, classNumber } = enrollmentClassParts(classType, classCode);
     const days = Array.from(form.querySelectorAll('[name="enroll_day"]:checked')).map(cb => cb.value);
     const startDate = form.enroll_start_date.value;
@@ -3142,14 +3140,14 @@ window.saveEnrollment = async () => {
 
     // 정합성 가드 — 추가 모달은 내신 자체 차단(반편성도우미만), 나머지는 공통 헬퍼.
     if (classType === '내신') {
-        alert('내신 enrollment는 이 모달로 추가할 수 없습니다.\n반편성도우미(DSC 앱)를 사용하세요. 내신은 정규의 일시 override 형태로 csKey 별도 관리됩니다.');
+        showToast('내신 enrollment는 이 모달로 추가할 수 없습니다.\n반편성도우미(DSC 앱)를 사용하세요. 내신은 정규의 일시 override 형태로 csKey 별도 관리됩니다.', 'warn');
         return;
     }
     const _vErr = _validateEnrollmentFields({
         class_type: classType, level_symbol: levelSymbol, class_number: classNumber,
         day: days, start_date: startDate
     });
-    if (_vErr) { alert(_vErr); return; }
+    if (_vErr) { showToast(_vErr, 'warn'); return; }
 
     let semester = form.enroll_semester?.value || '';
     if (!semester) {
@@ -3197,7 +3195,7 @@ window.saveEnrollment = async () => {
         if (!student) return;
         // 비원생(퇴원/종강/상담)은 수업추가로 status를 무로그 전환할 수 없음 — 재등원 경로로 안내.
         if (NON_ENROLLABLE_STATUSES.has(student.status)) {
-            alert(`${student.status} 상태의 학생은 수업을 직접 추가할 수 없습니다.\n"정규 등록"(재등원) 버튼으로 처리하세요.`);
+            showToast(`${student.status} 상태의 학생은 수업을 직접 추가할 수 없습니다.\n"정규 등록"(재등원) 버튼으로 처리하세요.`, 'warn');
             return;
         }
         const updatedEnrollments = [...(student.enrollments || []), enrollment];
@@ -3224,7 +3222,7 @@ window.saveEnrollment = async () => {
             selectStudent(savedStudent.id, savedStudent, targetEl);
         }
     } catch (err) {
-        alert('수업 추가 실패: ' + err.message);
+        showToast('수업 추가 실패: ' + err.message, 'error');
     }
 };
 
@@ -3298,7 +3296,7 @@ window.closeEndClassModal = (e) => {
 };
 
 window.confirmEndClassSingle = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (pastSemesterBlocked()) return;
     if (!_endClassTarget) return;
     const { code, classType, currentStudentId: studentId, enrollIdx } = _endClassTarget;
     const modal = document.getElementById('end-class-modal');
@@ -3347,7 +3345,7 @@ window.confirmEndClassSingle = async () => {
             }
         }
     } catch (err) {
-        alert('종강 처리 실패: ' + err.message);
+        showToast('종강 처리 실패: ' + err.message, 'error');
     } finally {
         singleBtn.disabled = false;
         singleBtn.textContent = '해당 학생만';
@@ -3355,7 +3353,7 @@ window.confirmEndClassSingle = async () => {
 };
 
 window.confirmEndClass = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (pastSemesterBlocked()) return;
     if (!_endClassTarget) return;
     const { code, classType, affected, willWithdraw } = _endClassTarget;
     const modal = document.getElementById('end-class-modal');
@@ -3427,7 +3425,7 @@ window.confirmEndClass = async () => {
             }
         }
     } catch (err) {
-        alert('종강 처리 실패: ' + err.message);
+        showToast('종강 처리 실패: ' + err.message, 'error');
     } finally {
         confirmBtn.disabled = false;
         confirmBtn.textContent = '전체 종강처리';
@@ -3459,7 +3457,7 @@ window.checkDurationLimit = () => {
 
             if (diffDays > 31) {
                 if (!pauseAlertTriggered) {
-                    alert('휴원은 한달까지만 가능합니다.');
+                    showToast('휴원은 한달까지만 가능합니다.', 'warn');
                     pauseAlertTriggered = true;
                 }
             } else {
@@ -3475,12 +3473,12 @@ window.checkDurationLimit = () => {
 window.handleSheetExport = async () => {
     const exportStudents = currentFilteredStudents ?? allStudents;
     if (!exportStudents || exportStudents.length === 0) {
-        alert('내보낼 데이터가 없습니다.');
+        showToast('내보낼 데이터가 없습니다.', 'warn');
         return;
     }
     const token = await ensureGoogleAccessToken();
     if (!token) {
-        alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
+        showToast('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.', 'warn');
         return;
     }
 
@@ -3562,7 +3560,7 @@ window.handleSheetExport = async () => {
 
         window.open(created.spreadsheetUrl, '_blank');
     } catch (e) {
-        alert('시트 내보내기 실패: ' + e.message + '\n\n로그아웃 후 다시 로그인하면 해결될 수 있습니다.');
+        showToast('시트 내보내기 실패: ' + e.message + '\n\n로그아웃 후 다시 로그인하면 해결될 수 있습니다.', 'error');
     }
 };
 
@@ -3581,9 +3579,9 @@ window.handleSheetUrlUpload = () => {
     const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
     if (!m) {
         if (url.includes('script.google.com')) {
-            alert('스크립트 URL은 사용할 수 없습니다.\n\n구글시트가 열린 후 주소창의 URL을 복사하세요.\n(docs.google.com/spreadsheets/d/... 형식)\n\n또는 "드라이브에서 선택"을 이용하세요.');
+            showToast('스크립트 URL은 사용할 수 없습니다.\n\n구글시트가 열린 후 주소창의 URL을 복사하세요.\n(docs.google.com/spreadsheets/d/... 형식)\n\n또는 "드라이브에서 선택"을 이용하세요.', 'warn');
         } else {
-            alert('올바른 구글시트 URL이 아닙니다.\n\nURL 형식: https://docs.google.com/spreadsheets/d/...');
+            showToast('올바른 구글시트 URL이 아닙니다.\n\nURL 형식: https://docs.google.com/spreadsheets/d/...', 'warn');
         }
         return;
     }
@@ -3593,7 +3591,7 @@ window.handleSheetUrlUpload = () => {
 window.handleSheetTemplate = async () => {
     const token = await ensureGoogleAccessToken();
     if (!token) {
-        alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
+        showToast('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.', 'warn');
         return;
     }
 
@@ -3662,9 +3660,9 @@ window.handleSheetTemplate = async () => {
         if (!valResp.ok) console.warn('[TEMPLATE] 유효성 설정 실패:', await valResp.text());
 
         window.open(created.spreadsheetUrl, '_blank');
-        alert('내 드라이브에 템플릿이 생성되었습니다!\n\n데이터를 입력한 후:\n• "시트 URL로 업로드" → 주소창 URL 붙여넣기\n• "드라이브에서 선택" → 템플릿 파일 선택');
+        showToast('내 드라이브에 템플릿이 생성되었습니다!\n\n데이터를 입력한 후:\n• "시트 URL로 업로드" → 주소창 URL 붙여넣기\n• "드라이브에서 선택" → 템플릿 파일 선택', 'success');
     } catch (e) {
-        alert('템플릿 생성 실패: ' + e.message + '\n\n로그아웃 후 다시 로그인하면 해결될 수 있습니다.');
+        showToast('템플릿 생성 실패: ' + e.message + '\n\n로그아웃 후 다시 로그인하면 해결될 수 있습니다.', 'error');
     }
 };
 
@@ -3681,7 +3679,7 @@ function loadPickerApi() {
 window.handleSheetPicker = async () => {
     const token = await ensureGoogleAccessToken();
     if (!token) {
-        alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.');
+        showToast('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.', 'warn');
         return;
     }
 
@@ -3708,14 +3706,14 @@ window.handleSheetPicker = async () => {
 async function importFromSheetId(sheetId, sheetName) {
     try {
         const token = await ensureGoogleAccessToken();
-        if (!token) { alert('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.'); return; }
+        if (!token) { showToast('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.', 'warn'); return; }
 
         // 시트 탭 목록 조회
         const metaResp = await fetch(
             `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties`,
             { headers: { 'Authorization': `Bearer ${token}` } }
         );
-        if (!metaResp.ok) { alert('시트 읽기 실패: ' + await metaResp.text()); return; }
+        if (!metaResp.ok) { showToast('시트 읽기 실패: ' + await metaResp.text(), 'error'); return; }
         const meta = await metaResp.json();
         const tabs = meta.sheets.map(s => s.properties.title);
 
@@ -3725,7 +3723,7 @@ async function importFromSheetId(sheetId, sheetName) {
             const choice = prompt(`"${sheetName}"에 탭이 ${tabs.length}개 있습니다.\n가져올 탭 번호를 입력하세요:\n\n${tabList}`);
             if (!choice) return;
             const idx = parseInt(choice, 10) - 1;
-            if (idx < 0 || idx >= tabs.length) { alert('올바른 번호를 입력해주세요.'); return; }
+            if (idx < 0 || idx >= tabs.length) { showToast('올바른 번호를 입력해주세요.', 'warn'); return; }
             selectedTab = tabs[idx];
         }
 
@@ -3735,12 +3733,12 @@ async function importFromSheetId(sheetId, sheetName) {
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(selectedTab)}!A:Z`;
         const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
 
-        if (!resp.ok) { alert('시트 읽기 실패: ' + await resp.text()); return; }
+        if (!resp.ok) { showToast('시트 읽기 실패: ' + await resp.text(), 'error'); return; }
 
         const data = await resp.json();
         const sheetRows = data.values;
         if (!sheetRows || sheetRows.length < 2) {
-            alert('시트에 데이터가 없습니다.');
+            showToast('시트에 데이터가 없습니다.', 'warn');
             return;
         }
 
@@ -3778,7 +3776,7 @@ async function importFromSheetId(sheetId, sheetName) {
 
         await runUpsertFromRows(rows, sheetName);
     } catch (e) {
-        alert('가져오기 실패: ' + e.message);
+        showToast('가져오기 실패: ' + e.message, 'error');
     }
 }
 
@@ -3797,7 +3795,7 @@ window.handleCsvUpsert = () => {
             const text = await file.text();
             await runCsvUpsert(text, file.name);
         } catch (err) {
-            alert('CSV 읽기 실패: ' + err.message);
+            showToast('CSV 읽기 실패: ' + err.message, 'error');
         }
     };
     input.click();
@@ -3806,7 +3804,7 @@ window.handleCsvUpsert = () => {
 async function runCsvUpsert(csvText, fileName) {
     // Parse CSV → rows
     const lines = csvText.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) { alert('CSV에 데이터가 없습니다.'); return; }
+    if (lines.length < 2) { showToast('CSV에 데이터가 없습니다.', 'warn'); return; }
 
     const headers = parseCSVLine(lines[0]);
     const rows = lines.slice(1).map(line => {
@@ -3851,7 +3849,7 @@ async function runCsvUpsert(csvText, fileName) {
  *           class_type, start_date, day, status, ... }]
  */
 async function runUpsertFromRows(rows, sourceName) {
-    if (!rows || rows.length === 0) { alert('데이터가 없습니다.'); return; }
+    if (!rows || rows.length === 0) { showToast('데이터가 없습니다.', 'warn'); return; }
 
     // Group by docId
     const studentMap = {};
@@ -3910,10 +3908,10 @@ async function runUpsertFromRows(rows, sourceName) {
         }
     }
     if (invalidClasses.length) {
-        alert(
+        showToast(
             `업로드 파일에 반 생성 마법사에서 생성되지 않은 반이 있습니다.\n` +
-            `학생 데이터는 저장하지 않았습니다.\n\n${invalidClasses.slice(0, 20).join('\n')}`
-        );
+            `학생 데이터는 저장하지 않았습니다.\n\n${invalidClasses.slice(0, 20).join('\n')}`,
+            'warn');
         return;
     }
 
@@ -4089,14 +4087,14 @@ async function runUpsertFromRows(rows, sourceName) {
         const totalRows = Object.keys(studentMap).length;
         const firstRow = rows[0] || {};
         const detectedKeys = Object.keys(firstRow).join(', ');
-        alert(
+        showToast(
             '변경사항이 없습니다.\n\n' +
             `[진단 정보]\n` +
             `읽은 행: ${rows.length}개\n` +
             `인식된 학생: ${totalRows}명\n` +
             `건너뜀: ${results.skipped.length}명\n` +
-            `헤더: ${detectedKeys || '(없음)'}`
-        );
+            `헤더: ${detectedKeys || '(없음)'}`,
+            'warn');
         return;
     }
 
@@ -4124,7 +4122,7 @@ async function runUpsertFromRows(rows, sourceName) {
         await batch.commit();
     }
 
-    alert(`✅ 완료!\n\n신규: ${results.inserted.length}명\n변경: ${results.updated.length}명\n건너뜀: ${results.skipped.length}명`);
+    showToast(`✅ 완료!\n\n신규: ${results.inserted.length}명\n변경: ${results.updated.length}명\n건너뜀: ${results.skipped.length}명`, 'success');
 
     // 로컬 캐시 업데이트 (전체 재조회 없이)
     for (const w of writes) {
@@ -4268,7 +4266,7 @@ window.deleteMemo = async (studentId, memoId) => {
         }
         updateListItemIcons(studentId);
     } catch (e) {
-        alert('삭제 실패: ' + e.message);
+        showToast('삭제 실패: ' + e.message, 'error');
     }
 };
 
@@ -4318,7 +4316,7 @@ window.saveMemoFromModal = async () => {
         if (ctx === 'form') await loadFormMemos(currentStudentId);
         else await loadMemos(currentStudentId);
     } catch (e) {
-        alert('메모 저장 실패: ' + e.message);
+        showToast('메모 저장 실패: ' + e.message, 'error');
     }
 };
 
@@ -4400,7 +4398,7 @@ window.deleteFormMemo = async (studentId, memoId) => {
         }
         await loadFormMemos(studentId);
     } catch (e) {
-        alert('삭제 실패: ' + e.message);
+        showToast('삭제 실패: ' + e.message, 'error');
     }
 };
 
@@ -4705,10 +4703,10 @@ window.exitBulkMode = () => {
 // 일괄 상태 변경 (우측 패널)
 // ---------------------------------------------------------------------------
 window.applyBulkStatus = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (pastSemesterBlocked()) return;
     const newStatus = document.getElementById('bulk-status-select-panel').value;
-    if (!newStatus) { alert('변경할 상태를 선택해주세요.'); return; }
-    if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
+    if (!newStatus) { showToast('변경할 상태를 선택해주세요.', 'warn'); return; }
+    if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
 
     if (!confirm(`선택한 ${selectedStudentIds.size}명의 상태를 '${newStatus}'(으)로 변경합니다.`)) return;
 
@@ -4724,7 +4722,7 @@ window.applyBulkStatus = async () => {
             changes.push({ id, name: student.name, from: oldStatus, to: newStatus });
         });
 
-        if (changes.length === 0) { alert('변경할 학생이 없습니다. (이미 같은 상태)'); return; }
+        if (changes.length === 0) { showToast('변경할 학생이 없습니다. (이미 같은 상태)', 'warn'); return; }
 
         const BATCH_SIZE = 200;
         for (let i = 0; i < changes.length; i += BATCH_SIZE) {
@@ -4746,10 +4744,10 @@ window.applyBulkStatus = async () => {
         document.getElementById('bulk-status-select-panel').value = '';
         applyFilterAndRender();
         updateBulkEditSummary();
-        alert(`${changes.length}명의 상태를 '${newStatus}'(으)로 변경했습니다.`);
+        showToast(`${changes.length}명의 상태를 '${newStatus}'(으)로 변경했습니다.`, 'success');
     } catch (e) {
         console.error('[BULK STATUS ERROR]', e);
-        alert('일괄 상태 변경 실패: ' + e.message);
+        showToast('일괄 상태 변경 실패: ' + e.message, 'error');
     }
 };
 
@@ -4757,19 +4755,19 @@ window.applyBulkStatus = async () => {
 // 일괄 반 변경 (우측 패널)
 // ---------------------------------------------------------------------------
 window.applyBulkClass = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (pastSemesterBlocked()) return;
     const raw = document.getElementById('bulk-class-code').value.trim().toUpperCase();
-    if (!raw) { alert('반코드를 입력해주세요. (예: HX103)'); return; }
-    if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
+    if (!raw) { showToast('반코드를 입력해주세요. (예: HX103)', 'warn'); return; }
+    if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
 
     const sem = activeFilters.semester;
     if (!sem) {
-        alert('어느 학기 수업을 옮길지 먼저 좌측 Semester에서 학기를 선택하세요.');
+        showToast('어느 학기 수업을 옮길지 먼저 좌측 Semester에서 학기를 선택하세요.', 'warn');
         return;
     }
 
     const match = raw.match(/^([A-Za-z]+)(\d+)$/);
-    if (!match) { alert('반코드 형식이 올바르지 않습니다. (예: HX103, HA201)'); return; }
+    if (!match) { showToast('반코드 형식이 올바르지 않습니다. (예: HX103, HA201)', 'warn'); return; }
     const levelSymbol = match[1];
     const classNumber = match[2];
 
@@ -4784,7 +4782,7 @@ window.applyBulkClass = async () => {
         });
     });
     if (!regularCodes.has(raw)) {
-        alert(`존재하지 않는 반입니다: ${raw}\n현재 ${sem} 정규반에 있는 반코드로만 이동할 수 있습니다.`);
+        showToast(`존재하지 않는 반입니다: ${raw}\n현재 ${sem} 정규반에 있는 반코드로만 이동할 수 있습니다.`, 'warn');
         return;
     }
 
@@ -4824,7 +4822,7 @@ window.applyBulkClass = async () => {
 
         if (changes.length === 0) {
             const detail = skipped.length ? `\n제외: ${skipped.join(', ')}` : '';
-            alert(`변경할 학생이 없습니다.${detail}`);
+            showToast(`변경할 학생이 없습니다.${detail}`, 'warn');
             return;
         }
 
@@ -4861,10 +4859,10 @@ window.applyBulkClass = async () => {
         let msg = `${changes.length}명의 반을 '${raw}'(으)로 이동했습니다. (${sem} 정규)`;
         if (skipped.length) msg += `\n\n⚠️ 제외 ${skipped.length}명: ${skipped.join(', ')}\n(해당 학기 정규 수업이 없거나 반명 충돌)`;
         if (warnings.length) msg += `\n\n⚠️ 내신 매핑 주의:\n${warnings.join('\n')}`;
-        alert(msg);
+        showToast(msg, skipped.length || warnings.length ? 'warn' : 'success');
     } catch (e) {
         console.error('[BULK CLASS ERROR]', e);
-        alert('일괄 반 변경 실패: ' + e.message);
+        showToast('일괄 반 변경 실패: ' + e.message, 'error');
     }
 };
 
@@ -4872,15 +4870,15 @@ window.applyBulkClass = async () => {
 // 일괄 등원요일 변경 (우측 패널)
 // ---------------------------------------------------------------------------
 window.applyBulkDays = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (pastSemesterBlocked()) return;
     const checked = [...document.querySelectorAll('#bulk-day-checkboxes input:checked')].map(cb => cb.value);
-    if (checked.length === 0) { alert('변경할 요일을 선택해주세요.'); return; }
-    if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
+    if (checked.length === 0) { showToast('변경할 요일을 선택해주세요.', 'warn'); return; }
+    if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
 
     // 학기 컨텍스트 가드: 어느 학기 수업의 요일을 바꿀지 확정돼야 함
     const sem = activeFilters.semester;
     if (!sem) {
-        alert('어느 학기 수업을 변경할지 먼저 좌측 Semester에서 학기를 선택하세요.');
+        showToast('어느 학기 수업을 변경할지 먼저 좌측 Semester에서 학기를 선택하세요.', 'warn');
         return;
     }
 
@@ -4906,7 +4904,7 @@ window.applyBulkDays = async () => {
 
         if (changes.length === 0) {
             const detail = skipped.length ? `\n제외: ${skipped.join(', ')}` : '';
-            alert(`변경할 학생이 없습니다.${detail}`);
+            showToast(`변경할 학생이 없습니다.${detail}`, 'warn');
             return;
         }
 
@@ -4939,10 +4937,10 @@ window.applyBulkDays = async () => {
         updateBulkEditSummary();
         let msg = `${changes.length}명의 등원요일을 변경했습니다. (${sem} 수업)`;
         if (skipped.length) msg += `\n\n⚠️ 제외 ${skipped.length}명: ${skipped.join(', ')}\n(해당 학기 수업 없음)`;
-        alert(msg);
+        showToast(msg, skipped.length ? 'warn' : 'success');
     } catch (e) {
         console.error('[BULK DAYS ERROR]', e);
-        alert('일괄 요일 변경 실패: ' + e.message);
+        showToast('일괄 요일 변경 실패: ' + e.message, 'error');
     }
 };
 
@@ -4967,8 +4965,8 @@ window.resetBulkDays = () => {
 // 일괄 학년 승격 (우측 패널)
 // ---------------------------------------------------------------------------
 window.applyBulkPromotion = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
-    if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
+    if (pastSemesterBlocked()) return;
+    if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
     const newSchool = document.getElementById('bulk-promote-school').value.trim();
 
     const ids = [...selectedStudentIds];
@@ -5009,7 +5007,7 @@ window.applyBulkPromotion = async () => {
         changes.push({ id, name: student.name, before: beforeParts, after: afterParts, updateData, afterLevel, afterGrade, isTransition });
     });
 
-    if (changes.length === 0) { alert('승격할 학생이 없습니다.' + (skipped.length ? `\n\n건너뜀:\n${skipped.join('\n')}` : '')); return; }
+    if (changes.length === 0) { showToast('승격할 학생이 없습니다.' + (skipped.length ? `\n\n건너뜀:\n${skipped.join('\n')}` : ''), 'warn'); return; }
 
     // 확인 메시지 구성
     const normal = changes.filter(c => !c.isTransition);
@@ -5051,10 +5049,10 @@ window.applyBulkPromotion = async () => {
         document.getElementById('bulk-promote-school').value = '';
         applyFilterAndRender();
         updateBulkEditSummary();
-        alert(`${changes.length}명의 학년을 승격했습니다.` + (skipped.length ? `\n건너뜀: ${skipped.length}명` : ''));
+        showToast(`${changes.length}명의 학년을 승격했습니다.` + (skipped.length ? `\n건너뜀: ${skipped.length}명` : ''), 'success');
     } catch (e) {
         console.error('[BULK PROMOTION ERROR]', e);
-        alert('일괄 학년 승격 실패: ' + e.message);
+        showToast('일괄 학년 승격 실패: ' + e.message, 'error');
     }
 };
 
@@ -5066,14 +5064,14 @@ window.resetBulkPromotion = () => {
 // 일괄 학교이름 변경 (우측 패널) — 선택 학부의 school_* 필드만 변경, level/grade 미변경
 // ---------------------------------------------------------------------------
 window.applyBulkSchool = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
-    if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
+    if (pastSemesterBlocked()) return;
+    if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
 
     const level = document.querySelector('input[name="bulk-school-level"]:checked')?.value;
-    if (!level) { alert('학부(초/중/고)를 선택하세요.'); return; }
+    if (!level) { showToast('학부(초/중/고)를 선택하세요.', 'warn'); return; }
 
     const rawName = document.getElementById('bulk-school-name').value.trim();
-    if (!rawName) { alert('학교명을 입력하세요.'); return; }
+    if (!rawName) { showToast('학교명을 입력하세요.', 'warn'); return; }
 
     const knownSchools = collectKnownSchoolNames(allStudents);
     const schoolName = normalizeSchoolName(rawName, level, knownSchools);
@@ -5085,7 +5083,7 @@ window.applyBulkSchool = async () => {
         return acc;
     }, []);
 
-    if (changes.length === 0) { alert('변경할 학생이 없습니다.'); return; }
+    if (changes.length === 0) { showToast('변경할 학생이 없습니다.', 'warn'); return; }
 
     if (!confirm(`선택한 ${selectedStudentIds.size}명의 ${level} 학교를 '${schoolName}'(으)로 설정합니다.`)) return;
 
@@ -5118,10 +5116,10 @@ window.applyBulkSchool = async () => {
         window.resetBulkSchool();
         applyFilterAndRender();
         updateBulkEditSummary();
-        alert(`${changes.length}명의 ${level} 학교를 '${schoolName}'(으)로 변경했습니다.`);
+        showToast(`${changes.length}명의 ${level} 학교를 '${schoolName}'(으)로 변경했습니다.`, 'success');
     } catch (e) {
         console.error('[BULK SCHOOL ERROR]', e);
-        alert('일괄 학교 변경 실패: ' + e.message);
+        showToast('일괄 학교 변경 실패: ' + e.message, 'error');
     }
 };
 
@@ -5135,7 +5133,7 @@ window.resetBulkSchool = () => {
 // 일괄 삭제
 // ---------------------------------------------------------------------------
 window.bulkDelete = () => {
-    if (selectedStudentIds.size === 0) { alert('학생을 선택해주세요.'); return; }
+    if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
     const ids = [...selectedStudentIds];
     const desc = document.getElementById('bulk-delete-desc');
     if (desc) desc.innerHTML = `선택한 <strong>${ids.length}명</strong>의 학생을 삭제합니다.<br><span style="color:#c5221f;font-size:13px;">이 작업은 되돌릴 수 없습니다.</span>`;
@@ -5156,7 +5154,7 @@ window.closeBulkDeleteModal = (e) => {
 };
 
 window.confirmBulkDelete = async () => {
-    if (isPastSemester()) { alert('과거 학기는 수정할 수 없습니다.'); return; }
+    if (pastSemesterBlocked()) return;
     const ids = [...selectedStudentIds];
     const confirmBtn = document.querySelector('#bulk-delete-modal .btn-end-class-confirm');
     if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '퇴원 처리 중...'; }
@@ -5197,10 +5195,10 @@ window.confirmBulkDelete = async () => {
         buildClassFilterSidebar();
         applyFilterAndRender();
         currentStudentId = null;
-        alert(`${ids.length}명의 학생이 퇴원 처리되었습니다.`);
+        showToast(`${ids.length}명의 학생이 퇴원 처리되었습니다.`, 'success');
     } catch (e) {
         console.error('[BULK DELETE ERROR]', e);
-        alert('일괄 퇴원 처리 실패: ' + e.message);
+        showToast('일괄 퇴원 처리 실패: ' + e.message, 'error');
     } finally {
         if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '퇴원'; }
     }
@@ -5559,7 +5557,7 @@ window._retryFinalize = async (docId) => {
         await new Promise(resolve => setTimeout(resolve, 500));
         await updateDoc(doc(db, 'leave_requests', docId), { status: 'approved', ...auditFields });
     } catch (err) {
-        alert('재시도 실패: ' + err.message);
+        showToast('재시도 실패: ' + err.message, 'error');
         console.error(err);
     }
 };
@@ -5692,7 +5690,7 @@ async function _populateTargetClassDropdown(student) {
 
 function _openReturnModal(studentId, type) {
     const student = allStudents.find(s => s.id === studentId);
-    if (!student) { alert('학생 정보를 찾을 수 없습니다.'); return; }
+    if (!student) { showToast('학생 정보를 찾을 수 없습니다.', 'warn'); return; }
 
     _returnModalStudentId = studentId;
     _returnModalType = type;
@@ -5730,14 +5728,14 @@ window.submitReturnFromLeave = async () => {
     if (!_returnModalStudentId || !_returnModalType) return;
 
     const student = allStudents.find(s => s.id === _returnModalStudentId);
-    if (!student) { alert('학생 정보를 찾을 수 없습니다.'); return; }
+    if (!student) { showToast('학생 정보를 찾을 수 없습니다.', 'warn'); return; }
 
     const returnDate = document.getElementById('rfl-return-date').value;
-    if (!returnDate) { alert(_isReEnrollType(_returnModalType) ? '재등원일을 입력해주세요.' : '복귀일을 입력해주세요.'); return; }
+    if (!returnDate) { showToast(_isReEnrollType(_returnModalType) ? '재등원일을 입력해주세요.' : '복귀일을 입력해주세요.', 'warn'); return; }
 
     const targetClassCode = document.getElementById('rfl-target-class').value || '';
     if (!targetClassCode) {
-        alert('복귀할 반을 선택해주세요.');
+        showToast('복귀할 반을 선택해주세요.', 'warn');
         return;
     }
 
@@ -5781,7 +5779,7 @@ window.submitReturnFromLeave = async () => {
         const stu = allStudents.find(s => s.id === savedId);
         if (stu) window.selectStudent(savedId, stu);
     } catch (err) {
-        alert('요청 실패: ' + err.message);
+        showToast('요청 실패: ' + err.message, 'error');
         console.error(err);
     }
 };
@@ -5802,7 +5800,7 @@ window.toggleCancelLeaveRequest = async (docId, studentId) => {
         storeUpdate({ leaveRequests: [...leaveRequests] });
         const stu = allStudents.find(s => s.id === studentId);
         if (stu) window.selectStudent(studentId, stu);
-    } catch (err) { alert('처리 실패: ' + err.message); }
+    } catch (err) { showToast('처리 실패: ' + err.message, 'error'); }
 };
 
 // 방어 가드: 최종 승인 시 RETURN 유형(복귀/재등원)은 반드시 target_class_code 필요
@@ -5811,7 +5809,7 @@ function _checkLegacyReturnTarget(r, willFinalize) {
     if (!willFinalize) return true;
     const isReturn = _isReturnType(r.request_type);
     if (isReturn && !r.target_class_code) {
-        alert('이 요청에 "복귀할 반" 정보가 없습니다.\n요청을 취소하고 새로 작성해주세요.');
+        showToast('이 요청에 "복귀할 반" 정보가 없습니다.\n요청을 취소하고 새로 작성해주세요.', 'warn');
         return false;
     }
     return true;
@@ -5830,7 +5828,7 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
             storeUpdate({ leaveRequests: [...leaveRequests] });
             const stu = allStudents.find(s => s.id === studentId);
             if (stu) window.selectStudent(studentId, stu);
-        } catch (err) { alert('교수부 승인 취소 실패: ' + err.message); }
+        } catch (err) { showToast('교수부 승인 취소 실패: ' + err.message, 'error'); }
         return;
     }
     const isFinal = !!r.approved_by;
@@ -5861,7 +5859,7 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
         const stu = allStudents.find(s => s.id === studentId);
         if (stu) window.selectStudent(studentId, stu);
     } catch (err) {
-        alert('교수부 승인 실패: ' + err.message);
+        showToast('교수부 승인 실패: ' + err.message, 'error');
         console.error(err);
     }
 };
@@ -5879,7 +5877,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
             storeUpdate({ leaveRequests: [...leaveRequests] });
             const stu = allStudents.find(s => s.id === studentId);
             if (stu) window.selectStudent(studentId, stu);
-        } catch (err) { alert('행정부 승인 취소 실패: ' + err.message); }
+        } catch (err) { showToast('행정부 승인 취소 실패: ' + err.message, 'error'); }
         return;
     }
 
@@ -5911,7 +5909,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
         const stu = allStudents.find(s => s.id === studentId);
         if (stu) window.selectStudent(studentId, stu);
     } catch (err) {
-        alert('행정부 승인 실패: ' + err.message);
+        showToast('행정부 승인 실패: ' + err.message, 'error');
         console.error(err);
     }
 };
@@ -5928,7 +5926,7 @@ window.cancelLeaveRequest = async (docId, studentId) => {
         const stu = allStudents.find(s => s.id === studentId);
         if (stu) window.selectStudent(studentId, stu);
     } catch (err) {
-        alert('취소 실패: ' + err.message);
+        showToast('취소 실패: ' + err.message, 'error');
         console.error(err);
     }
 };
@@ -6063,7 +6061,7 @@ window.gsHandleCSVFile = (input) => {
     const weekCount = parseInt(document.getElementById('gs-week-count').value) || 3;
 
     if (!startDate || !endDate) {
-        alert('시작일과 종료일을 먼저 설정해주세요.');
+        showToast('시작일과 종료일을 먼저 설정해주세요.', 'warn');
         input.value = '';
         return;
     }
@@ -6078,7 +6076,7 @@ window.gsHandleCSVFile = (input) => {
             gsParseCSV(e.target.result);
         } catch (err) {
             console.error('[GS CSV ERROR]', err);
-            alert('CSV 파싱 오류: ' + err.message);
+            showToast('CSV 파싱 오류: ' + err.message, 'error');
         }
     };
     reader.readAsText(file, 'UTF-8');
@@ -6087,7 +6085,7 @@ window.gsHandleCSVFile = (input) => {
 
 function gsParseCSV(text) {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) { alert('CSV 데이터가 부족합니다.'); return; }
+    if (lines.length < 2) { showToast('CSV 데이터가 부족합니다.', 'warn'); return; }
 
     const headers = parseCSVLine(lines[0]);
 
@@ -6106,7 +6104,7 @@ function gsParseCSV(text) {
     });
 
     if (colName < 0 || colPhone < 0) {
-        alert('CSV에 이름/연락처 컬럼을 찾을 수 없습니다.\n헤더: ' + headers.join(', '));
+        showToast('CSV에 이름/연락처 컬럼을 찾을 수 없습니다.\n헤더: ' + headers.join(', '), 'warn');
         return;
     }
 
@@ -6229,19 +6227,19 @@ function gsRenderDashboard() {
 // Save grammar special enrollments to Firestore
 window.saveGrammarSpecial = async () => {
     const { startDate, endDate, entries } = _gsState;
-    if (!startDate || !endDate) { alert('기간을 설정해주세요.'); return; }
-    if (endDate <= startDate) { alert('종료일은 시작일 이후여야 합니다.'); return; }
-    if (entries.length === 0) { alert('저장할 학생이 없습니다.'); return; }
+    if (!startDate || !endDate) { showToast('기간을 설정해주세요.', 'warn'); return; }
+    if (endDate <= startDate) { showToast('종료일은 시작일 이후여야 합니다.', 'warn'); return; }
+    if (entries.length === 0) { showToast('저장할 학생이 없습니다.', 'warn'); return; }
     if (!_classSettingsCache) await loadClassSettings();
     const classError = validateExistingClass(_classSettingsCache, '특강', 'GR901');
     if (classError) {
-        alert(`문법 특강을 저장할 수 없습니다.\n${classError}\n반 생성 마법사에서 GR901 특강반을 먼저 생성하세요.`);
+        showToast(`문법 특강을 저장할 수 없습니다.\n${classError}\n반 생성 마법사에서 GR901 특강반을 먼저 생성하세요.`, 'warn');
         return;
     }
 
     // Filter out already-saved entries
     const toSave = entries.filter(e => !e.isAlreadySaved);
-    if (toSave.length === 0) { alert('모든 학생이 이미 저장되어 있습니다.'); return; }
+    if (toSave.length === 0) { showToast('모든 학생이 이미 저장되어 있습니다.', 'warn'); return; }
 
     // Check for existing grammar special with same dates
     const conflicts = [];
@@ -6366,10 +6364,10 @@ window.saveGrammarSpecial = async () => {
         const skipNote = skippedWithdrawn.length > 0
             ? `\n\n비원생(퇴원/종강/상담) ${skippedWithdrawn.length}명은 제외됨 — 재등원 처리 후 추가하세요:\n${skippedWithdrawn.join(', ')}`
             : '';
-        alert(`${savedCount}명의 문법 특강을 저장했습니다.${skipNote}`);
+        showToast(`${savedCount}명의 문법 특강을 저장했습니다.${skipNote}`, 'success');
     } catch (e) {
         console.error('[GS SAVE ERROR]', e);
-        alert('문법 특강 저장 실패: ' + e.message);
+        showToast('문법 특강 저장 실패: ' + e.message, 'error');
     } finally {
         saveBtn.disabled = false;
         saveBtn.textContent = '저장';
@@ -6454,7 +6452,7 @@ window.saveLevelSemesterDate = async (key, startDate) => {
         renderLevelSemesterSettings(_adminCurrentLevel);
     } catch (err) {
         console.error('학기 시작일 저장 실패:', err);
-        alert('저장 실패: ' + err.message);
+        showToast('저장 실패: ' + err.message, 'error');
     }
 };
 
@@ -6533,12 +6531,12 @@ window.runPromotion = async () => {
             }
         }
         applyFilterAndRender();
-        alert('승급 완료!');
+        showToast('승급 완료!', 'success');
         document.getElementById('admin-promo-preview').innerHTML = '';
         runBtn.textContent = '승급 실행';
     } catch (err) {
         console.error('승급 실패:', err);
-        alert('승급 실패: ' + err.message);
+        showToast('승급 실패: ' + err.message, 'error');
         runBtn.disabled = false;
         runBtn.textContent = '승급 실행';
     }
