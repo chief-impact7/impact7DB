@@ -55,4 +55,6 @@
 
 - [DSC UI/UX 선행 작업 이식](project_dsc_uiux_handoff_2026-06-12.md) — 한국어 캘린더(date-picker.js, DSC 사본과 상호 동기화 의무)·검색 범위 배너·로그인 aria-disabled 가드·FOUT 방지 적용 + DSC발 함정(re-export 스코프, innerHTML throw, 조용한 early return)·인프라 주의(두 앱 firebase-config, shared 명시 설치) (2026-06-12, f84a84e)
 
+- [역할값 리네임 원자적 마이그레이션](feedback_role_rename_atomic_migration.md) — rules 배포+데이터 마이그레이션+4-repo 동기화는 한 작업으로, 리스너 에러 콜백 필수 (2026-06-12 HR 원장 RBAC 역전 먹통 사고)
+
 - [codegraph 활용 가이드](reference_codegraph_guide.md) — 인덱스 현황, 도메인별 탐색 쿼리, 주요 모듈 위치
