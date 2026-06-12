@@ -1,10 +1,10 @@
 import { getFirestore } from 'firebase-admin/firestore';
 
-// 멱등키를 payment_records에 기록. 이미 처리됐으면 false(중복), 신규면 true.
-// 실제 결제 검증 로직은 나중에 paymentHook에서 이 함수를 호출한다.
-export async function claimIdempotencyKey(key) {
+// 멱등키를 지정 컬렉션에 기록. 이미 처리됐으면 false(중복), 신규면 true.
+// 결제(paymentHook)는 기본 payment_records, 메시지 경로는 호출 시 컬렉션을 넘긴다.
+export async function claimIdempotencyKey(key, collection = 'payment_records') {
   const db = getFirestore();
-  const ref = db.collection('payment_records').doc(key);
+  const ref = db.collection(collection).doc(key);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (snap.exists) return false;
