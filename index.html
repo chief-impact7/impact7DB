@@ -11,10 +11,9 @@
     <link rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
     <link rel="stylesheet" href="style.css">
-    <script>/* 다크모드 FOUC 방지 — 저장값 또는 OS 설정을 첫 페인트 전에 적용 */
-        try { var t = localStorage.getItem('impact7db-theme');
-            if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches))
-                document.documentElement.dataset.theme = 'dark';
+    <script>/* 다크모드 FOUC 방지 — 기본은 라이트, 사용자가 명시적으로 켠 경우만 다크 */
+        try { if (localStorage.getItem('impact7db-theme') === 'dark')
+            document.documentElement.dataset.theme = 'dark';
         } catch (e) { }</script>
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
