@@ -26,6 +26,7 @@ description: firestore.rules 변경 감지 시 impact7DB, impact7newDSC, impact7
 
 ## 주의사항
 
+- **복사는 `cp`로(바이너리 그대로) 한다 — 편집기/스크립트로 재작성하지 말 것.** 4개 파일은 CRLF 줄바꿈이라, 편집기 저장이나 텍스트 처리(파이썬 write 등)가 CRLF→LF로 바꾸면 전체 파일이 diff로 떠 git이 오염된다. 기준 파일을 그대로 `cp`하면 줄바꿈이 보존된다. 일부 블록만 추가할 때도 4개가 동일해야 하므로 결국 기준 파일을 `cp`로 덮는 게 안전하다.
 - `students` 컬렉션: 클라이언트 삭제 완전 차단 (`allow delete: if false`) 규칙이 반드시 포함되어야 함
 - HR 앱의 사용자 컬렉션은 `director_users` (DB의 `users`와 분리)
 - 동기화 후 배포는 impact7DB 프로젝트에서만 하는 것을 권장
