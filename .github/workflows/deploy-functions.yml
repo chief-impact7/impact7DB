@@ -38,10 +38,11 @@ jobs:
 
       # functions-shared 변경 시 shared codebase 배포 (수동 트리거 시에도)
       # firebase CLI가 배포 전 소스의 firebase-functions를 검증하므로 npm ci 선행 필수.
+      # package-lock.json은 gitignore라 npm ci 불가 → npm install 사용.
       - name: Deploy functions:shared
         if: github.event_name == 'workflow_dispatch' || steps.f.outputs.shared == 'true'
         run: |
-          npm --prefix functions-shared ci
+          (cd functions-shared && npm install --no-audit --no-fund)
           export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
           firebase deploy --only functions:shared --project impact7db --non-interactive
 
@@ -49,6 +50,6 @@ jobs:
       - name: Deploy functions:leave-request
         if: steps.f.outputs.leave == 'true'
         run: |
-          npm --prefix functions ci
+          (cd functions && npm install --no-audit --no-fund)
           export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
           firebase deploy --only functions:leave-request --project impact7db --non-interactive
