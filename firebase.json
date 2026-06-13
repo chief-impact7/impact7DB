@@ -6,10 +6,10 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
-    "public": "dist",
+    "public": "_redirect",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-    "rewrites": [
-      { "source": "**", "destination": "/index.html" }
+    "redirects": [
+      { "source": "**", "destination": "https://impact7-app.web.app/db", "type": 301 }
     ]
   },
   "storage": {
