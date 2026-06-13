@@ -6,6 +6,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import { handleLlmGenerate } from './src/llmHandler.js';
 import { handleGenerateStudentReportAi } from './src/studentReportAiHandler.js';
+import { handleSyncChatMessages } from './src/chatSyncHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
@@ -24,11 +25,15 @@ setGlobalOptions({
 // 호출자 보호는 handleLlmGenerate의 request.auth(로그인 직원만)로 유지.
 export const llmGenerate = onCall({ enforceAppCheck: false }, handleLlmGenerate);
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 호출로 생성(기존 consultation/status 콜러블 통합).
-// CHAT_SA_KEY: DWD로 chief@를 가장해 Chat 메시지를 읽는 SA 키(설정 전엔 graceful skip).
+// Chat 언급은 syncChatMessages가 적재한 chat_messages를 조회하므로 여기엔 secret 불필요.
+export const generateStudentReportAi = onCall({ enforceAppCheck: false }, handleGenerateStudentReportAi);
+
+// CHAT_SA_KEY: DWD로 chief@를 가장해 Chat 메시지를 읽는 SA 키.
+// 하루 1회 chief 스페이스 신규 메시지를 증분 수집 → 재원생 이름 태깅 → chat_messages 적재.
 const CHAT_SA_KEY = defineSecret('CHAT_SA_KEY');
-export const generateStudentReportAi = onCall(
-  { enforceAppCheck: false, secrets: [CHAT_SA_KEY] },
-  handleGenerateStudentReportAi,
+export const syncChatMessages = onSchedule(
+  { schedule: 'every day 04:00', timeZone: 'Asia/Seoul', secrets: [CHAT_SA_KEY] },
+  () => handleSyncChatMessages(),
 );
 
 export const healthCheck = onRequest(

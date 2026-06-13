@@ -150,25 +150,25 @@ describe('handleGenerateStudentReportAi', () => {
       .rejects.toMatchObject({ code: 'not-found' });
   });
 
-  it('includes chat mentions in the prompt and count when a key is provided', async () => {
+  it('includes chat mentions from chat_messages in the prompt and count', async () => {
     const firestore = makeFirestore([]);
-    const collectChat = vi.fn().mockResolvedValue([{ date: '2026-06-01', text: '김학생 숙제 자주 빠짐' }]);
+    const fetchChatMentions = vi.fn().mockResolvedValue([{ date: '2026-06-01', text: '김학생 숙제 자주 빠짐' }]);
     const result = await handleGenerateStudentReportAi(
       { auth, data: { studentId: 's1' } },
-      { firestore, generateText, todayKST, chatKey: '{}', collectChat },
+      { firestore, generateText, todayKST, fetchChatMentions },
     );
-    expect(collectChat).toHaveBeenCalledWith('{}', '김학생');
+    expect(fetchChatMentions).toHaveBeenCalledWith(firestore, '김학생');
     expect(result.chat_mention_count).toBe(1);
     expect(firestore.writes[0].data.chat_mention_count).toBe(1);
     expect(generateText.mock.calls[0][1]).toContain('김학생 숙제 자주 빠짐');
   });
 
-  it('continues gracefully when chat collection throws', async () => {
+  it('continues gracefully when chat_messages query throws', async () => {
     const firestore = makeFirestore([]);
-    const collectChat = vi.fn().mockRejectedValue(new Error('DWD not configured'));
+    const fetchChatMentions = vi.fn().mockRejectedValue(new Error('index missing'));
     const result = await handleGenerateStudentReportAi(
       { auth, data: { studentId: 's1' } },
-      { firestore, generateText, todayKST, chatKey: '{}', collectChat },
+      { firestore, generateText, todayKST, fetchChatMentions },
     );
     expect(result).toMatchObject({ ok: true, chat_mention_count: 0 });
     expect(firestore.writes).toHaveLength(3);

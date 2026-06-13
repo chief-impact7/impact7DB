@@ -3,7 +3,6 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { todayKST } from '@impact7/shared/datetime';
 import { currentSchool } from '@impact7/shared/student-label';
 import { generateText } from './vertex.js';
-import { collectStudentChatMentions } from './chatClient.js';
 import { writeLog } from './notifyLog.js';
 
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 Gemini 호출로 생성하는 통합 핸들러.
@@ -16,6 +15,22 @@ const MAX_DAILY_RECORDS = 60;     // 최근 60개 수업 기록
 const MAX_CONSULTATIONS = 60;     // 최근 60건 상담
 const MONTHS_BACK = 3;
 const CONSULT_GAP_DAYS = 30;      // 상담 공백 경고 임계 (일)
+const MAX_CHAT_MENTIONS = 20;     // 학생당 Chat 언급 조회 상한
+
+// syncChatMessages가 적재한 chat_messages를 학생 이름으로 인덱스 조회(풀스캔 대체).
+async function fetchChatMentions(firestore, studentName) {
+  const name = textOf(studentName);
+  if (!name) return [];
+  const snap = await firestore.collection('chat_messages')
+    .where('student_names', 'array-contains', name)
+    .orderBy('create_time', 'desc')
+    .limit(MAX_CHAT_MENTIONS)
+    .get();
+  return snap.docs.map(d => {
+    const m = d.data();
+    return { date: String(m.create_time || '').slice(0, 10), text: String(m.text || '').slice(0, 200) };
+  });
+}
 
 function isAuthorizedEmail(email) {
   return /@(gw\.)?impact7\.kr$/i.test(email || '');
@@ -283,8 +298,7 @@ export async function handleGenerateStudentReportAi(request, deps = {}) {
   const firestore = deps.firestore || getFirestore();
   const generate = deps.generateText || generateText;
   const today = deps.todayKST ? deps.todayKST() : todayKST();
-  const chatKey = deps.chatKey ?? process.env.CHAT_SA_KEY;
-  const collectChat = deps.collectChat || collectStudentChatMentions;
+  const getChat = deps.fetchChatMentions || fetchChatMentions;
 
   try {
     const data = await fetchAllData(firestore, studentId);
@@ -292,15 +306,12 @@ export async function handleGenerateStudentReportAi(request, deps = {}) {
     const days = latestDate ? dayDiff(today, latestDate) : null;
     const gap = { days, warning: days == null || days > CONSULT_GAP_DAYS, latestDate };
 
-    // Chat 수집은 DWD 설정·네트워크에 의존하므로 실패해도 나머지 분석을 막지 않는다(graceful).
-    let chatMentions = [];
-    if (chatKey) {
-      try {
-        chatMentions = await collectChat(chatKey, data.student.name);
-      } catch (chatErr) {
-        console.warn('[generateStudentReportAi] Chat 수집 실패(무시):', String(chatErr?.message || chatErr));
-      }
-    }
+    // Chat 언급은 syncChatMessages가 적재한 chat_messages에서 인덱스 조회. 조회 실패는 graceful.
+    const chatMentions = await getChat(firestore, data.student.name)
+      .catch((chatErr) => {
+        console.warn('[generateStudentReportAi] Chat 조회 실패(무시):', String(chatErr?.message || chatErr));
+        return [];
+      });
 
     const prompt = buildPrompt(data, days, chatMentions);
     const ai = normalizeResult(extractJson(await generate(MODEL, prompt, { temperature: 0.2 })));

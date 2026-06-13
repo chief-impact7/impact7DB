@@ -75,6 +75,14 @@
       ]
     },
     {
+      "collectionGroup": "chat_messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_names", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "create_time", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "message_queue",
       "queryScope": "COLLECTION",
       "fields": [
