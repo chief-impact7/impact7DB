@@ -23,4 +23,9 @@
 - **구 entry 파일은 전환 시 반드시 삭제**한다(안 지우면 이후 작업이 계속 헛다리).
 - dataApp(named `'dsc'`) db로 권한성 문서(HR_users 등)를 읽을 땐 `dataAuthReady()`를 선행 await한다(미러 전 읽으면 permission-denied).
 
+## 배포 구조 — DSC는 이중 배포 (수동 deploy 함정)
+DSC `master` push 시 `deploy.yml`이 ① `impact7dsc` site 자체 배포 + ② `impact7-hosting` repo에 `deploy-unified` dispatch → 통합 앱(`impact7-app.web.app/dsc`, base=`/dsc/`)을 **각 repo master 최신 checkout으로** 재빌드. 두 URL(`impact7dsc.web.app`, `impact7-app.web.app/dsc`)이 같은 콘텐츠를 서빙한다.
+- **함정: `firebase deploy --only hosting`(수동)은 `impact7dsc` site만 갱신**하고 통합(impact7-app)은 안 건드려 두 URL이 불일치한다. **DSC 배포는 master push로** 해야 양쪽이 동기화된다.
+- Actions 워크플로 자체는 건강(checkout 최신 ref + npm run build). 2026-06 "구버전 배포"는 워크플로 사고가 아니라 죽은 app.js(코드 위치) 때문이었다.
+
 관련: [[feedback_module_separation]] (app.js 모듈 분리 — DB 기준), [[feedback_line_ending_edit]]
