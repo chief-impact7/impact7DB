@@ -7,6 +7,10 @@ import { defineSecret } from 'firebase-functions/params';
 import { handleLlmGenerate } from './src/llmHandler.js';
 import { handleGenerateStudentReportAi } from './src/studentReportAiHandler.js';
 import { handleSyncChatMessages } from './src/chatSyncHandler.js';
+import {
+  handleRunStudentReportAutomation,
+  handleRunStudentReportBatchManual,
+} from './src/studentReportAutomationHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
@@ -34,6 +38,21 @@ const CHAT_SA_KEY = defineSecret('CHAT_SA_KEY');
 export const syncChatMessages = onSchedule(
   { schedule: 'every day 04:00', timeZone: 'Asia/Seoul', secrets: [CHAT_SA_KEY] },
   () => handleSyncChatMessages(),
+);
+
+// 학생 AI 종합 리포트 일괄/자동 생성 (로드맵 단계 8) — "타임박스 + 커서 재개" 청크 모델.
+// scheduled: 5분마다 깨어나 진행 중 배치(batch_active)면 다음 청크를 이어받고, 아니면
+//   automation_settings(interval/run_day/run_hour) 매칭 시 새 배치를 시작. 한 청크는 8분 예산 내로
+//   끝나고 미처리분은 다음 틱이 이어받아 500+ 명도 540s timeout에 닿지 않는다. 할 일 없으면 즉시 return.
+export const runStudentReportAutomation = onSchedule(
+  { schedule: '*/5 * * * *', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '512MiB' },
+  () => handleRunStudentReportAutomation(),
+);
+// manual: director 등급 이상이 새 배치를 즉시 시작(첫 청크). 미완료분은 scheduled 5분 틱이 이어받음.
+// 진행률은 automation_settings(progress_done/progress_total/batch_active)를 onSnapshot 구독.
+export const runStudentReportBatchManual = onCall(
+  { enforceAppCheck: false, timeoutSeconds: 540, memory: '512MiB' },
+  handleRunStudentReportBatchManual,
 );
 
 export const healthCheck = onRequest(

@@ -3,7 +3,10 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { todayKST } from '@impact7/shared/datetime';
 import { currentSchool } from '@impact7/shared/student-label';
 import { generateText } from './vertex.js';
+import { isAuthorizedStaffEmail } from './authGuards.js';
 import { writeLog } from './notifyLog.js';
+
+export { fetchChatMentions };
 
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 Gemini 호출로 생성하는 통합 핸들러.
 // 기존 generateStudentStatusAi(종합) + generateStudentConsultationAi(상담)를 대체.
@@ -30,10 +33,6 @@ async function fetchChatMentions(firestore, studentName) {
     const m = d.data();
     return { date: String(m.create_time || '').slice(0, 10), text: String(m.text || '').slice(0, 200) };
   });
-}
-
-function isAuthorizedEmail(email) {
-  return /@(gw\.)?impact7\.kr$/i.test(email || '');
 }
 
 function textOf(v) {
@@ -224,12 +223,12 @@ function normalizeResult(parsed) {
   };
 }
 
-function writeArtifacts(firestore, { studentId, data, ai, gap, chatCount = 0, auth }) {
+function writeArtifacts(firestore, { studentId, data, ai, gap, chatCount = 0, actor }) {
   const base = {
     student_id: studentId,
     student_name: data.student.name || '',
-    generated_by: auth.uid,
-    generated_by_email: auth.token?.email || '',
+    generated_by: actor.uid,
+    generated_by_email: actor.email || '',
     generation_source: 'unified',
     generated_at: FieldValue.serverTimestamp(),
   };
@@ -287,10 +286,54 @@ async function safeLog(entry) {
   }
 }
 
+// 학생 1명의 종합 리포트를 생성·저장하는 순수 핵심 로직. 콜러블(개별)·일괄(scheduled/manual) 공용.
+// generate: (model, prompt, config) => string. generateWithUsage(opt-in): => { text, usage } (일괄 토큰집계용).
+// actor: { uid, email } — 산출물 generated_by/generated_by_email에 기록.
+// 반환: { status, consultation_count, consultation_gap_days, consultation_gap_warning, chat_mention_count, usage }.
+export async function generateReportForStudent({ firestore, generate, generateWithUsage, getChat, today, studentId, actor }) {
+  const gen = generate || generateText;
+  const fetchChat = getChat || fetchChatMentions;
+  const refDay = today || todayKST();
+
+  const data = await fetchAllData(firestore, studentId);
+  const latestDate = data.consultations.length ? (data.consultations[data.consultations.length - 1].date || null) : null;
+  const days = latestDate ? dayDiff(refDay, latestDate) : null;
+  const gap = { days, warning: days == null || days > CONSULT_GAP_DAYS, latestDate };
+
+  // Chat 언급은 syncChatMessages가 적재한 chat_messages에서 인덱스 조회. 조회 실패는 graceful.
+  const chatMentions = await fetchChat(firestore, data.student.name)
+    .catch((chatErr) => {
+      console.warn('[generateReportForStudent] Chat 조회 실패(무시):', String(chatErr?.message || chatErr));
+      return [];
+    });
+
+  const prompt = buildPrompt(data, days, chatMentions);
+  let text;
+  let usage = { promptTokenCount: 0, candidatesTokenCount: 0, totalTokenCount: 0 };
+  if (generateWithUsage) {
+    const out = await generateWithUsage(MODEL, prompt, { temperature: 0.2 });
+    text = out.text;
+    usage = out.usage || usage;
+  } else {
+    text = await gen(MODEL, prompt, { temperature: 0.2 });
+  }
+  const ai = normalizeResult(extractJson(text));
+  await writeArtifacts(firestore, { studentId, data, ai, gap, chatCount: chatMentions.length, actor });
+
+  return {
+    status: ai.status,
+    consultation_count: data.consultations.length,
+    consultation_gap_days: gap.days,
+    consultation_gap_warning: gap.warning,
+    chat_mention_count: chatMentions.length,
+    usage,
+  };
+}
+
 export async function handleGenerateStudentReportAi(request, deps = {}) {
   if (!request.auth) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
   const email = request.auth.token?.email || '';
-  if (!isAuthorizedEmail(email)) throw new HttpsError('permission-denied', '허용되지 않은 계정입니다.');
+  if (!isAuthorizedStaffEmail(email)) throw new HttpsError('permission-denied', '허용되지 않은 계정입니다.');
 
   const studentId = textOf(request.data?.studentId);
   if (!studentId) throw new HttpsError('invalid-argument', 'studentId가 필요합니다.');
@@ -299,33 +342,19 @@ export async function handleGenerateStudentReportAi(request, deps = {}) {
   const generate = deps.generateText || generateText;
   const today = deps.todayKST ? deps.todayKST() : todayKST();
   const getChat = deps.fetchChatMentions || fetchChatMentions;
+  const actor = { uid: request.auth.uid, email };
 
   try {
-    const data = await fetchAllData(firestore, studentId);
-    const latestDate = data.consultations.length ? (data.consultations[data.consultations.length - 1].date || null) : null;
-    const days = latestDate ? dayDiff(today, latestDate) : null;
-    const gap = { days, warning: days == null || days > CONSULT_GAP_DAYS, latestDate };
-
-    // Chat 언급은 syncChatMessages가 적재한 chat_messages에서 인덱스 조회. 조회 실패는 graceful.
-    const chatMentions = await getChat(firestore, data.student.name)
-      .catch((chatErr) => {
-        console.warn('[generateStudentReportAi] Chat 조회 실패(무시):', String(chatErr?.message || chatErr));
-        return [];
-      });
-
-    const prompt = buildPrompt(data, days, chatMentions);
-    const ai = normalizeResult(extractJson(await generate(MODEL, prompt, { temperature: 0.2 })));
-    await writeArtifacts(firestore, { studentId, data, ai, gap, chatCount: chatMentions.length, auth: request.auth });
-
+    const r = await generateReportForStudent({ firestore, generate, getChat, today, studentId, actor });
     await safeLog({ channel: 'student_report_ai', uid: request.auth.uid, model: MODEL, ok: true, student_id: studentId });
     return {
       ok: true,
       student_id: studentId,
-      status: ai.status,
-      consultation_count: data.consultations.length,
-      consultation_gap_days: gap.days,
-      consultation_gap_warning: gap.warning,
-      chat_mention_count: chatMentions.length,
+      status: r.status,
+      consultation_count: r.consultation_count,
+      consultation_gap_days: r.consultation_gap_days,
+      consultation_gap_warning: r.consultation_gap_warning,
+      chat_mention_count: r.chat_mention_count,
     };
   } catch (err) {
     await safeLog({ channel: 'student_report_ai', uid: request.auth.uid, model: MODEL, ok: false, student_id: studentId, error: String(err?.message || err) });
