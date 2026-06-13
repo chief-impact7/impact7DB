@@ -8,16 +8,14 @@ origin: student-report/PLAN.md에서 이관 (2026-06-13).
 2. [x] Cloud Function `generateStudentReportAi` 구현 (Firebase+Gemini)
 3. [x] DSC student-detail 종합 요약 카드
 4. [x] 상담 AI + 종합상태 AI 단일 콜러블 통합 (Gemini 2회→1회) + 상담 공백 경고
-5. [x] Chat 언급 graceful 연동 (DWD chief@ 가장, 학생이름 매칭)
+5. [x] Chat 언급 연동 (DWD chief@ 가장, 학생이름 매칭)
+6. [x] Chat 동기화 최적화 — syncChatMessages(하루 1회) 적재 + array-contains 인덱스 조회
+
+**6 구현 결과**: scheduled function `syncChatMessages`가 chief 스페이스 신규 메시지를 증분 수집 → 재원생 이름 태깅(번호 포함 고유, 정규식 `name+'(?![0-9])'`로 오탐 방지) → `chat_messages`에 적재. `generateStudentReportAi`는 풀스캔 대신 `where student_names array-contains` 인덱스 조회. 첫 동기화 198건 적재·조회 검증 완료. Chat app Configuration(Console)을 채워야 "Chat app not found"가 해소되는 함정 있었음(chat-integration.md 참조).
 
 ## 남은 단계
 
-### 6. Chat 동기화 최적화 ← 다음 우선
-**문제**: 리포트 1건마다 chief 전 스페이스를 풀스캔해 느리고 Chat API 쿼터를 소모(현재 on-demand).
-**최적화안**: scheduled function이 신규 Chat 메시지를 Firestore `chat_messages`(학생이름 태깅)에 주기 적재 → 리포트는 `chat_messages` 인덱스 조회만. 풀스캔을 주기 1회로 분산, 리포트 응답 즉시화.
-**설계 결정 필요**: 적재 시점 학생 이름 매칭 기준(동명이인 처리 — 반/학년 보정 등).
-
-### 7. 월간 리포트 생성 및 공유 방식 결정
+### 7. 월간 리포트 생성 및 공유 방식 결정 ← 다음 우선
 - 리포트 형식(학생별 월말 요약)과 공유 채널(이메일/Drive/학부모 메시지 등) 결정.
 - `generateStudentReportAi`의 종합 결과를 월 단위로 집계·정리.
 
