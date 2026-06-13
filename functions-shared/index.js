@@ -4,8 +4,7 @@ import { onCall, HttpsError, onRequest } from 'firebase-functions/v2/https';
 import { onDocumentWritten, onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { handleLlmGenerate } from './src/llmHandler.js';
-import { handleGenerateStudentConsultationAi } from './src/consultationAiHandler.js';
-import { handleGenerateStudentStatusAi } from './src/studentStatusAiHandler.js';
+import { handleGenerateStudentReportAi } from './src/studentReportAiHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
@@ -23,8 +22,8 @@ setGlobalOptions({
 // App Check은 후속 과제: 현재 유일 호출자인 DSC가 App Check 미설정이라 false로 시작.
 // 호출자 보호는 handleLlmGenerate의 request.auth(로그인 직원만)로 유지.
 export const llmGenerate = onCall({ enforceAppCheck: false }, handleLlmGenerate);
-export const generateStudentConsultationAi = onCall({ enforceAppCheck: false }, handleGenerateStudentConsultationAi);
-export const generateStudentStatusAi = onCall({ enforceAppCheck: false }, handleGenerateStudentStatusAi);
+// 종합상태 + 상담요약 + 다음상담 브리핑을 단일 호출로 생성(기존 consultation/status 콜러블 통합).
+export const generateStudentReportAi = onCall({ enforceAppCheck: false }, handleGenerateStudentReportAi);
 
 export const healthCheck = onRequest(
   { invoker: 'public' },
