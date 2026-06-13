@@ -28,7 +28,8 @@ DB/DSC/HR/DashBoard 모두 **자체 hosting 배포를 폐지**하고 통합(`imp
 - 각 앱 `deploy.yml` = 통합 재빌드 **dispatch만**(빌드·자체배포 step 제거). `master`/`main` push → impact7-hosting이 4개 앱 checkout·빌드 → `impact7-app.web.app/{db,dsc,hr,dashboard}`.
 - 자체 site(`impact7db`/`impact7dsc`/`impact7hr`/`impact7dashboard`.web.app)는 `impact7-app/{path}`로 **301 redirect만**(firebase.json `redirects` + `_redirect` 더미 public).
 - **배포 경로 = push 하나**. 수동 `firebase deploy --only hosting`은 redirect site만 건드려 무의미 → 과거 이중배포 불일치 함정이 구조적으로 소멸(사람이 규칙 기억할 필요 없음).
-- **단 functions는 별개 경로**: DB `functions:shared`/`leave-request`는 여전히 `firebase deploy --only functions:shared --project impact7db` 수동 배포(hosting 일원화와 무관).
+- **functions도 자동 배포(2026-06-14)**: `functions-shared/**` 또는 `functions/**` push → `.github/workflows/deploy-functions.yml`이 paths-filter로 변경 codebase만 자동 `firebase deploy`(npm install 선행 — package-lock은 gitignore라 ci 불가). 수동 배포 기억 의존 제거. 콜러블 **삭제/시그니처 변경 시만** 무중단 순서 수동 주의.
+  - 배포 SA = `firebase-adminsdk-fbsvc@impact7db.iam.gserviceaccount.com`(FIREBASE_SERVICE_ACCOUNT secret). functions 2nd gen 배포에 필요한 권한: appspot+compute SA에 ActAs(`iam.serviceAccountUser`), project에 `cloudfunctions.admin`/`run.admin`/`cloudbuild.builds.editor`/`artifactregistry.admin`/`eventarc.admin`/`serviceusage.serviceUsageConsumer`/`secretmanager.admin`(defineSecret)/`cloudscheduler.admin`(onSchedule).
 - 배경: 2026-06 "구버전 배포"는 워크플로 사고가 아니라 죽은 app.js(코드 위치) + 이중배포 수동 불일치였다. 이중배포 자체를 없애 근본 해결.
 
 관련: [[feedback_module_separation]] (app.js 모듈 분리 — DB 기준), [[feedback_line_ending_edit]]
