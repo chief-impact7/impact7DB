@@ -1,0 +1,51 @@
+name: Deploy Functions
+
+# functions 코드가 바뀐 push에서만 자동 배포한다(매 push 아님). 수동 firebase deploy
+# 기억 의존을 없앤다. workflow_dispatch는 권한·동작 테스트용 수동 트리거.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'functions-shared/**'
+      - 'functions/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Detect changed codebase
+        id: f
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            shared: 'functions-shared/**'
+            leave: 'functions/**'
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - run: npm i -g firebase-tools
+
+      - name: Write service account
+        run: |
+          cat > "$HOME/sa.json" <<'JSON'
+          ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          JSON
+
+      # functions-shared 변경 시 shared codebase 배포 (수동 트리거 시에도)
+      - name: Deploy functions:shared
+        if: github.event_name == 'workflow_dispatch' || steps.f.outputs.shared == 'true'
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
+          firebase deploy --only functions:shared --project impact7db --non-interactive
+
+      # functions(leave-request) 변경 시 배포
+      - name: Deploy functions:leave-request
+        if: steps.f.outputs.leave == 'true'
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
+          firebase deploy --only functions:leave-request --project impact7db --non-interactive
