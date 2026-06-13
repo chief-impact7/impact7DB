@@ -67,6 +67,14 @@
       ]
     },
     {
+      "collectionGroup": "daily_records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "student_id", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "message_queue",
       "queryScope": "COLLECTION",
       "fields": [

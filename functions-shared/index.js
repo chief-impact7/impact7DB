@@ -5,6 +5,7 @@ import { onDocumentWritten, onDocumentCreated } from 'firebase-functions/v2/fire
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { handleLlmGenerate } from './src/llmHandler.js';
 import { handleGenerateStudentConsultationAi } from './src/consultationAiHandler.js';
+import { handleGenerateStudentStatusAi } from './src/studentStatusAiHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
@@ -23,6 +24,7 @@ setGlobalOptions({
 // 호출자 보호는 handleLlmGenerate의 request.auth(로그인 직원만)로 유지.
 export const llmGenerate = onCall({ enforceAppCheck: false }, handleLlmGenerate);
 export const generateStudentConsultationAi = onCall({ enforceAppCheck: false }, handleGenerateStudentConsultationAi);
+export const generateStudentStatusAi = onCall({ enforceAppCheck: false }, handleGenerateStudentStatusAi);
 
 export const healthCheck = onRequest(
   { invoker: 'public' },
