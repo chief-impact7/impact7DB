@@ -35,12 +35,13 @@ jobs:
           cat > "$HOME/sa.json" <<'JSON'
           ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           JSON
-          echo "DEPLOY_SA=$(python3 -c "import json; print(json.load(open('$HOME/sa.json'))['client_email'])")"
 
       # functions-shared 변경 시 shared codebase 배포 (수동 트리거 시에도)
+      # firebase CLI가 배포 전 소스의 firebase-functions를 검증하므로 npm ci 선행 필수.
       - name: Deploy functions:shared
         if: github.event_name == 'workflow_dispatch' || steps.f.outputs.shared == 'true'
         run: |
+          npm --prefix functions-shared ci
           export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
           firebase deploy --only functions:shared --project impact7db --non-interactive
 
@@ -48,5 +49,6 @@ jobs:
       - name: Deploy functions:leave-request
         if: steps.f.outputs.leave == 'true'
         run: |
+          npm --prefix functions ci
           export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
           firebase deploy --only functions:leave-request --project impact7db --non-interactive
