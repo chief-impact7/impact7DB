@@ -23,9 +23,12 @@
 - **구 entry 파일은 전환 시 반드시 삭제**한다(안 지우면 이후 작업이 계속 헛다리).
 - dataApp(named `'dsc'`) db로 권한성 문서(HR_users 등)를 읽을 땐 `dataAuthReady()`를 선행 await한다(미러 전 읽으면 permission-denied).
 
-## 배포 구조 — DSC는 이중 배포 (수동 deploy 함정)
-DSC `master` push 시 `deploy.yml`이 ① `impact7dsc` site 자체 배포 + ② `impact7-hosting` repo에 `deploy-unified` dispatch → 통합 앱(`impact7-app.web.app/dsc`, base=`/dsc/`)을 **각 repo master 최신 checkout으로** 재빌드. 두 URL(`impact7dsc.web.app`, `impact7-app.web.app/dsc`)이 같은 콘텐츠를 서빙한다.
-- **함정: `firebase deploy --only hosting`(수동)은 `impact7dsc` site만 갱신**하고 통합(impact7-app)은 안 건드려 두 URL이 불일치한다. **DSC 배포는 master push로** 해야 양쪽이 동기화된다.
-- Actions 워크플로 자체는 건강(checkout 최신 ref + npm run build). 2026-06 "구버전 배포"는 워크플로 사고가 아니라 죽은 app.js(코드 위치) 때문이었다.
+## 배포 구조 — 통합 호스팅 단일 경로 (2026-06-14 4개 앱 일원화)
+DB/DSC/HR/DashBoard 모두 **자체 hosting 배포를 폐지**하고 통합(`impact7-hosting`)만 배포한다.
+- 각 앱 `deploy.yml` = 통합 재빌드 **dispatch만**(빌드·자체배포 step 제거). `master`/`main` push → impact7-hosting이 4개 앱 checkout·빌드 → `impact7-app.web.app/{db,dsc,hr,dashboard}`.
+- 자체 site(`impact7db`/`impact7dsc`/`impact7hr`/`impact7dashboard`.web.app)는 `impact7-app/{path}`로 **301 redirect만**(firebase.json `redirects` + `_redirect` 더미 public).
+- **배포 경로 = push 하나**. 수동 `firebase deploy --only hosting`은 redirect site만 건드려 무의미 → 과거 이중배포 불일치 함정이 구조적으로 소멸(사람이 규칙 기억할 필요 없음).
+- **단 functions는 별개 경로**: DB `functions:shared`/`leave-request`는 여전히 `firebase deploy --only functions:shared --project impact7db` 수동 배포(hosting 일원화와 무관).
+- 배경: 2026-06 "구버전 배포"는 워크플로 사고가 아니라 죽은 app.js(코드 위치) + 이중배포 수동 불일치였다. 이중배포 자체를 없애 근본 해결.
 
 관련: [[feedback_module_separation]] (app.js 모듈 분리 — DB 기준), [[feedback_line_ending_edit]]
