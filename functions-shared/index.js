@@ -3,6 +3,7 @@ import { setGlobalOptions } from 'firebase-functions/v2';
 import { onCall, HttpsError, onRequest } from 'firebase-functions/v2/https';
 import { onDocumentWritten, onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { defineSecret } from 'firebase-functions/params';
 import { handleLlmGenerate } from './src/llmHandler.js';
 import { handleGenerateStudentReportAi } from './src/studentReportAiHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
@@ -23,7 +24,12 @@ setGlobalOptions({
 // 호출자 보호는 handleLlmGenerate의 request.auth(로그인 직원만)로 유지.
 export const llmGenerate = onCall({ enforceAppCheck: false }, handleLlmGenerate);
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 호출로 생성(기존 consultation/status 콜러블 통합).
-export const generateStudentReportAi = onCall({ enforceAppCheck: false }, handleGenerateStudentReportAi);
+// CHAT_SA_KEY: DWD로 chief@를 가장해 Chat 메시지를 읽는 SA 키(설정 전엔 graceful skip).
+const CHAT_SA_KEY = defineSecret('CHAT_SA_KEY');
+export const generateStudentReportAi = onCall(
+  { enforceAppCheck: false, secrets: [CHAT_SA_KEY] },
+  handleGenerateStudentReportAi,
+);
 
 export const healthCheck = onRequest(
   { invoker: 'public' },

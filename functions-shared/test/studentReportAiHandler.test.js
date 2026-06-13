@@ -149,4 +149,28 @@ describe('handleGenerateStudentReportAi', () => {
     await expect(handleGenerateStudentReportAi({ auth, data: { studentId: 'ghost' } }, { firestore, generateText, todayKST }))
       .rejects.toMatchObject({ code: 'not-found' });
   });
+
+  it('includes chat mentions in the prompt and count when a key is provided', async () => {
+    const firestore = makeFirestore([]);
+    const collectChat = vi.fn().mockResolvedValue([{ date: '2026-06-01', text: '김학생 숙제 자주 빠짐' }]);
+    const result = await handleGenerateStudentReportAi(
+      { auth, data: { studentId: 's1' } },
+      { firestore, generateText, todayKST, chatKey: '{}', collectChat },
+    );
+    expect(collectChat).toHaveBeenCalledWith('{}', '김학생');
+    expect(result.chat_mention_count).toBe(1);
+    expect(firestore.writes[0].data.chat_mention_count).toBe(1);
+    expect(generateText.mock.calls[0][1]).toContain('김학생 숙제 자주 빠짐');
+  });
+
+  it('continues gracefully when chat collection throws', async () => {
+    const firestore = makeFirestore([]);
+    const collectChat = vi.fn().mockRejectedValue(new Error('DWD not configured'));
+    const result = await handleGenerateStudentReportAi(
+      { auth, data: { studentId: 's1' } },
+      { firestore, generateText, todayKST, chatKey: '{}', collectChat },
+    );
+    expect(result).toMatchObject({ ok: true, chat_mention_count: 0 });
+    expect(firestore.writes).toHaveLength(3);
+  });
 });

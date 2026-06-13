@@ -3,6 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { todayKST } from '@impact7/shared/datetime';
 import { currentSchool } from '@impact7/shared/student-label';
 import { generateText } from './vertex.js';
+import { collectStudentChatMentions } from './chatClient.js';
 import { writeLog } from './notifyLog.js';
 
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 Gemini 호출로 생성하는 통합 핸들러.
@@ -90,7 +91,7 @@ function consultationLine(c) {
   return `${c.date || '-'} [${c.consultation_type || '-'}] ${textOf(c.text).slice(0, 120)}`;
 }
 
-function buildPrompt({ student, dailyRecords, absenceRecords, hwFails, testFails, consultations }, gapDays) {
+function buildPrompt({ student, dailyRecords, absenceRecords, hwFails, testFails, consultations }, gapDays, chatMentions = []) {
   const profile = {
     name: student.name || '',
     status: student.status || '',
@@ -112,6 +113,7 @@ function buildPrompt({ student, dailyRecords, absenceRecords, hwFails, testFails
     .map(r => `${r.absence_date || '-'}: ${r.reason || '사유없음'} (보충: ${r.makeup_date || '미정'})`)
     .join('\n');
 
+  const chatBody = chatMentions.map(m => `${m.date || '-'}: ${m.text}`).join('\n');
   const consultBody = consultations.map(consultationLine).join('\n');
   const gapLine = gapDays == null
     ? '상담 기록이 전혀 없음 → 첫 상담 필요'
@@ -147,6 +149,9 @@ ${recentAbsences || '없음'}
 상담 공백: ${gapLine}
 상담 이력 (${consultations.length}건, 오래된→최신):
 ${consultBody || '없음'}
+
+선생님 Chat 언급 (${chatMentions.length}건, 이름 매칭이라 동명이인 가능성 주의):
+${chatBody || '없음'}
 
 반환 형식:
 {
@@ -204,7 +209,7 @@ function normalizeResult(parsed) {
   };
 }
 
-function writeArtifacts(firestore, { studentId, data, ai, gap, auth }) {
+function writeArtifacts(firestore, { studentId, data, ai, gap, chatCount = 0, auth }) {
   const base = {
     student_id: studentId,
     student_name: data.student.name || '',
@@ -233,6 +238,7 @@ function writeArtifacts(firestore, { studentId, data, ai, gap, auth }) {
     test_comment: ai.test_comment,
     consultation_gap_days: gap.days,
     consultation_gap_warning: gap.warning,
+    chat_mention_count: chatCount,
     latest_consultation_date: gap.latestDate,
   });
 
@@ -277,6 +283,8 @@ export async function handleGenerateStudentReportAi(request, deps = {}) {
   const firestore = deps.firestore || getFirestore();
   const generate = deps.generateText || generateText;
   const today = deps.todayKST ? deps.todayKST() : todayKST();
+  const chatKey = deps.chatKey ?? process.env.CHAT_SA_KEY;
+  const collectChat = deps.collectChat || collectStudentChatMentions;
 
   try {
     const data = await fetchAllData(firestore, studentId);
@@ -284,9 +292,19 @@ export async function handleGenerateStudentReportAi(request, deps = {}) {
     const days = latestDate ? dayDiff(today, latestDate) : null;
     const gap = { days, warning: days == null || days > CONSULT_GAP_DAYS, latestDate };
 
-    const prompt = buildPrompt(data, days);
+    // Chat 수집은 DWD 설정·네트워크에 의존하므로 실패해도 나머지 분석을 막지 않는다(graceful).
+    let chatMentions = [];
+    if (chatKey) {
+      try {
+        chatMentions = await collectChat(chatKey, data.student.name);
+      } catch (chatErr) {
+        console.warn('[generateStudentReportAi] Chat 수집 실패(무시):', String(chatErr?.message || chatErr));
+      }
+    }
+
+    const prompt = buildPrompt(data, days, chatMentions);
     const ai = normalizeResult(extractJson(await generate(MODEL, prompt, { temperature: 0.2 })));
-    await writeArtifacts(firestore, { studentId, data, ai, gap, auth: request.auth });
+    await writeArtifacts(firestore, { studentId, data, ai, gap, chatCount: chatMentions.length, auth: request.auth });
 
     await safeLog({ channel: 'student_report_ai', uid: request.auth.uid, model: MODEL, ok: true, student_id: studentId });
     return {
@@ -296,6 +314,7 @@ export async function handleGenerateStudentReportAi(request, deps = {}) {
       consultation_count: data.consultations.length,
       consultation_gap_days: gap.days,
       consultation_gap_warning: gap.warning,
+      chat_mention_count: chatMentions.length,
     };
   } catch (err) {
     await safeLog({ channel: 'student_report_ai', uid: request.auth.uid, model: MODEL, ok: false, student_id: studentId, error: String(err?.message || err) });
