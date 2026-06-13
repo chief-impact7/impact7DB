@@ -32,9 +32,12 @@ const MAX_RUN_MS = 480_000;              // 한 청크 시간 예산(8분). 540s
 const PRICE_INPUT_PER_M = 1.25;   // 추정
 const PRICE_OUTPUT_PER_M = 5.0;   // 추정
 
-function estimateCostUsd(promptTokens, candidateTokens) {
+// output = total - prompt 로 계산한다. totalTokenCount는 candidate + thinking을 포함하고
+// thinking도 output 단가로 과금되므로, candidate만 쓰면 비용이 과소 추정된다.
+function estimateCostUsd(promptTokens, totalTokens) {
+  const outputTokens = Math.max(0, totalTokens - promptTokens);
   return (promptTokens / 1_000_000) * PRICE_INPUT_PER_M
-    + (candidateTokens / 1_000_000) * PRICE_OUTPUT_PER_M;
+    + (outputTokens / 1_000_000) * PRICE_OUTPUT_PER_M;
 }
 
 function isWithinDays(generatedAt, days, nowMs) {
@@ -231,7 +234,7 @@ export async function runStudentReportChunk(opts = {}) {
         last_run_generated: generated,
         last_run_skipped: skippedTotal,
         last_run_total_tokens: totalTokens,
-        last_run_cost_usd: estimateCostUsd(promptTokens, candidateTokens),
+        last_run_cost_usd: estimateCostUsd(promptTokens, totalTokens),
       }, { merge: true });
       await safeLog({
         channel: 'student_report_batch', ok: status !== 'failed', trigger,
