@@ -35,6 +35,7 @@ jobs:
           cat > "$HOME/sa.json" <<'JSON'
           ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           JSON
+          echo "DEPLOY_SA=$(python3 -c "import json; print(json.load(open('$HOME/sa.json'))['client_email'])")"
 
       # functions-shared 변경 시 shared codebase 배포 (수동 트리거 시에도)
       - name: Deploy functions:shared
