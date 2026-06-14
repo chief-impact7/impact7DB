@@ -10,6 +10,10 @@ on:
       - 'functions/**'
   workflow_dispatch:
 
+# dorny/paths-filter@v3가 아직 Node20 런타임이라 Node24로 강제(2026-06-16 GitHub 기본 전환 시 제거 가능)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
