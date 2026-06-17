@@ -16,6 +16,7 @@ import { handleCreatePromoCampaign } from './src/promoCampaignHandler.js';
 import { handleSetPromoConsent } from './src/promoConsentHandler.js';
 import { handleSendParentNotice } from './src/parentNoticeHandler.js';
 import { handleGetStudentMessages } from './src/studentMessagesHandler.js';
+import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, purgeExpiredPii } from './src/queueWorker.js';
@@ -96,6 +97,13 @@ export const sendParentNotice = onCall({ enforceAppCheck: false }, handleSendPar
 
 // 학생별 발송 내역(message_logs) 조회 — 메시지 탭 하단. 직원 권한.
 export const getStudentMessages = onCall({ enforceAppCheck: false }, handleGetStudentMessages);
+
+// 광고 수신동의 2년 주기 재확인(정보통신망법 §50의8) — 매일 KST 09:00. 골격: 대상 식별·집계.
+// 실제 통지 발송은 동의자·수단 확정 후 연결.
+export const promoConsentReconfirm = onSchedule(
+  { schedule: 'every day 09:00', timeZone: 'Asia/Seoul' },
+  () => runPromoConsentReconfirm(),
+);
 
 // 관리자 발송 현황 화면(T6)의 수동 재시도 — 실패 큐 doc을 failed_retryable로 되돌려 sweeper 재처리.
 export const retryMessageDelivery = onCall({ enforceAppCheck: false }, handleRetryMessageDelivery);
