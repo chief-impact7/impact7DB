@@ -1,6 +1,6 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { assertDirector } from './authGuards.js';
+import { assertAuthorizedStaff } from './authGuards.js';
 import { promoEligibility, getPromoConsent } from './promoConsent.js';
 import { resolveAdScheduledAt, isAdNightKST, parseKstToDate } from './promoSchedule.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
@@ -97,7 +97,7 @@ export function resolvePromoScheduledDate(scheduledAt, now) {
 export async function handleCreatePromoCampaign(request, deps = {}) {
   const db = deps.db ?? getFirestore();
   const now = deps.now ?? new Date();
-  await assertDirector(request.auth, db);
+  assertAuthorizedStaff(request.auth);
 
   const data = request.data ?? {};
   const title = String(data.title ?? '').trim();
