@@ -14,6 +14,7 @@ import {
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleCreatePromoCampaign } from './src/promoCampaignHandler.js';
 import { handleSetPromoConsent } from './src/promoConsentHandler.js';
+import { handleSendParentNotice } from './src/parentNoticeHandler.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, purgeExpiredPii } from './src/queueWorker.js';
@@ -88,6 +89,9 @@ export const createPromoCampaign = onCall({ enforceAppCheck: false }, handleCrea
 
 // 홍보 광고 수신동의 설정/철회(옵트아웃). 직원 권한. 철회 시 이후 캠페인 SMS 대체에서 영구 제외.
 export const setPromoConsent = onCall({ enforceAppCheck: false }, handleSetPromoConsent);
+
+// 개별 학부모 정보성 안내(알림톡) 발송 — 학생 상세 '메시지' 탭. 직원 권한. 동의·야간 제한 없음.
+export const sendParentNotice = onCall({ enforceAppCheck: false }, handleSendParentNotice);
 
 // 관리자 발송 현황 화면(T6)의 수동 재시도 — 실패 큐 doc을 failed_retryable로 되돌려 sweeper 재처리.
 export const retryMessageDelivery = onCall({ enforceAppCheck: false }, handleRetryMessageDelivery);
