@@ -13,8 +13,9 @@ export const DEFAULT_VARIABLE_KEYS = {
 
 // 알림톡 실패 시 솔라피 내장 대체발송(SMS/LMS)으로 나갈 기본 본문.
 // 실제 운영 문구는 호출자가 template 옵션으로 주입한다.
+// 발송 목적('출결 안내')을 고정값으로 명시 — 알림톡 검수 정책(발송 목적을 변수로만 두면 반려)과 동일 기준 적용.
 const DEFAULT_FALLBACK_TEMPLATE =
-  `${BRAND_PREFIX} #{학생명} 학생이 #{일시} #{출결상태} 처리되었습니다.`;
+  `${BRAND_PREFIX} 출결 안내\n#{학생명} 학생이 #{일시} #{출결상태} 처리되었습니다.`;
 
 // "#{...}" 토큰을 variables 값으로 치환. 정의되지 않은 토큰은 빈 문자열.
 export function applyTemplate(templateText, variables = {}) {
