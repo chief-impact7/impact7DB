@@ -2,6 +2,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { applyTemplate } from './templates.js';
+import { resolveRecipientPhone } from './recipientPhone.js';
 
 // 개별 학부모 정보성 안내(알림톡) 발송 callable. 학생 상세 패널 '메시지' 탭에서 1건 발송.
 // 정보성이므로 동의·야간 제한 없음. 승인된 알림톡 템플릿 코드는 .env로 주입(검수 승인 후 확정).
@@ -38,16 +39,6 @@ export const PARENT_NOTICE_TEMPLATES = {
   },
 };
 
-const onlyDigits = (v) => String(v ?? '').replace(/\D/g, '');
-
-function pickParentPhone(student) {
-  for (const field of ['parent_phone_1', 'parent_phone_2']) {
-    const digits = onlyDigits(student?.[field]);
-    if (digits) return digits;
-  }
-  return '';
-}
-
 // 템플릿 변수맵 생성: #{학생명}은 학생 마스터에서, 나머지는 입력값에서. 누락 변수는 빈 문자열.
 export function buildParentNoticeVariables(student, templateKey, input = {}) {
   const def = PARENT_NOTICE_TEMPLATES[templateKey];
@@ -76,8 +67,8 @@ export async function handleSendParentNotice(request, deps = {}) {
   const snap = await db.collection('students').doc(studentId).get();
   if (!snap.exists) throw new HttpsError('not-found', '학생을 찾을 수 없습니다.');
   const student = snap.data();
-  const phone = pickParentPhone(student);
-  if (!phone) throw new HttpsError('failed-precondition', '학부모 연락처가 없습니다.');
+  const phone = resolveRecipientPhone(student, data.recipientField);
+  if (!phone) throw new HttpsError('failed-precondition', '선택한 대상의 연락처가 없습니다.');
 
   const variables = buildParentNoticeVariables(student, templateKey, data.variables);
 

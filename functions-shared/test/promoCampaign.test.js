@@ -6,19 +6,11 @@ vi.mock('firebase-admin/firestore', () => ({
 }));
 
 const {
-  pickPromoPhone, buildPromoQueueDoc, buildPromoRecipients,
+  buildPromoQueueDoc, buildPromoRecipients,
   assertAdContentCompliant, resolvePromoScheduledDate,
 } = await import('../src/promoCampaignHandler.js');
 
 const kst = (y, mo, d, h, mi = 0) => new Date(Date.UTC(y, mo - 1, d, h - 9, mi));
-
-describe('pickPromoPhone', () => {
-  it('prefers parent_phone_1, then parent_phone_2', () => {
-    expect(pickPromoPhone({ parent_phone_1: '010-1111-2222', parent_phone_2: '010-3' })).toBe('01011112222');
-    expect(pickPromoPhone({ parent_phone_2: '010-222-3333' })).toBe('0102223333');
-    expect(pickPromoPhone({})).toBe('');
-  });
-});
 
 describe('buildPromoQueueDoc', () => {
   it('opted-in → SMS fallback allowed, marketing ad_flag, consent snapshot with source/at', () => {

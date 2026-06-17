@@ -3,6 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { assertDirector } from './authGuards.js';
 import { promoEligibility, getPromoConsent } from './promoConsent.js';
 import { resolveAdScheduledAt, isAdNightKST, parseKstToDate } from './promoSchedule.js';
+import { resolveRecipientPhone } from './recipientPhone.js';
 
 // 홍보(브랜드 메시지) 캠페인 생성 callable. 원장 권한으로 대상 학생을 동의/번호 게이트에 걸러
 // message_queue(kind=promo)에 배치 enqueue한다. 발송 자체는 워커(onMessageQueued)가 수행한다.
@@ -15,17 +16,6 @@ import { resolveAdScheduledAt, isAdNightKST, parseKstToDate } from './promoSched
 
 const MAX_RECIPIENTS = 1000; // 일일 한도 가드(솔라피 사업자 기본 1,000건)
 const BATCH_LIMIT = 400; // Firestore 배치 쓰기 상한(500) 여유
-
-const onlyDigits = (v) => String(v ?? '').replace(/\D/g, '');
-
-// 학부모 수신 번호 우선순위: parent_phone_1 → parent_phone_2 (출결 경로와 동일 정책).
-export function pickPromoPhone(student) {
-  for (const field of ['parent_phone_1', 'parent_phone_2']) {
-    const digits = onlyDigits(student?.[field]);
-    if (digits) return digits;
-  }
-  return '';
-}
 
 // 학생 1명 → promo 큐 doc(타임스탬프 제외 순수 형태). 호출자가 created_at을 덧붙인다.
 export function buildPromoQueueDoc({ studentId, phone, smsAllowed, consent, campaignId, content, buttons, imageId, targeting, scheduledDate }) {
@@ -59,7 +49,7 @@ export function buildPromoRecipients(entries, opts) {
   const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_revoked: 0, sms_allowed: 0 };
   const docs = [];
   for (const { id, student } of entries) {
-    const phone = pickPromoPhone(student);
+    const phone = resolveRecipientPhone(student, opts.recipientField);
     if (!phone) {
       stats.skipped_no_phone += 1;
       continue;
@@ -153,7 +143,7 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   const snaps = await db.getAll(...refs);
   const entries = snaps.filter((s) => s.exists).map((s) => ({ id: s.id, student: s.data() }));
 
-  const { docs, stats } = buildPromoRecipients(entries, { campaignId: campaignRef.id, content, buttons, imageId, targeting, scheduledDate });
+  const { docs, stats } = buildPromoRecipients(entries, { campaignId: campaignRef.id, content, buttons, imageId, targeting, scheduledDate, recipientField: data.recipientField });
   stats.skipped_missing = studentIds.length - entries.length; // 존재하지 않는 학생 id
 
   // 캠페인 doc을 먼저 'enqueuing'으로 기록 → 배치 도중 실패해도 이력·부분상태가 남아 추적 가능.
