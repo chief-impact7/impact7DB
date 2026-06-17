@@ -27,12 +27,13 @@ describe('onlyDigits / resolveSolapiSender', () => {
     expect(onlyDigits(null)).toBe('');
   });
 
-  it('falls back to the operational sender when env is unset', () => {
+  it('always returns the operational sender, ignoring SOLAPI_SENDER env', () => {
     const prev = process.env.SOLAPI_SENDER;
     delete process.env.SOLAPI_SENDER;
     expect(resolveSolapiSender()).toBe('0226490509');
+    // env override는 잔존값 사고 방지를 위해 무시한다 — 항상 운영 발신번호.
     process.env.SOLAPI_SENDER = '015881588';
-    expect(resolveSolapiSender()).toBe('015881588');
+    expect(resolveSolapiSender()).toBe('0226490509');
     if (prev === undefined) delete process.env.SOLAPI_SENDER;
     else process.env.SOLAPI_SENDER = prev;
   });

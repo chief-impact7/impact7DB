@@ -7,7 +7,7 @@ import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './solapiSecrets.js';
 // pfId(카카오 비즈니스 채널)는 비밀이 아니므로 설정값으로 고정.
 export const SOLAPI_PF_ID = 'KA01PF260612092731139iFew1TZggoL';
 
-// 운영 발신번호(02-2649-0509). 테스트(개인명의)는 SOLAPI_SENDER env로 override.
+// 운영 발신번호(02-2649-0509) 고정. 번호 변경은 이 상수로 한다.
 const DEFAULT_SENDER = '0226490509';
 
 export function onlyDigits(value) {
@@ -15,7 +15,9 @@ export function onlyDigits(value) {
 }
 
 export function resolveSolapiSender() {
-  return onlyDigits(process.env.SOLAPI_SENDER) || DEFAULT_SENDER;
+  // SOLAPI_SENDER env override는 배포 환경에 옛 값이 잔존해 잘못된 번호로 발송되는 사고가
+  // 있어 제거했다. 항상 운영 발신번호를 쓴다.
+  return DEFAULT_SENDER;
 }
 
 // 워커(T3)가 호출. firebase 함수 실행 컨텍스트에서만 secret .value() 접근 가능.
