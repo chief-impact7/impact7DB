@@ -13,15 +13,24 @@ function makeDb() {
   const col = (name) => ({
     doc: (id) => {
       const resolvedId = id ?? `auto_${counter++}`;
+      const key = `${name}/${resolvedId}`;
       return {
         id: resolvedId,
-        async get() { return { exists: !!docs[`${name}/${resolvedId}`], data: () => docs[`${name}/${resolvedId}`] }; },
-        async set(v) { docs[`${name}/${resolvedId}`] = v; },
+        async get() { return { exists: key in docs, data: () => docs[key] }; },
+        async set(v) { docs[key] = v; },
+        async create(v) {
+          if (key in docs) {
+            const err = new Error('ALREADY_EXISTS');
+            err.code = 6;
+            throw err;
+          }
+          docs[key] = v;
+        },
       };
     },
     async add(v) { const id = `auto_${counter++}`; docs[`${name}/${id}`] = v; return { id }; },
   });
-  return { _docs: docs, collection: col, batch: () => { const ops = []; return { set: (ref, v) => ops.push([ref, v]), async commit() { for (const [ref, v] of ops) await ref.set(v); } }; } };
+  return { _docs: docs, collection: col, batch: () => { const ops = []; return { set: (ref, v) => ops.push({ type: 'set', ref, v }), create: (ref, v) => ops.push({ type: 'create', ref, v }), async commit() { for (const op of ops) { if (op.type === 'create') await op.ref.create(op.v); else await op.ref.set(op.v); } } }; } };
 }
 
 const auth = { token: { email: 'staff@impact7.kr' } };
@@ -43,7 +52,9 @@ describe('handleSendDirectMessage', () => {
     expect(res.queued).toBe(2);
     const directDocs = Object.values(db._docs).filter((d) => d.kind === 'direct');
     expect(directDocs).toHaveLength(2);
-    expect(directDocs[0]).toMatchObject({ kind: 'direct', status: 'pending', content: '안내', recipient_phone: '01011112222' });
+    expect(directDocs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'direct', status: 'pending', content: '안내', recipient_phone: '01011112222' }),
+    ]));
   });
 
   it('rejects empty text', async () => {
@@ -60,5 +71,29 @@ describe('handleSendDirectMessage', () => {
     const second = await handleSendDirectMessage({ auth, data }, { db });
     expect(second.duplicate).toBe(true);
     expect(Object.values(db._docs).filter((d) => d.kind === 'direct')).toHaveLength(1);
+  });
+
+  it('rejects more than MAX_RECIPIENTS recipients', async () => {
+    const many = Array.from({ length: 101 }, (_, i) => `010${String(i).padStart(8, '0')}`).join('\n');
+    await expect(handleSendDirectMessage({ auth, data: { recipients: many, text: 'x' } }, { db })).rejects.toThrow();
+  });
+
+  it('propagates scheduledAt to scheduled_date', async () => {
+    await handleSendDirectMessage({ auth, data: { recipients: '01011112222', text: '안내', scheduledAt: '2026-07-01T09:00:00+09:00' } }, { db });
+    const doc = Object.values(db._docs).find((d) => d.kind === 'direct');
+    expect(doc.scheduled_date).toBe('2026-07-01T09:00:00+09:00');
+  });
+
+  it('sets scheduled_date to null when scheduledAt is omitted', async () => {
+    await handleSendDirectMessage({ auth, data: { recipients: '01011112222', text: '안내' } }, { db });
+    const doc = Object.values(db._docs).find((d) => d.kind === 'direct');
+    expect(doc.scheduled_date).toBeNull();
+  });
+});
+
+describe('parseRecipients — invalid token coverage', () => {
+  it('includes non-numeric token in invalid', () => {
+    const r = parseRecipients('abc');
+    expect(r.invalid).toContain('abc');
   });
 });

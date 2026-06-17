@@ -7,12 +7,16 @@ const MAX_RECIPIENTS = 100;
 // 줄바꿈/쉼표로 분리 → 숫자만 → 9~11자리 유효 → 중복 제거.
 export function parseRecipients(raw) {
   const text = Array.isArray(raw) ? raw.join('\n') : String(raw ?? '');
-  const parts = text.split(/[\n,]+/).map((s) => s.replace(/\D/g, '')).filter(Boolean);
+  const tokens = text.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
   const valid = [];
   const invalid = [];
-  for (const p of parts) {
-    if (p.length >= 9 && p.length <= 11) valid.push(p);
-    else invalid.push(p);
+  for (const token of tokens) {
+    const digits = token.replace(/\D/g, '');
+    if (digits.length < 9 || digits.length > 11) {
+      invalid.push(token);
+    } else {
+      valid.push(digits);
+    }
   }
   return { valid: [...new Set(valid)], invalid };
 }
@@ -34,18 +38,15 @@ export async function handleSendDirectMessage(request, deps = {}) {
   const scheduledDate = data.scheduledAt ? String(data.scheduledAt) : null;
   const createdBy = request.auth?.token?.email ?? null;
 
-  // 멱등: requestId 지정 시 direct_batches/{requestId}를 선점. 중복이면 재enqueue 안 함.
-  if (data.requestId) {
-    const ref = db.collection('direct_batches').doc(data.requestId);
-    const snap = await ref.get();
-    if (snap.exists) return { queued: 0, invalid, duplicate: true };
-    await ref.set({ count: valid.length, created_by: createdBy, created_at: FieldValue.serverTimestamp() });
-  }
-
+  // sentinel과 큐 enqueue를 한 batch에 묶어 원자적으로 commit.
+  // sentinel(batch.create)이 ALREADY_EXISTS를 던지면 중복 요청으로 처리.
   const batch = db.batch();
+  if (data.requestId) {
+    batch.create(db.collection('direct_batches').doc(data.requestId),
+      { count: valid.length, created_by: createdBy, created_at: FieldValue.serverTimestamp() });
+  }
   for (const phone of valid) {
-    const ref = db.collection('message_queue').doc();
-    batch.set(ref, {
+    batch.set(db.collection('message_queue').doc(), {
       kind: 'direct',
       status: 'pending',
       recipient_phone: phone,
@@ -56,7 +57,13 @@ export async function handleSendDirectMessage(request, deps = {}) {
       created_at: FieldValue.serverTimestamp(),
     });
   }
-  await batch.commit();
-
+  try {
+    await batch.commit();
+  } catch (e) {
+    if (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message))) {
+      return { queued: 0, invalid, duplicate: true };
+    }
+    throw e;
+  }
   return { queued: valid.length, invalid };
 }
