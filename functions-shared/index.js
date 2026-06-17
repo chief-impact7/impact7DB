@@ -16,6 +16,7 @@ import { handleCreatePromoCampaign } from './src/promoCampaignHandler.js';
 import { handleSetPromoConsent } from './src/promoConsentHandler.js';
 import { handleSendParentNotice } from './src/parentNoticeHandler.js';
 import { handleGetStudentMessages } from './src/studentMessagesHandler.js';
+import { handleSendDirectMessage } from './src/directMessageHandler.js';
 import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
@@ -97,6 +98,9 @@ export const sendParentNotice = onCall({ enforceAppCheck: false }, handleSendPar
 
 // 학생별 발송 내역(message_logs) 조회 — 메시지 탭 하단. 직원 권한.
 export const getStudentMessages = onCall({ enforceAppCheck: false }, handleGetStudentMessages);
+
+// 임의 번호 정보성 SMS 즉석 발송 — 메시지 센터 ③블록. 직원 권한. 번호별 kind=direct enqueue.
+export const sendDirectMessage = onCall({ enforceAppCheck: false }, handleSendDirectMessage);
 
 // 광고 수신동의 2년 주기 재확인(정보통신망법 §50의8) — 매일 KST 09:00. 골격: 대상 식별·집계.
 // 실제 통지 발송은 동의자·수단 확정 후 연결.
