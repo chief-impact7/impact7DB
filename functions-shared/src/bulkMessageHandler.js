@@ -60,13 +60,6 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   const campaignRef = data.requestId
     ? db.collection('bulk_campaigns').doc(String(data.requestId))
     : db.collection('bulk_campaigns').doc();
-  if (data.requestId) {
-    const existing = await campaignRef.get();
-    if (existing.exists) {
-      const ex = existing.data() ?? {};
-      return { campaignId: campaignRef.id, duplicate: true, stats: ex.stats ?? null, scheduledDate: ex.scheduled_date ?? null };
-    }
-  }
 
   const refs = studentIds.map((id) => db.collection('students').doc(id));
   const snaps = await db.getAll(...refs);
@@ -75,11 +68,20 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   const { docs, stats } = buildBulkRecipients(entries, { campaignId: campaignRef.id, content, recipientField: data.recipientField, scheduledDate });
   stats.skipped_missing = studentIds.length - entries.length;
 
-  await campaignRef.set({
-    title, content, targeting: 'I', kind: 'bulk_info',
-    scheduled_date: scheduledDate ?? null, status: 'enqueuing', stats,
-    created_by: request.auth?.uid ?? null, created_at: FieldValue.serverTimestamp(),
-  });
+  // create로 원자적 선점 — 같은 requestId 동시 요청에서 정확히 하나만 큐에 등록.
+  try {
+    await campaignRef.create({
+      title, content, targeting: 'I', kind: 'bulk_info',
+      scheduled_date: scheduledDate ?? null, status: 'enqueuing', stats,
+      created_by: request.auth?.uid ?? null, created_at: FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    if (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message))) {
+      const ex = (await campaignRef.get()).data() ?? {};
+      return { campaignId: campaignRef.id, duplicate: true, stats: ex.stats ?? null, scheduledDate: ex.scheduled_date ?? null };
+    }
+    throw e;
+  }
 
   let batch = db.batch();
   let inBatch = 0;

@@ -33,6 +33,12 @@ function makeDb() {
       id: id ?? key,
       async get() { return { exists: !!docs[`${name}/${key}`], data: () => docs[`${name}/${key}`] }; },
       async set(v) { docs[`${name}/${key}`] = v; },
+      async create(v) {
+        if (docs[`${name}/${key}`] !== undefined) {
+          const err = new Error('ALREADY_EXISTS'); err.code = 6; throw err;
+        }
+        docs[`${name}/${key}`] = v;
+      },
       async update(v) { docs[`${name}/${key}`] = { ...docs[`${name}/${key}`], ...v }; },
     }; },
   });
@@ -57,7 +63,7 @@ describe('handleCreateBulkMessage', () => {
     expect(res.stats).toMatchObject({ total: 2, queued: 2 });
     const queue = Object.entries(db._docs).filter(([k]) => k.startsWith('message_queue/')).map(([, v]) => v);
     expect(queue).toHaveLength(2);
-    expect(queue.every((d) => d.kind === 'promo' && d.targeting === 'I' && d.disable_sms === false)).toBe(true);
+    expect(queue.every((d) => d.kind === 'promo' && d.targeting === 'I' && d.disable_sms === false && d.ad_flag === false)).toBe(true);
   });
 
   it('rejects empty content / empty studentIds', async () => {
@@ -72,5 +78,16 @@ describe('handleCreateBulkMessage', () => {
     expect(second.duplicate).toBe(true);
     const queue = Object.keys(db._docs).filter((k) => k.startsWith('message_queue/'));
     expect(queue).toHaveLength(1);
+  });
+
+  it('is idempotent on concurrent requestId (no double enqueue)', async () => {
+    const data = { title: 't', content: 'x', studentIds: ['s1'], requestId: 'b-concurrent' };
+    const [r1, r2] = await Promise.all([
+      handleCreateBulkMessage({ auth, data }, { db }),
+      handleCreateBulkMessage({ auth, data }, { db }),
+    ]);
+    expect([r1, r2].filter((r) => !r.duplicate)).toHaveLength(1);
+    expect([r1, r2].filter((r) => r.duplicate)).toHaveLength(1);
+    expect(Object.keys(db._docs).filter((k) => k.startsWith('message_queue/'))).toHaveLength(1);
   });
 });
