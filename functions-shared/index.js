@@ -12,6 +12,8 @@ import {
   handleRunStudentReportBatchManual,
 } from './src/studentReportAutomationHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
+import { handleCreatePromoCampaign } from './src/promoCampaignHandler.js';
+import { handleSetPromoConsent } from './src/promoConsentHandler.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, purgeExpiredPii } from './src/queueWorker.js';
@@ -79,6 +81,13 @@ export const paymentHook = onRequest({ invoker: 'public' }, (req, res) => {
 // 태블릿 출결 체크인 (Callable). 조회(후보 disambiguation) + 확정(트랜잭션 원자 처리).
 // request.auth(키오스크용 직원 Google 세션) 필수. 솔라피 호출은 워커가 비동기 처리.
 export const attendanceCheckin = onCall({ enforceAppCheck: false }, handleAttendanceCheckin);
+
+// 홍보(브랜드 메시지) 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo) 배치 enqueue.
+// 야간(광고 제한)이면 익일 08:00 자동 예약. 발송은 워커(onMessageQueued)가 수행.
+export const createPromoCampaign = onCall({ enforceAppCheck: false }, handleCreatePromoCampaign);
+
+// 홍보 광고 수신동의 설정/철회(옵트아웃). 직원 권한. 철회 시 이후 캠페인 SMS 대체에서 영구 제외.
+export const setPromoConsent = onCall({ enforceAppCheck: false }, handleSetPromoConsent);
 
 // 관리자 발송 현황 화면(T6)의 수동 재시도 — 실패 큐 doc을 failed_retryable로 되돌려 sweeper 재처리.
 export const retryMessageDelivery = onCall({ enforceAppCheck: false }, handleRetryMessageDelivery);

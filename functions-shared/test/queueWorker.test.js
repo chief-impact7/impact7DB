@@ -164,8 +164,8 @@ describe('processQueueDoc', () => {
     expect(db._logs[0]).toMatchObject({ status: 'failed', status_code: 'invalid_recipient', error_message: '잘못된 번호' });
   });
 
-  it('kind 화이트리스트: promo는 발송 없이 failed_permanent(kind_not_allowed)', async () => {
-    const db = makeDb({ q1: baseQueueDoc({ kind: 'promo' }) });
+  it('kind 화이트리스트: 미허용 kind는 발송 없이 failed_permanent(kind_not_allowed)', async () => {
+    const db = makeDb({ q1: baseQueueDoc({ kind: 'unknown_kind' }) });
     const sender = vi.fn();
     await processQueueDoc(eventFor(db, 'q1'), { db, sender });
     expect(sender).not.toHaveBeenCalled();

@@ -11,7 +11,11 @@ const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000]; // 1m, 5m, 15m
 const LEASE_MS = 10 * 60_000; // processing 리스(10분) — 크래시로 고착된 doc을 sweeper가 회수
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 종결 doc 평문 PII 보존기간(7일) — 이후 purge(T8 항목1)
 const PURGE_LIMIT = 500; // purge 1회 처리 상한(폭주 방지)
-const ALLOWED_KINDS = new Set(['attendance', 'parent_notice']); // 정보성만 이 워커로 발송(T8 항목3)
+// 정보성(attendance/parent_notice)은 알림톡, 홍보(promo)는 브랜드 메시지로 발송.
+// promo는 P3 캠페인 callable이 동의 게이트·야간 보정을 통과시킨 뒤에만 enqueue되므로,
+// 워커는 큐 doc의 disable_sms/scheduled_date를 그대로 provider에 전달한다(여기서 재검증 안 함).
+const ALLOWED_KINDS = new Set(['attendance', 'parent_notice', 'promo']);
+const PROMO_KIND = 'promo';
 // 종결 후 purge 대상 평문 필드(번호·대체발송 본문·학생명 포함 변수맵).
 const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
 
@@ -22,13 +26,27 @@ const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
 async function defaultSender(payload) {
   const mod = await import('./solapiProvider.js');
   const config = mod.getSolapiConfig();
+  if (payload.kind === PROMO_KIND) return mod.sendKakaoBrandMessage(payload, config);
   return mod.sendKakaoAlimtalk(payload, config);
 }
 
 // 로그 저장용 마스킹 — 평문 번호 저장 금지(계약 §2.5). 공용 maskPhone(src/phoneMask.js) 사용.
 
-// 큐 doc → provider payload. T2가 받는 payload 계약(발신번호·pfId 등 provider 설정값 제외).
+// 큐 doc → provider payload. kind별로 provider 입력이 다르다(알림톡=템플릿, promo=자유 본문).
 function buildSendPayload(data) {
+  if (data.kind === PROMO_KIND) {
+    return {
+      to: data.recipient_phone,
+      content: data.content ?? '',
+      buttons: data.buttons ?? undefined,
+      imageId: data.image_id ?? undefined,
+      adFlag: data.ad_flag !== false, // 광고 기본 true
+      disableSms: data.disable_sms !== false, // 동의자만 P3가 false로 세팅(미동의면 BMS만)
+      targeting: data.targeting ?? 'M',
+      scheduledDate: data.scheduled_date ?? undefined, // 야간 보정된 예약시각(있으면)
+      kind: data.kind,
+    };
+  }
   return {
     to: data.recipient_phone,
     templateCode: data.template_code,
