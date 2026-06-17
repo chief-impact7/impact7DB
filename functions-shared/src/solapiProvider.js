@@ -117,6 +117,26 @@ export async function sendKakaoBrandMessage(payload, config, { serviceFactory = 
   }
 }
 
+// 일반 SMS/LMS 발송(카카오 미경유) — 임의 번호 즉석 발송용. 본문 길이에 따라 솔라피가 SMS/LMS 자동 분류.
+// 예외 없이 정규화 결과를 반환(워커가 큐/로그에 매핑). 접수 성공 시 channel은 'sms'.
+// payload: { to, text, scheduledDate? }
+export async function sendSms(payload, config, { serviceFactory = defaultServiceFactory } = {}) {
+  const cfg = config ?? getSolapiConfig();
+  const to = onlyDigits(payload?.to);
+  if (!to) return permanentResult('invalid_recipient', '수신번호가 비어 있습니다.');
+  if (!payload?.text) return permanentResult('missing_text', 'SMS 본문이 비어 있습니다.');
+
+  const message = { to, from: onlyDigits(cfg?.from), text: payload.text };
+  try {
+    const service = serviceFactory(cfg.apiKey, cfg.apiSecret);
+    const res = await service.send(message, buildSendOptions(payload));
+    const result = normalizeSuccess(res);
+    return result.ok ? { ...result, channel: 'sms' } : result;
+  } catch (err) {
+    return normalizeFailure(err);
+  }
+}
+
 // 솔라피 send 옵션. scheduledDate가 있으면 예약 발송(솔라피가 보관 후 지정 시각 발송).
 // 광고 야간 제한 대응은 호출자가 resolveAdScheduledAt(promoSchedule.js)로 시각을 보정해 넘긴다.
 function buildSendOptions(payload) {

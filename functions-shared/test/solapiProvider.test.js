@@ -192,3 +192,36 @@ describe('sendKakaoAlimtalk', () => {
     expect(send.mock.calls[0][0]).not.toHaveProperty('text');
   });
 });
+
+import { sendSms } from '../src/solapiProvider.js';
+
+describe('sendSms', () => {
+  const cfg = { apiKey: 'k', apiSecret: 's', pfId: 'pf', from: '0226490509' };
+
+  it('sends a plain SMS with normalized numbers and channel=sms', async () => {
+    const send = vi.fn(async () => ({
+      groupInfo: { groupId: 'g1', count: { registeredSuccess: 1, total: 1 } },
+      messageList: [{ messageId: 'm1', statusCode: '2000' }],
+    }));
+    const serviceFactory = vi.fn(() => ({ send }));
+    const res = await sendSms({ to: '010-1234-5678', text: '안내문' }, cfg, { serviceFactory });
+
+    expect(serviceFactory).toHaveBeenCalledWith('k', 's');
+    expect(send).toHaveBeenCalledWith(
+      { to: '01012345678', from: '0226490509', text: '안내문' },
+      { showMessageList: true },
+    );
+    expect(res).toMatchObject({ ok: true, channel: 'sms', messageId: 'm1', groupId: 'g1' });
+  });
+
+  it('passes scheduledDate through send options', async () => {
+    const send = vi.fn(async () => ({ groupInfo: { groupId: 'g', count: { registeredSuccess: 1 } }, messageList: [{ messageId: 'm' }] }));
+    await sendSms({ to: '01011112222', text: 'x', scheduledDate: '2026-06-18 08:00:00' }, cfg, { serviceFactory: () => ({ send }) });
+    expect(send.mock.calls[0][1]).toEqual({ showMessageList: true, scheduledDate: '2026-06-18 08:00:00' });
+  });
+
+  it('returns permanent failure when recipient or text is empty', async () => {
+    expect(await sendSms({ to: '', text: 'x' }, cfg, {})).toMatchObject({ ok: false, retryable: false, statusCode: 'invalid_recipient' });
+    expect(await sendSms({ to: '01011112222', text: '' }, cfg, {})).toMatchObject({ ok: false, statusCode: 'missing_text' });
+  });
+});
