@@ -14,7 +14,7 @@ const PURGE_LIMIT = 500; // purge 1회 처리 상한(폭주 방지)
 // 정보성(attendance/parent_notice)은 알림톡, 홍보(promo)는 브랜드 메시지로 발송.
 // promo는 P3 캠페인 callable이 동의 게이트·야간 보정을 통과시킨 뒤에만 enqueue되므로,
 // 워커는 큐 doc의 disable_sms/scheduled_date를 그대로 provider에 전달한다(여기서 재검증 안 함).
-const ALLOWED_KINDS = new Set(['attendance', 'parent_notice', 'promo']);
+const ALLOWED_KINDS = new Set(['attendance', 'parent_notice', 'promo', 'direct']);
 const PROMO_KIND = 'promo';
 // 종결 후 purge 대상 평문 필드(번호·대체발송 본문·학생명 포함 변수맵).
 const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
@@ -27,6 +27,7 @@ async function defaultSender(payload) {
   const mod = await import('./solapiProvider.js');
   const config = mod.getSolapiConfig();
   if (payload.kind === PROMO_KIND) return mod.sendKakaoBrandMessage(payload, config);
+  if (payload.kind === 'direct') return mod.sendSms(payload, config);
   return mod.sendKakaoAlimtalk(payload, config);
 }
 
@@ -34,6 +35,14 @@ async function defaultSender(payload) {
 
 // 큐 doc → provider payload. kind별로 provider 입력이 다르다(알림톡=템플릿, promo=자유 본문).
 function buildSendPayload(data) {
+  if (data.kind === 'direct') {
+    return {
+      to: data.recipient_phone,
+      text: data.content ?? '',
+      scheduledDate: data.scheduled_date ?? undefined,
+      kind: data.kind,
+    };
+  }
   if (data.kind === PROMO_KIND) {
     return {
       to: data.recipient_phone,

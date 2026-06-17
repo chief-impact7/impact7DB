@@ -335,6 +335,17 @@ describe('purgeExpiredPii', () => {
   });
 });
 
+describe('kind=direct 즉석 SMS', () => {
+  it('sends a plain SMS when kind=direct', async () => {
+    const sender = vi.fn(async () => ({ ok: true, retryable: false, channel: 'sms', messageId: 'm', groupId: 'g', statusCode: '2000' }));
+    const db = makeDb({ 'd1': { kind: 'direct', status: 'pending', recipient_phone: '01012345678', content: '안내문', attempt_count: 0 } });
+    await processQueueDoc(eventFor(db, 'd1'), { db, sender });
+
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'direct', to: '01012345678', text: '안내문' }));
+    expect(db._queue.get('d1').status).toBe('sent');
+  });
+});
+
 describe('__testing helpers', () => {
   it('buildSendPayload: 큐 doc → provider payload(templateVariables 키)', () => {
     const { buildSendPayload } = __testing;
