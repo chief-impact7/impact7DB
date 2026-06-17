@@ -37,6 +37,31 @@ export const PARENT_NOTICE_TEMPLATES = {
     vars: ['안내내용', '적용일자'],
     fallback: `${BRAND_PREFIX} 휴원·일정 안내\n#{학생명} 학생 학부모님: #{안내내용} (#{적용일자})\n문의: 02-2649-0509`,
   },
+  // 등하원 출입 알림(가장 빈번) — 시각만 변수. 메시지 탭 빠른 버튼에서 현재 시각으로 발송.
+  arrival: {
+    envKey: 'ARRIVAL_TEMPLATE_CODE',
+    label: '등원 안내',
+    vars: ['시각'],
+    fallback: `${BRAND_PREFIX} 등원 안내\n#{학생명} 학생이 #{시각}에 등원하였습니다.\n문의: 02-2649-0509`,
+  },
+  departure: {
+    envKey: 'DEPARTURE_TEMPLATE_CODE',
+    label: '귀가 안내',
+    vars: ['시각'],
+    fallback: `${BRAND_PREFIX} 귀가 안내\n#{학생명} 학생이 #{시각}에 귀가하였습니다.\n문의: 02-2649-0509`,
+  },
+  out: {
+    envKey: 'OUT_TEMPLATE_CODE',
+    label: '외출 안내',
+    vars: ['시각'],
+    fallback: `${BRAND_PREFIX} 외출 안내\n#{학생명} 학생이 #{시각}에 외출하였습니다.\n문의: 02-2649-0509`,
+  },
+  return: {
+    envKey: 'RETURN_TEMPLATE_CODE',
+    label: '귀원 안내',
+    vars: ['시각'],
+    fallback: `${BRAND_PREFIX} 귀원 안내\n#{학생명} 학생이 #{시각}에 귀원하였습니다.\n문의: 02-2649-0509`,
+  },
 };
 
 // 템플릿 변수맵 생성: #{학생명}은 학생 마스터에서, 나머지는 입력값에서. 누락 변수는 빈 문자열.
