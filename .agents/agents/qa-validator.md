@@ -20,6 +20,8 @@ description: "impact7 에코시스템 크로스앱 정합성 검증 전문가. F
 | DSC | `/Users/jongsooyi/projects/impact7newDSC/` |
 | HR | `/Users/jongsooyi/projects/impact7HR/` |
 | exam | `/Users/jongsooyi/projects/impact7exam/` |
+| tablet | `/Users/jongsooyi/projects/tablet/` |
+| functions | `/Users/jongsooyi/projects/impact7DB/functions-shared/` |
 
 ## 검증 우선순위
 
@@ -37,6 +39,8 @@ description: "impact7 에코시스템 크로스앱 정합성 검증 전문가. F
 | students 필드 | DB app.js의 setDoc/updateDoc | DSC/exam의 쿼리·렌더링 코드 |
 | class_settings | DB의 반 설정 UI | DSC의 반 목록 표시 |
 | semester_settings | DB의 학기 설정 | DSC의 학기 필터 |
+| **tabletCheckin 반환 shape** | functions-shared `tabletCheckinHandler.js`(서버) | tablet `checkin.js`의 응답 사용(`candidates`/`allowedActions`/`result`/`dayState`) |
+| **daily_records 체크리스트 캐시** | DSC `student-detail.js`의 `checklist_complete`/`checklist_pending` 쓰기 | tabletCheckin(서버)이 하원 게이트에서 읽음 |
 | firestore.rules | 어느 프로젝트든 수정 가능 | 4개 프로젝트 모두 동일해야 함 |
 
 ## 검증 체크리스트
@@ -55,6 +59,14 @@ description: "impact7 에코시스템 크로스앱 정합성 검증 전문가. F
 - [ ] DSC가 students에 쓰기를 시도하지 않음
 - [ ] exam이 students에 쓰기를 시도하지 않음
 - [ ] HR이 students를 사용하지 않음 (별도 employees 사용)
+- [ ] tablet이 Firestore에 직접 접근하지 않음 (오직 `tabletCheckin` callable 경유)
+- [ ] `attendance_events`/`kiosk_devices`/`attendance_checkins`/`message_queue`가 클라 `if false`로 차단됨
+
+### 태블릿 출결 경계면 (해당 시)
+- [ ] `tabletCheckin` 조회 응답 필드(`candidates[].{studentId,name,label,dayState,allowedActions,checklistComplete,checklistPending}`)를 tablet `checkin.js`가 그대로 사용
+- [ ] 확정 응답(`result`/`dayState`/`action`/`queued`) 사용 일관성
+- [ ] tablet이 상태머신 전이를 클라에 복제하지 않고 서버 `allowedActions`만 신뢰
+- [ ] 알림톡 액션→템플릿 매핑(`등원→arrival`,`하원→departure`,`외출→out`,`복귀→return`) 일치
 
 ## 출력 형식
 

@@ -171,9 +171,9 @@ firebase deploy --only functions:shared --project impact7db
 
 ## 하네스: impact7 에코시스템 통합 운영
 
-**목표:** DB/DSC/HR/exam/consultation/newtest/dashboard 7개 앱에 걸친 크로스앱 개발 작업을 안전하게 조율 (모두 공유 Firebase 프로젝트 `impact7db` 사용)
+**목표:** DB/DSC/HR/exam/tablet/consultation/newtest/dashboard 앱에 걸친 크로스앱 개발 작업을 안전하게 조율 (모두 공유 Firebase 프로젝트 `impact7db` 사용). 전담 개발자 에이전트 보유 앱: DB/DSC/HR/exam/tablet + functions-shared 백엔드.
 
-**트리거:** 크로스앱 변경, 공유 컬렉션 수정, 다중 앱 기능 개발 요청 시 `impact7-orchestrator` 스킬을 사용하라. 단일 앱 내 소규모 변경이나 단순 질문은 직접 응답 가능.
+**트리거:** 크로스앱 변경, 공유 컬렉션 수정, 다중 앱 기능 개발, 태블릿/키오스크/출결·외출 체크인 요청 시 `impact7-orchestrator` 스킬을 사용하라. 단일 앱 내 소규모 변경이나 단순 질문은 직접 응답 가능.
 
 **변경 이력:**
 | 날짜 | 변경 내용 | 대상 | 사유 |
@@ -186,3 +186,4 @@ firebase deploy --only functions:shared --project impact7db
 | 2026-05-27 | 에코시스템 범위 6→7개 앱 확장 (dashboard 편입) + DashBoard에 cross-ref 추가 | AGENTS.md(DB 목표), DashBoard AGENTS.md | DashBoard(academy-dashboard, React19+Vite8)가 impact7db Firestore 데이터를 읽음 확인. consultation·newtest는 cross-ref 기보유. 단 orchestrator 스킬의 전담 개발자 에이전트는 여전히 DB/DSC/HR/exam 4개뿐 — consultation/newtest/dashboard는 자체 하네스로 구현하고 DB는 조율만. firestore.rules 동기화 대상도 rules 파일을 가진 DB/DSC/HR/exam 4개 그대로 |
 | 2026-06-09 | store.js 동기화 취약점 4개 보완(leaveRequests 7곳·currentFilteredStudents·KST날짜·naesinHelpers drift) + 에이전트 하네스 정합성 업데이트 | app.js, promo-extractor.js, functions/src/naesinHelpers.js, agents/db-developer.md, agents/dsc-developer.md, agents/exam-developer.md, agents/impact-analyst.md | store.state가 stale 참조를 갖는 alias drift 버그 수정; 에이전트 파일의 차트 라이브러리(Recharts→echarts)·store.js 사용법·codegraph 탐색 원칙·consultation 컬렉션 맵 갱신 |
 | 2026-06-13 | functions-developer 에이전트 + student-report-ai 스킬 신설, 오케스트레이터 연결 | agents/functions-developer.md, skills/student-report-ai, skills/impact7-orchestrator, skills/firestore-rules-sync | functions-shared(Cloud Functions 백엔드: Gemini callable·secret·무중단 배포) 전담 부재 갭 해소(db-developer는 app.js 프론트). 학생 AI 리포트 도메인 지식(데이터모델 함정·통합 핸들러·Chat DWD 연동)을 student-report/PLAN.md에서 스킬로 이관. rules-sync에 CRLF 보존(cp) 교훈 추가 |
+| 2026-06-18 | tablet 앱(출결 키오스크) 하네스 편입 — tablet-developer 신설, impact-analyst/qa-validator 확장, 오케스트레이터 연결 | agents/tablet-developer.md, agents/impact-analyst.md, agents/qa-validator.md, skills/impact7-orchestrator | 신규 태블릿 출결/외출 키오스크 앱(/Users/jongsooyi/projects/tablet, Vanilla JS+Vite) 전담 부재 갭 해소. 태블릿은 Firestore 직접 접근 없이 tabletCheckin callable 경유 → 백엔드(functions-developer)·DSC 캐시(dsc-developer)와 크로스앱. 신규 컬렉션 attendance_events/kiosk_devices 컬렉션 맵 추가, callable shape 경계면을 qa-validator에 추가 |
