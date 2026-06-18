@@ -193,9 +193,53 @@ describe('handleTabletCheckin 확정', () => {
     );
     expect(res.dayState).toBe('하원');
     const daily = fs._stores.daily_records[`s1_${d}`];
-    expect(daily.departure.status).toBe('귀가');
+    expect(daily.departure.status).toBe('하원');
     expect(daily.departure.source).toBe('tablet');
     expect(daily.day_state).toBe('하원');
+  });
+
+  test('외출중 학생의 귀원 확정 — day_state 원내 복귀', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const d = todayKST();
+    const fs = makeTxFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status: '재원' } },
+      daily: { [`s1_${d}`]: { day_state: '외출중' } },
+      devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+    const res = await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '귀원', deviceId: 'tablet-1f' } },
+      { firestore: fs },
+    );
+    expect(res.dayState).toBe('원내');
+    expect(Object.values(fs._stores.attendance_events)[0].type).toBe('귀원');
+  });
+
+  test('구 클라이언트 액션 정규화 — 복귀→귀원, 귀가→하원', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const d = todayKST();
+    // 복귀(구) → 귀원: 외출중에서 전이 성공
+    const fs1 = makeTxFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status: '재원' } },
+      daily: { [`s1_${d}`]: { day_state: '외출중' } },
+      devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+    const r1 = await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '복귀', deviceId: 'tablet-1f' } },
+      { firestore: fs1 },
+    );
+    expect(r1.dayState).toBe('원내');
+    expect(Object.values(fs1._stores.attendance_events)[0].type).toBe('귀원');
+    // 귀가(구) → 하원: departure.status는 표준 '하원'으로 저장
+    const fs2 = makeTxFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status: '재원' } },
+      daily: { [`s1_${d}`]: { day_state: '원내', checklist_complete: true } },
+      devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+    await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '귀가', deviceId: 'tablet-1f' } },
+      { firestore: fs2 },
+    );
+    expect(fs2._stores.daily_records[`s1_${d}`].departure.status).toBe('하원');
   });
 
   test('studentNumber 불일치 — 거부', async () => {

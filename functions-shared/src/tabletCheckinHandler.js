@@ -7,6 +7,7 @@ import {
   isTabletEligibleStatus, DAY_STATES, ACTIONS, allowedActions,
   nextDayState, canDepart, ACTION_TEMPLATE_KEY, formatKstClock12h,
 } from './attendanceState.js';
+import { normalizeAttendanceLabel } from '@impact7/shared/attendance-action';
 import { PARENT_NOTICE_TEMPLATES, buildParentNoticeVariables } from './parentNoticeHandler.js';
 import { applyTemplate } from './templates.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
@@ -108,7 +109,8 @@ export async function handleTabletCheckin(request, deps = {}) {
   if (!studentNumber) throw new HttpsError('invalid-argument', 'studentNumber가 필요합니다.');
 
   const studentId = textOf(data.studentId);
-  const action = textOf(data.action);
+  // 구 클라이언트의 '복귀'/'귀가'도 표준('귀원'/'하원')으로 정규화해 수용.
+  const action = normalizeAttendanceLabel(textOf(data.action));
   const departurePolicy = await readDevicePolicy(firestore, data.deviceId);
 
   // 조회: studentId/action 없으면 후보 목록 반환.
@@ -120,7 +122,7 @@ export async function handleTabletCheckin(request, deps = {}) {
   // 확정 단계.
   if (!studentId) throw new HttpsError('invalid-argument', 'studentId가 필요합니다.');
   if (!Object.values(ACTIONS).includes(action)) {
-    throw new HttpsError('invalid-argument', 'action은 등원/외출/복귀/하원 중 하나여야 합니다.');
+    throw new HttpsError('invalid-argument', `action은 ${Object.values(ACTIONS).join('/')} 중 하나여야 합니다.`);
   }
 
   const dateKST = todayKST();
@@ -204,7 +206,7 @@ export async function handleTabletCheckin(request, deps = {}) {
     }
     if (action === ACTIONS.DEPART) {
       const departure = {
-        status: '귀가',
+        status: ACTIONS.DEPART,
         time: arrivalTimeKST(occurredAt),
         confirmed_by: email,
         confirmed_at: occurredAt.toISOString(),

@@ -1,11 +1,19 @@
 // 태블릿 출결 상태머신 — 순수 함수(부수효과 없음). 서버 검증과 허용액션 계산의 단일 소스.
 // 대상 학생: 재원/실휴원/가휴원 (등원예정 제외 — isEnrollableStatus보다 좁다).
+import { ATTENDANCE_ACTIONS } from '@impact7/shared/attendance-action';
+
 export const TABLET_ELIGIBLE_STATUSES = new Set(['재원', '실휴원', '가휴원']);
 export function isTabletEligibleStatus(status) {
   return TABLET_ELIGIBLE_STATUSES.has(status);
 }
 
-export const ACTIONS = { ARRIVE: '등원', OUT: '외출', RETURN: '복귀', DEPART: '하원' };
+// 액션 라벨 표준은 shared(attendance-action)가 단일 소스. RETURN='귀원'(구 '복귀'는 정규화로 흡수).
+export const ACTIONS = {
+  ARRIVE: ATTENDANCE_ACTIONS.arrival,
+  OUT: ATTENDANCE_ACTIONS.out,
+  RETURN: ATTENDANCE_ACTIONS.return,
+  DEPART: ATTENDANCE_ACTIONS.departure,
+};
 export const DAY_STATES = { NONE: '미등원', IN: '원내', OUT: '외출중', GONE: '하원' };
 
 // 유효 전이표. (현재상태 → 액션 → 다음상태)
