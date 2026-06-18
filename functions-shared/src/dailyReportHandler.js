@@ -4,7 +4,10 @@ import { assertAuthorizedStaff } from './authGuards.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
 import { isChannelFriend } from './channelFriendsHandler.js';
 
-// 채널 미가입 학부모에게 보내는 가입 안내 SMS. 채널 추가 링크는 운영값(env/deps)으로 주입한다.
+// 채널 추가 링크 — 비밀이 아니므로 코드 기본값으로 고정(pfId와 동일 정책). env/deps로 override 가능.
+const DEFAULT_CHANNEL_ADD_URL = 'https://kakao.impact7.kr';
+
+// 채널 미가입 학부모에게 보내는 가입 안내 SMS.
 function inviteSms(channelUrl) {
   return `[임팩트세븐학원] 자녀의 일일 학습현황을 카카오톡으로 보내드립니다.\n아래 채널을 추가해 주세요 → ${channelUrl}`;
 }
@@ -28,7 +31,7 @@ export async function handleSendDailyReport(request, deps = {}) {
 
   const joined = await isChannelFriend(db, phone);
   const createdBy = request.auth?.token?.email ?? null;
-  const channelUrl = deps.channelAddUrl ?? process.env.KAKAO_CHANNEL_ADD_URL ?? '';
+  const channelUrl = deps.channelAddUrl ?? process.env.KAKAO_CHANNEL_ADD_URL ?? DEFAULT_CHANNEL_ADD_URL;
 
   const base = {
     status: 'pending',

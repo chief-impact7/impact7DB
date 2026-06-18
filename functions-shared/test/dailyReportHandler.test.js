@@ -60,10 +60,17 @@ describe('handleSendDailyReport', () => {
     expect(q.content).not.toContain('리포트'); // 비친구에겐 리포트 본문 미발송
   });
 
-  it('비친구인데 채널링크 미설정이면 발송 거부', async () => {
+  it('비친구인데 채널링크가 빈 값이면 발송 거부', async () => {
     const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: {} });
-    await expect(handleSendDailyReport({ auth, data: { studentId: 's1', content: '리포트' } }, { db }))
+    await expect(handleSendDailyReport({ auth, data: { studentId: 's1', content: '리포트' } }, { db, channelAddUrl: '' }))
       .rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  it('채널링크 기본값(deps/env 없음)으로도 비친구 가입안내 발송', async () => {
+    const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: {} });
+    const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: '리포트' } }, { db });
+    expect(res).toMatchObject({ channel: 'invite_sms', joined: false });
+    expect(Object.values(db._store.message_queue)[0].content).toContain('kakao.impact7.kr');
   });
 
   it('requestId 중복은 멱등 처리', async () => {
