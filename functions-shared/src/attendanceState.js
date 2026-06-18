@@ -42,3 +42,20 @@ export function allowedActions(dayState, { checklistComplete, departurePolicy } 
   if (showDepart) actions.push(ACTIONS.DEPART);
   return actions;
 }
+
+// 알림톡 템플릿 키 매핑 (parentNoticeHandler의 PARENT_NOTICE_TEMPLATES와 동일 키).
+export const ACTION_TEMPLATE_KEY = {
+  [ACTIONS.ARRIVE]: 'arrival',
+  [ACTIONS.DEPART]: 'departure',
+  [ACTIONS.OUT]: 'out',
+  [ACTIONS.RETURN]: 'return',
+};
+
+// KST 12시간제 한국어 "오전/오후 H:MM". 알림톡 #{시각} 변수용.
+export function formatKstClock12h(date) {
+  const s = date.toLocaleTimeString('ko-KR', {
+    timeZone: 'Asia/Seoul', hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+  // ko-KR 출력 정규화: "오전 10:30" 형태로 공백 보정.
+  return s.replace(/\s+/g, ' ').trim();
+}

@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import {
   isTabletEligibleStatus, ACTIONS, DAY_STATES,
   nextDayState, allowedActions, canDepart,
+  formatKstClock12h, ACTION_TEMPLATE_KEY,
 } from '../src/attendanceState.js';
 
 test('isTabletEligibleStatus — 등원예정 제외', () => {
@@ -44,4 +45,18 @@ test('allowedActions — 상태·정책별 버튼', () => {
   assert.deepEqual(allowedActions(DAY_STATES.IN, { checklistComplete: false, departurePolicy: 'warn' }), ['외출', '하원']);
   // 원내 + 완료 → 하원 노출
   assert.deepEqual(allowedActions(DAY_STATES.IN, { checklistComplete: true, departurePolicy: 'block' }), ['외출', '하원']);
+});
+
+test('formatKstClock12h — KST 12시간제 한국어', () => {
+  // 2026-06-18 01:30 UTC = 10:30 KST (오전)
+  assert.equal(formatKstClock12h(new Date('2026-06-18T01:30:00Z')), '오전 10:30');
+  // 2026-06-18 09:05 UTC = 18:05 KST (오후 6:05)
+  assert.equal(formatKstClock12h(new Date('2026-06-18T09:05:00Z')), '오후 6:05');
+});
+
+test('ACTION_TEMPLATE_KEY — 액션→알림톡 템플릿', () => {
+  assert.equal(ACTION_TEMPLATE_KEY['등원'], 'arrival');
+  assert.equal(ACTION_TEMPLATE_KEY['하원'], 'departure');
+  assert.equal(ACTION_TEMPLATE_KEY['외출'], 'out');
+  assert.equal(ACTION_TEMPLATE_KEY['복귀'], 'return');
 });
