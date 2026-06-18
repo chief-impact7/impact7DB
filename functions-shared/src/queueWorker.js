@@ -14,8 +14,9 @@ const PURGE_LIMIT = 500; // purge 1회 처리 상한(폭주 방지)
 // 정보성(attendance/parent_notice)은 알림톡, 홍보(promo)는 브랜드 메시지로 발송.
 // promo는 P3 캠페인 callable이 동의 게이트·야간 보정을 통과시킨 뒤에만 enqueue되므로,
 // 워커는 큐 doc의 disable_sms/scheduled_date를 그대로 provider에 전달한다(여기서 재검증 안 함).
-const ALLOWED_KINDS = new Set(['attendance', 'parent_notice', 'promo', 'direct']);
+const ALLOWED_KINDS = new Set(['attendance', 'parent_notice', 'promo', 'direct', 'report']);
 const PROMO_KIND = 'promo';
+const REPORT_KIND = 'report'; // 일일 학습 리포트 — 정보형 BMS(친구만 수신, 비친구는 발송 단계에서 가입안내로 분기)
 // 종결 후 purge 대상 평문 필드(번호·대체발송 본문·학생명 포함 변수맵).
 const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
 
@@ -26,7 +27,7 @@ const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
 async function defaultSender(payload) {
   const mod = await import('./solapiProvider.js');
   const config = mod.getSolapiConfig();
-  if (payload.kind === PROMO_KIND) return mod.sendKakaoBrandMessage(payload, config);
+  if (payload.kind === PROMO_KIND || payload.kind === REPORT_KIND) return mod.sendKakaoBrandMessage(payload, config);
   if (payload.kind === 'direct') return mod.sendSms(payload, config);
   return mod.sendKakaoAlimtalk(payload, config);
 }
@@ -53,6 +54,16 @@ function buildSendPayload(data) {
       disableSms: data.disable_sms !== false, // 동의자만 P3가 false로 세팅(미동의면 BMS만)
       targeting: data.targeting ?? 'M',
       scheduledDate: data.scheduled_date ?? undefined, // 야간 보정된 예약시각(있으면)
+      kind: data.kind,
+    };
+  }
+  if (data.kind === REPORT_KIND) {
+    return {
+      to: data.recipient_phone,
+      content: data.content ?? '',
+      adFlag: data.ad_flag === true, // 정보형 기본 false
+      disableSms: true, // 비친구는 이미 가입안내로 분기됨 — 리포트는 SMS 대체 안 함
+      targeting: data.targeting ?? 'I',
       kind: data.kind,
     };
   }

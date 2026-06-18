@@ -1,0 +1,86 @@
+import { describe, it, expect, vi } from 'vitest';
+vi.mock('firebase-admin/firestore', () => ({
+  getFirestore: vi.fn(),
+  FieldValue: { serverTimestamp: () => '<ts>' },
+}));
+vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
+
+const { handleSendDailyReport } = await import('../src/dailyReportHandler.js');
+
+function makeDb(seed = {}) {
+  const store = {};
+  for (const [coll, ids] of Object.entries(seed)) store[coll] = { ...ids };
+  let counter = 0;
+  const col = (name) => {
+    if (!store[name]) store[name] = {};
+    return {
+      doc: (id) => {
+        const rid = id ?? `auto_${counter++}`;
+        return {
+          id: rid,
+          async get() { return { exists: rid in store[name], id: rid, data: () => store[name][rid] }; },
+          async set(v) { store[name][rid] = v; },
+          async create(v) {
+            if (rid in store[name]) { const e = new Error('ALREADY_EXISTS'); e.code = 6; throw e; }
+            store[name][rid] = v;
+          },
+        };
+      },
+    };
+  };
+  return { _store: store, collection: col };
+}
+
+const auth = { token: { email: 'staff@impact7.kr' } };
+const STUDENT = { name: '김동윤', parent_phone_1: '010-1111-2222' };
+
+describe('handleSendDailyReport', () => {
+  it('친구면 정보형 BMS(kind=report)로 enqueue', async () => {
+    const db = makeDb({
+      students: { s1: STUDENT },
+      kakao_channel_friends: { '01011112222': {} },
+    });
+    const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: '[6/16] 수업 결과...' } }, { db });
+    expect(res).toMatchObject({ queued: true, channel: 'report', joined: true });
+    const q = Object.values(db._store.message_queue)[0];
+    expect(q).toMatchObject({ kind: 'report', recipient_phone: '01011112222', targeting: 'I', ad_flag: false, content: '[6/16] 수업 결과...' });
+  });
+
+  it('비친구면 가입안내 SMS(kind=direct)로 enqueue — 채널링크 치환', async () => {
+    const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: {} });
+    const res = await handleSendDailyReport(
+      { auth, data: { studentId: 's1', content: '리포트' } },
+      { db, channelAddUrl: 'http://pf.kakao.com/_test' },
+    );
+    expect(res).toMatchObject({ queued: true, channel: 'invite_sms', joined: false });
+    const q = Object.values(db._store.message_queue)[0];
+    expect(q.kind).toBe('direct');
+    expect(q.content).toContain('http://pf.kakao.com/_test');
+    expect(q.content).not.toContain('{채널링크}');
+    expect(q.content).not.toContain('리포트'); // 비친구에겐 리포트 본문 미발송
+  });
+
+  it('비친구인데 채널링크 미설정이면 발송 거부', async () => {
+    const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: {} });
+    await expect(handleSendDailyReport({ auth, data: { studentId: 's1', content: '리포트' } }, { db }))
+      .rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  it('requestId 중복은 멱등 처리', async () => {
+    const db = makeDb({
+      students: { s1: STUDENT },
+      kakao_channel_friends: { '01011112222': {} },
+      message_queue: { 'req-1': { kind: 'report' } },
+    });
+    const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: 'x', requestId: 'req-1' } }, { db });
+    expect(res).toMatchObject({ duplicate: true });
+  });
+
+  it('학생 없음/본문 없음 거부', async () => {
+    const db = makeDb({ students: {} });
+    await expect(handleSendDailyReport({ auth, data: { studentId: 'x', content: 'a' } }, { db }))
+      .rejects.toMatchObject({ code: 'not-found' });
+    await expect(handleSendDailyReport({ auth, data: { studentId: 's1', content: '' } }, { db }))
+      .rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+});
