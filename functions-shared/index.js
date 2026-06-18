@@ -12,6 +12,7 @@ import {
   handleRunStudentReportBatchManual,
 } from './src/studentReportAutomationHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
+import { handleTabletCheckin } from './src/tabletCheckinHandler.js';
 import { handleCreatePromoCampaign } from './src/promoCampaignHandler.js';
 import { handleSetPromoConsent } from './src/promoConsentHandler.js';
 import { handleSendParentNotice } from './src/parentNoticeHandler.js';
@@ -86,6 +87,9 @@ export const paymentHook = onRequest({ invoker: 'public' }, (req, res) => {
 // 태블릿 출결 체크인 (Callable). 조회(후보 disambiguation) + 확정(트랜잭션 원자 처리).
 // request.auth(키오스크용 직원 Google 세션) 필수. 솔라피 호출은 워커가 비동기 처리.
 export const attendanceCheckin = onCall({ enforceAppCheck: false }, handleAttendanceCheckin);
+
+// 태블릿 키오스크 출결·외출 — 조회(후보+허용액션)와 확정(이벤트·daily 동기화·알림톡·하원게이트) 단일 callable.
+export const tabletCheckin = onCall({ enforceAppCheck: false }, handleTabletCheckin);
 
 // 홍보(브랜드 메시지) 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo) 배치 enqueue.
 // 야간(광고 제한)이면 익일 08:00 자동 예약. 발송은 워커(onMessageQueued)가 수행.
