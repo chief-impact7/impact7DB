@@ -22,3 +22,15 @@ export function resolveRecipientPhone(student, field) {
   }
   return '';
 }
+
+// 여러 field를 순서대로 조회해 번호 배열을 반환한다. 빈 번호·알 수 없는 field는 제외.
+// 중복 제거는 캠페인 수준(buildBulkRecipients)에서 한다.
+export function resolveRecipientPhones(student, fields) {
+  const result = [];
+  for (const field of fields) {
+    if (!RECIPIENT_FIELDS[field]) continue;
+    const d = onlyDigits(student?.[RECIPIENT_FIELDS[field]]);
+    if (d) result.push(d);
+  }
+  return result;
+}

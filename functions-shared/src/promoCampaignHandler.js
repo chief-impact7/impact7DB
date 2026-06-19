@@ -17,6 +17,12 @@ import { resolveRecipientPhone } from './recipientPhone.js';
 const MAX_RECIPIENTS = 1000; // 일일 한도 가드(솔라피 사업자 기본 1,000건)
 const BATCH_LIMIT = 400; // Firestore 배치 쓰기 상한(500) 여유
 
+// kakao_channel_friends 컬렉션 전체를 Set으로 로드 — 대상별 개별 await 없이 메모리 분기.
+async function defaultLoadFriendPhones(db) {
+  const snap = await db.collection('kakao_channel_friends').get();
+  return new Set(snap.docs.map((d) => d.id));
+}
+
 // 학생 1명 → promo 큐 doc(타임스탬프 제외 순수 형태). 호출자가 created_at을 덧붙인다.
 export function buildPromoQueueDoc({ studentId, phone, smsAllowed, consent, campaignId, content, buttons, imageId, targeting, scheduledDate }) {
   const tg = targeting === 'I' ? 'I' : 'M';
@@ -40,33 +46,66 @@ export function buildPromoQueueDoc({ studentId, phone, smsAllowed, consent, camp
   };
 }
 
+// 비친구 광고동의자에게 보내는 광고 SMS 큐 doc (promo_sms). 발송은 queueWorker가 sendSms로 라우팅.
+function buildPromoSmsQueueDoc({ studentId, phone, consent, campaignId, content, scheduledDate }) {
+  return {
+    kind: 'promo_sms',
+    campaign_id: campaignId,
+    student_id: studentId,
+    recipient_phone: phone,
+    content,
+    ad_flag: true, // 광고 SMS는 항상 광고
+    scheduled_date: scheduledDate ?? null,
+    status: 'pending',
+    attempt_count: 0,
+    next_attempt_at: null,
+    consent_snapshot: { sms: true, source: consent?.source ?? null, at: consent?.at ?? null },
+  };
+}
+
 // 대상 학생 목록 → 큐 doc 목록 + 집계. 동의/번호/옵트아웃 게이트를 한 곳에서 적용(누락 없음).
 // entries: [{ id, student }]
 //  - 번호 없음 → 제외(skipped_no_phone)
 //  - 옵트아웃(revoked) → 광고 전면 제외(skipped_revoked). 채널 도달 여부와 무관하게 거부 의사 존중.
-//  - 미동의(no_consent) → BMS는 발송(채널 친구 근거), SMS 대체만 차단(disable_sms=true).
+//
+// opts.friendPhones(Set) 제공 시 채널 친구 여부로 분기:
+//  - 친구 → kind='promo'(BMS, 기존 그대로)
+//  - 비친구 + 동의 → kind='promo_sms'(광고 SMS 직접 발송)
+//  - 비친구 + 미동의 → 제외(skipped_no_consent)
+// opts.friendPhones 미제공 시 하위호환: 전원 BMS 경로(미동의자는 disable_sms=true로 SMS 차단만).
 export function buildPromoRecipients(entries, opts) {
-  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_revoked: 0, sms_allowed: 0 };
+  const hasFriendSet = opts.friendPhones instanceof Set;
+  const stats = {
+    total: entries.length, queued: 0,
+    skipped_no_phone: 0, skipped_revoked: 0, skipped_no_consent: 0,
+    sms_allowed: 0, friend_bms: 0, ad_sms: 0,
+  };
   const docs = [];
+
   for (const { id, student } of entries) {
     const phone = resolveRecipientPhone(student, opts.recipientField);
-    if (!phone) {
-      stats.skipped_no_phone += 1;
-      continue;
-    }
+    if (!phone) { stats.skipped_no_phone += 1; continue; }
+
     const elig = promoEligibility(student);
-    if (elig.reason === 'revoked') {
-      stats.skipped_revoked += 1; // 옵트아웃 → 광고 자체에서 영구 제외
-      continue;
+    if (elig.reason === 'revoked') { stats.skipped_revoked += 1; continue; }
+
+    if (hasFriendSet) {
+      if (opts.friendPhones.has(phone)) {
+        if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
+        docs.push(buildPromoQueueDoc({ studentId: id, phone, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student), ...opts }));
+        stats.friend_bms += 1;
+      } else if (elig.smsFallbackAllowed) {
+        docs.push(buildPromoSmsQueueDoc({ studentId: id, phone, consent: getPromoConsent(student), campaignId: opts.campaignId, content: opts.content, scheduledDate: opts.scheduledDate }));
+        stats.ad_sms += 1;
+      } else {
+        stats.skipped_no_consent += 1;
+        continue;
+      }
+    } else {
+      // 하위호환: friendPhones 없으면 전원 BMS 경로
+      if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
+      docs.push(buildPromoQueueDoc({ studentId: id, phone, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student), ...opts }));
     }
-    if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
-    docs.push(buildPromoQueueDoc({
-      studentId: id,
-      phone,
-      smsAllowed: elig.smsFallbackAllowed,
-      consent: getPromoConsent(student),
-      ...opts,
-    }));
     stats.queued += 1;
   }
   return { docs, stats };
@@ -111,7 +150,9 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   }
 
   const targeting = data.targeting === 'I' ? 'I' : 'M';
-  assertAdContentCompliant(content, targeting);
+  // promo 캠페인은 targeting 값과 무관하게 광고 표기 강제(정보통신망법 §50).
+  // targeting='I'로 호출해도 promo_sms(ad_flag:true) doc이 생성될 수 있으므로 항상 검증.
+  assertAdContentCompliant(content, 'M');
 
   // 버튼 구조 최소 검증 — 형식 오류가 전 건 영구실패로 번지는 것 방지.
   const buttons = Array.isArray(data.buttons) && data.buttons.length ? data.buttons : null;
@@ -140,10 +181,11 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   }
 
   const refs = studentIds.map((id) => db.collection('students').doc(id));
-  const snaps = await db.getAll(...refs);
+  const loadFriendPhones = deps.loadFriendPhones ?? defaultLoadFriendPhones;
+  const [snaps, friendPhones] = await Promise.all([db.getAll(...refs), loadFriendPhones(db)]);
   const entries = snaps.filter((s) => s.exists).map((s) => ({ id: s.id, student: s.data() }));
 
-  const { docs, stats } = buildPromoRecipients(entries, { campaignId: campaignRef.id, content, buttons, imageId, targeting, scheduledDate, recipientField: data.recipientField });
+  const { docs, stats } = buildPromoRecipients(entries, { campaignId: campaignRef.id, content, buttons, imageId, targeting, scheduledDate, recipientField: data.recipientField, friendPhones });
   stats.skipped_missing = studentIds.length - entries.length; // 존재하지 않는 학생 id
 
   // 캠페인 doc을 먼저 'enqueuing'으로 기록 → 배치 도중 실패해도 이력·부분상태가 남아 추적 가능.

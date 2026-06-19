@@ -5,7 +5,7 @@ vi.mock('firebase-admin/firestore', () => ({
 }));
 vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
 
-const { buildBulkRecipients, handleCreateBulkMessage } = await import('../src/bulkMessageHandler.js');
+const { buildBulkRecipients, handleCreateBulkMessage, applyMessageVars } = await import('../src/bulkMessageHandler.js');
 
 const auth = { token: { email: 'staff@impact7.kr' }, uid: 'u1' };
 
@@ -49,6 +49,176 @@ function makeDb() {
     batch() { const ops = []; return { set: (ref, v) => ops.push([ref, v]), create: (ref, v) => ops.push([ref, v, true]), async commit() { for (const [ref, v] of ops) await ref.set(v); } }; },
   };
 }
+
+describe('buildBulkRecipients — recipientFields 다중선택 + dedup', () => {
+  it('recipientFields 2개 선택 시 학생당 2번호 enqueue', () => {
+    const entries = [
+      { id: 's1', student: { parent_phone_1: '01011112222', parent_phone_2: '01033334444' } },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1', content: '안내',
+      recipientFields: ['parent_1', 'parent_2'], scheduledDate: null,
+    });
+    expect(stats).toMatchObject({ total: 1, queued: 2, skipped_no_phone: 0, deduped: 0 });
+    expect(docs.map((d) => d.recipient_phone)).toEqual(['01011112222', '01033334444']);
+  });
+
+  it('형제·같은 학부모 동일번호는 1건만 enqueue되고 deduped에 카운트', () => {
+    const entries = [
+      { id: 's1', student: { parent_phone_1: '01011112222' } },
+      { id: 's2', student: { parent_phone_1: '01011112222' } },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1', content: '안내',
+      recipientFields: ['parent_1'], scheduledDate: null,
+    });
+    expect(stats).toMatchObject({ total: 2, queued: 1, deduped: 1 });
+    expect(docs).toHaveLength(1);
+  });
+
+  it('한 학생의 두 필드가 같은 번호면 1건만', () => {
+    const entries = [
+      { id: 's1', student: { parent_phone_1: '01011112222', parent_phone_2: '01011112222' } },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1', content: '안내',
+      recipientFields: ['parent_1', 'parent_2'], scheduledDate: null,
+    });
+    expect(stats).toMatchObject({ queued: 1, deduped: 1 });
+    expect(docs).toHaveLength(1);
+  });
+
+  it('단일 recipientField 하위호환 — stats에 deduped:0 포함, 기존 동작 유지', () => {
+    const entries = [
+      { id: 's1', student: { parent_phone_1: '01011112222' } },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1', content: '안내',
+      recipientField: 'parent_1', scheduledDate: null,
+    });
+    expect(stats).toMatchObject({ total: 1, queued: 1, skipped_no_phone: 0, deduped: 0 });
+    expect(docs).toHaveLength(1);
+  });
+
+  it('번호없음 skip 유지 (recipientFields 사용 시)', () => {
+    const entries = [
+      { id: 's1', student: {} },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1', content: '안내',
+      recipientFields: ['parent_1', 'parent_2'], scheduledDate: null,
+    });
+    expect(stats).toMatchObject({ total: 1, queued: 0, skipped_no_phone: 1 });
+    expect(docs).toHaveLength(0);
+  });
+});
+
+describe('applyMessageVars', () => {
+  it('각 토큰을 학생 필드 값으로 치환', () => {
+    const student = {
+      name: '김철수',
+      level: '중등',
+      school_middle: '봉영여중',
+      grade: 2,
+      enrollments: [{ level_symbol: 'HA', class_number: '101' }],
+    };
+    expect(applyMessageVars('%이름 %학교 %학년 %반', student)).toBe('김철수 봉영여중 2 HA101');
+  });
+
+  it('값이 없으면 빈 문자열로 치환', () => {
+    const student = {};
+    expect(applyMessageVars('%이름/%학교/%학년/%반', student)).toBe('///');
+  });
+
+  it('변수 없는 문자열은 그대로 반환', () => {
+    expect(applyMessageVars('안내 문자입니다.', { name: '김철수' })).toBe('안내 문자입니다.');
+  });
+
+  it('여러 번 등장하는 같은 토큰도 모두 치환', () => {
+    const student = { name: '이영희' };
+    expect(applyMessageVars('%이름 학생, %이름 학생', student)).toBe('이영희 학생, 이영희 학생');
+  });
+});
+
+describe('buildBulkRecipients — 변수 치환 + dedup 상충', () => {
+  it('변수 포함 본문 → 학생별 content 다름', () => {
+    const entries = [
+      { id: 's1', student: { name: '김철수', parent_phone_1: '01011112222' } },
+      { id: 's2', student: { name: '이영희', parent_phone_1: '01033334444' } },
+    ];
+    const { docs } = buildBulkRecipients(entries, {
+      campaignId: 'c1',
+      content: '%이름 학부모님께',
+      recipientFields: ['parent_1'],
+      scheduledDate: null,
+    });
+    expect(docs[0].content).toBe('김철수 학부모님께');
+    expect(docs[1].content).toBe('이영희 학부모님께');
+  });
+
+  it('변수 포함 본문 → 동일 번호도 각각 enqueue(dedup 비활성)', () => {
+    const entries = [
+      { id: 's1', student: { name: '김철수', parent_phone_1: '01011112222' } },
+      { id: 's2', student: { name: '이영희', parent_phone_1: '01011112222' } },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1',
+      content: '%이름 학부모님',
+      recipientFields: ['parent_1'],
+      scheduledDate: null,
+    });
+    expect(docs).toHaveLength(2);
+    expect(stats.deduped).toBe(0);
+    expect(docs[0].content).toBe('김철수 학부모님');
+    expect(docs[1].content).toBe('이영희 학부모님');
+  });
+
+  it('변수 없는 본문 → 기존 dedup 유지(동일 번호 1건만)', () => {
+    const entries = [
+      { id: 's1', student: { parent_phone_1: '01011112222' } },
+      { id: 's2', student: { parent_phone_1: '01011112222' } },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1',
+      content: '안내 문자입니다.',
+      recipientFields: ['parent_1'],
+      scheduledDate: null,
+    });
+    expect(docs).toHaveLength(1);
+    expect(stats.deduped).toBe(1);
+  });
+
+  // P2: 변수 본문에서도 한 학생 내(intra-entry) 동일 번호는 1건만 발송.
+  it('변수 본문 + 한 학생이 두 필드에 같은 번호 → 1건만 enqueue', () => {
+    const entries = [
+      { id: 's1', student: { name: '김철수', parent_phone_1: '01011112222', parent_phone_2: '01011112222' } },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1',
+      content: '%이름 학부모님께',
+      recipientFields: ['parent_1', 'parent_2'],
+      scheduledDate: null,
+    });
+    expect(docs).toHaveLength(1);
+    expect(docs[0].content).toBe('김철수 학부모님께');
+    expect(stats.queued).toBe(1);
+  });
+
+  it('변수 본문 + 형제 동일 번호 → 각각 enqueue(inter-entry dedup 비활성 유지)', () => {
+    const entries = [
+      { id: 's1', student: { name: '김철수', parent_phone_1: '01011112222' } },
+      { id: 's2', student: { name: '이영희', parent_phone_1: '01011112222' } },
+    ];
+    const { docs, stats } = buildBulkRecipients(entries, {
+      campaignId: 'c1',
+      content: '%이름 학부모님',
+      recipientFields: ['parent_1'],
+      scheduledDate: null,
+    });
+    expect(docs).toHaveLength(2);
+    expect(stats.deduped).toBe(0);
+  });
+});
 
 describe('handleCreateBulkMessage', () => {
   let db;

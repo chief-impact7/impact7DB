@@ -4,10 +4,12 @@ vi.mock('firebase-admin/firestore', () => ({
   getFirestore: vi.fn(),
   FieldValue: { serverTimestamp: () => '<ts>', delete: () => '<delete>' },
 }));
+vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
 
 const {
   buildPromoQueueDoc, buildPromoRecipients,
   assertAdContentCompliant, resolvePromoScheduledDate,
+  handleCreatePromoCampaign,
 } = await import('../src/promoCampaignHandler.js');
 
 const kst = (y, mo, d, h, mi = 0) => new Date(Date.UTC(y, mo - 1, d, h - 9, mi));
@@ -59,6 +61,58 @@ describe('buildPromoRecipients (phone + opt-out + consent gating)', () => {
   });
 });
 
+describe('buildPromoRecipients — 친구/비친구 분기(friendPhones 주입)', () => {
+  const entries = [
+    { id: 's1', student: { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } } }, // 친구 + 동의
+    { id: 's2', student: { parent_phone_1: '01033334444', message_consent: { promo: { optedIn: true } } } }, // 비친구 + 동의 → promo_sms
+    { id: 's3', student: { parent_phone_1: '01055556666' } }, // 비친구 + 미동의 → skip
+    { id: 's4', student: { parent_phone_1: '01077778888', message_consent: { promo: { optedIn: true, revokedAt: 1 } } } }, // revoked → skip
+    { id: 's5', student: {} }, // 번호 없음 → skip
+  ];
+  const friendPhones = new Set(['01011112222']); // s1만 친구
+
+  it('친구 → kind=promo(BMS), 비친구+동의 → kind=promo_sms, 비친구+미동의 → skip', () => {
+    const { docs, stats } = buildPromoRecipients(entries, {
+      campaignId: 'c1', content: '(광고)x 무료거부 080-000-0000', targeting: 'M',
+      scheduledDate: null, friendPhones,
+    });
+    expect(stats.total).toBe(5);
+    expect(stats.queued).toBe(2);
+    expect(stats.friend_bms).toBe(1);
+    expect(stats.ad_sms).toBe(1);
+    expect(stats.skipped_no_consent).toBe(1); // s3
+    expect(stats.skipped_revoked).toBe(1);    // s4
+    expect(stats.skipped_no_phone).toBe(1);   // s5
+    expect(docs.find((d) => d.student_id === 's1').kind).toBe('promo');
+    expect(docs.find((d) => d.student_id === 's2').kind).toBe('promo_sms');
+    expect(docs.find((d) => d.student_id === 's3')).toBeUndefined();
+  });
+
+  it('promo_sms doc: recipient_phone·content·ad_flag·consent_snapshot 포함', () => {
+    const { docs } = buildPromoRecipients(
+      [{ id: 's2', student: { parent_phone_1: '01033334444', message_consent: { promo: { optedIn: true, source: 'diagnostic_form', at: '<ts>' } } } }],
+      { campaignId: 'c1', content: '(광고)x 무료거부 080', targeting: 'M', scheduledDate: null, friendPhones: new Set() },
+    );
+    const d = docs[0];
+    expect(d.kind).toBe('promo_sms');
+    expect(d.recipient_phone).toBe('01033334444');
+    expect(d.content).toBe('(광고)x 무료거부 080');
+    expect(d.ad_flag).toBe(true);
+    expect(d.consent_snapshot).toMatchObject({ sms: true, source: 'diagnostic_form' });
+  });
+
+  it('friendPhones 미제공 시 하위호환 — 전원 BMS 경로, 미동의자는 disable_sms=true', () => {
+    const twoEntries = [
+      { id: 's1', student: { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } } },
+      { id: 's2', student: { parent_phone_1: '01033334444' } },
+    ];
+    const { docs, stats } = buildPromoRecipients(twoEntries, { campaignId: 'c1', content: 'x', targeting: 'M', scheduledDate: null });
+    expect(stats.queued).toBe(2);
+    expect(docs.every((d) => d.kind === 'promo')).toBe(true);
+    expect(docs.find((d) => d.student_id === 's2').disable_sms).toBe(true);
+  });
+});
+
 describe('assertAdContentCompliant (정보통신망법 §50)', () => {
   it('passes ad content with (광고) + opt-out notice', () => {
     expect(() => assertAdContentCompliant('(광고)[임팩트세븐학원] 특강\n무료거부 080-123-4567', 'M')).not.toThrow();
@@ -71,6 +125,10 @@ describe('assertAdContentCompliant (정보통신망법 §50)', () => {
   });
   it('skips the check for informational (I) messages', () => {
     expect(() => assertAdContentCompliant('성적 안내드립니다', 'I')).not.toThrow();
+  });
+  // P1: promo 캠페인은 targeting='I'로 호출해도 항상 광고 표기 강제 — handleCreatePromoCampaign이 'M'으로 위임
+  it('targeting=I로 호출해도 (광고)+수신거부 누락 시 거부됨(promo 상시 M 위임)', () => {
+    expect(() => assertAdContentCompliant('광고표기없는본문', 'M')).toThrow();
   });
 });
 
@@ -89,5 +147,57 @@ describe('resolvePromoScheduledDate (night ad guard)', () => {
   });
   it('rejects a malformed scheduledAt', () => {
     expect(() => resolvePromoScheduledDate('not-a-date', kst(2026, 6, 17, 14, 0))).toThrow();
+  });
+});
+
+// P1: targeting='I'로 handleCreatePromoCampaign 호출 시에도 광고 표기 없으면 거부됨.
+describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(targeting=I 우회 차단)', () => {
+  function makeDb(students = {}) {
+    const docs = { ...students };
+    let n = 0;
+    const col = (name) => ({
+      doc: (id) => {
+        const key = id ?? `${name}_auto_${n++}`;
+        return {
+          id: key,
+          async get() { return { exists: !!docs[`${name}/${key}`], data: () => docs[`${name}/${key}`] }; },
+          async set(v) { docs[`${name}/${key}`] = v; },
+          async update(v) { docs[`${name}/${key}`] = { ...docs[`${name}/${key}`], ...v }; },
+        };
+      },
+    });
+    return {
+      _docs: docs,
+      collection: col,
+      async getAll(...refs) {
+        return refs.map((r) => ({ id: r.id, exists: !!docs[`students/${r.id}`], data: () => docs[`students/${r.id}`] }));
+      },
+      batch() {
+        const ops = [];
+        return { set: (ref, v) => ops.push([ref, v]), async commit() { for (const [ref, v] of ops) await ref.set(v); } };
+      },
+    };
+  }
+
+  const auth = { uid: 'u1', token: { email: 'staff@impact7.kr' } };
+
+  it('targeting=I + 광고 표기 없는 본문 → 거부(정보통신망법 §50 우회 차단)', async () => {
+    const db = makeDb({ 'students/s1': { parent_phone_1: '01011112222' } });
+    await expect(
+      handleCreatePromoCampaign(
+        { auth, data: { title: '홍보', content: '광고표기없는본문입니다', studentIds: ['s1'], targeting: 'I' } },
+        { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
+      ),
+    ).rejects.toThrow('광고 메시지 본문');
+  });
+
+  it('targeting=I + (광고)+수신거부 표기 포함 본문 → 통과', async () => {
+    const db = makeDb({ 'students/s1': { parent_phone_1: '01011112222' } });
+    await expect(
+      handleCreatePromoCampaign(
+        { auth, data: { title: '홍보', content: '(광고)이벤트 안내\n무료거부 080-000-0000', studentIds: ['s1'], targeting: 'I' } },
+        { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
+      ),
+    ).resolves.toMatchObject({ campaignId: expect.any(String) });
   });
 });

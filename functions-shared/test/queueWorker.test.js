@@ -356,6 +356,88 @@ describe('kind=direct 즉석 SMS', () => {
   });
 });
 
+describe('kind=promo_sms 비친구 광고 SMS', () => {
+  it('sendSms로 라우팅되고 payload가 to/text 형태', async () => {
+    const sender = vi.fn(async () => ({ ok: true, retryable: false, channel: 'sms', messageId: 'm', statusCode: '2000' }));
+    const db = makeDb({ ps1: { kind: 'promo_sms', status: 'pending', recipient_phone: '01012345678', content: '(광고)안내 무료거부 080', ad_flag: true, attempt_count: 0 } });
+    await processQueueDoc(eventFor(db, 'ps1'), { db, sender });
+
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'promo_sms', to: '01012345678', text: '(광고)안내 무료거부 080' }));
+    expect(db._queue.get('ps1').status).toBe('sent');
+  });
+});
+
+describe('result_callback', () => {
+  const resultCallback = { url: 'https://example.com/callback', applicationId: 'app1', chatMessageName: 'msg1' };
+
+  it('result_callback 있고 성공 → notify가 status:sent, channel로 1회 호출', async () => {
+    const db = makeDb({ q1: baseQueueDoc({ result_callback: resultCallback }) });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm1', statusCode: '2000' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender, notifyResultCallback });
+
+    expect(notifyResultCallback).toHaveBeenCalledTimes(1);
+    expect(notifyResultCallback).toHaveBeenCalledWith(resultCallback.url, {
+      applicationId: 'app1',
+      status: 'sent',
+      channel: 'sms',
+      queueId: 'q1',
+      at: expect.any(String),
+    });
+    expect(db._queue.get('q1').status).toBe('sent');
+  });
+
+  it('영구실패 → notify가 status:failed 1회 호출', async () => {
+    const db = makeDb({ q1: baseQueueDoc({ result_callback: resultCallback }) });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: 'invalid', errorMessage: '에러', channel: 'sms' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender, notifyResultCallback });
+
+    expect(notifyResultCallback).toHaveBeenCalledTimes(1);
+    expect(notifyResultCallback).toHaveBeenCalledWith(resultCallback.url, {
+      applicationId: 'app1',
+      status: 'failed',
+      channel: 'sms',
+      queueId: 'q1',
+      at: expect.any(String),
+    });
+    expect(db._queue.get('q1').status).toBe('failed_permanent');
+  });
+
+  it('재시도(markRetry 경로) → notify 미호출', async () => {
+    const db = makeDb({ q1: baseQueueDoc({ result_callback: resultCallback }) });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: true, statusCode: '429', errorMessage: 'rate limit' });
+    const notifyResultCallback = vi.fn();
+
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender, notifyResultCallback });
+
+    expect(notifyResultCallback).not.toHaveBeenCalled();
+    expect(db._queue.get('q1').status).toBe('failed_retryable');
+  });
+
+  it('result_callback 없음 → notify 미호출, 발송 정상', async () => {
+    const db = makeDb({ q1: baseQueueDoc() });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm', statusCode: '2000' });
+    const notifyResultCallback = vi.fn();
+
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender, notifyResultCallback });
+
+    expect(notifyResultCallback).not.toHaveBeenCalled();
+    expect(db._queue.get('q1').status).toBe('sent');
+  });
+
+  it('콜백이 throw해도 dispatch 정상 완료(큐 상태 정상 종결)', async () => {
+    const db = makeDb({ q1: baseQueueDoc({ result_callback: resultCallback }) });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm', statusCode: '2000' });
+    const notifyResultCallback = vi.fn().mockRejectedValue(new Error('network error'));
+
+    await expect(processQueueDoc(eventFor(db, 'q1'), { db, sender, notifyResultCallback })).resolves.toBeNull();
+    expect(db._queue.get('q1').status).toBe('sent');
+  });
+});
+
 describe('__testing helpers', () => {
   it('buildSendPayload: 큐 doc → provider payload(templateVariables 키)', () => {
     const { buildSendPayload } = __testing;
