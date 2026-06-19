@@ -1,6 +1,14 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // firestore.rules isAuthorized() 미러링 — 인증·이메일검증·impact7 도메인만.
+    function isAuthorized() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && (request.auth.token.email.matches('.*@gw\\.impact7\\.kr$')
+            || request.auth.token.email.matches('.*@impact7\\.kr$'));
+    }
+
     // === impact7exam ===
     match /exam-papers/{allPaths=**} {
       allow read: if request.auth != null;
@@ -27,6 +35,16 @@ service firebase.storage {
     match /signatures/{allPaths=**} {
       allow read: if request.auth != null;
       allow write: if request.auth != null;
+    }
+
+    // === impact7newDSC ===
+    // 학생 기록 첨부(반성문/기타). 이미지 15MB 이하.
+    match /student-records/{studentId}/{recordId}/{fileName} {
+      allow read: if isAuthorized();
+      allow create, update: if isAuthorized()
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isAuthorized();
     }
   }
 }
