@@ -345,6 +345,48 @@ describe('purgeExpiredPii', () => {
   });
 });
 
+describe('kind=parent_bms 학부모 정보형 BMS', () => {
+  it('sendKakaoBrandMessage로 라우팅(sender payload에 kind:parent_bms)', async () => {
+    const db = makeDb({ pb1: baseQueueDoc({ kind: 'parent_bms', content: '[진단평가] 6/25(수) 오후 2시 실시 예정입니다.', targeting: 'I', ad_flag: false }) });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', statusCode: '2000' });
+    await processQueueDoc(eventFor(db, 'pb1'), { db, sender });
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'parent_bms' }));
+    expect(db._queue.get('pb1').status).toBe('sent');
+  });
+
+  it('payload: targeting I, adFlag false, disableSms true', async () => {
+    const db = makeDb({ pb2: baseQueueDoc({ kind: 'parent_bms', content: '안내', ad_flag: false, targeting: 'I' }) });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm2', statusCode: '2000' });
+    await processQueueDoc(eventFor(db, 'pb2'), { db, sender });
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'parent_bms', to: '01012345678', content: '안내', targeting: 'I', adFlag: false, disableSms: true,
+    }));
+  });
+
+  it('result_callback: 성공 시 status:sent로 콜백 호출', async () => {
+    const resultCallback = { url: 'https://example.com/callback', applicationId: 'app_bms' };
+    const db = makeDb({ pb3: baseQueueDoc({ kind: 'parent_bms', content: '안내', result_callback: resultCallback }) });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm3', statusCode: '2000' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+    await processQueueDoc(eventFor(db, 'pb3'), { db, sender, notifyResultCallback });
+    expect(notifyResultCallback).toHaveBeenCalledWith(resultCallback.url, expect.objectContaining({
+      applicationId: 'app_bms', status: 'sent', channel: 'kakao', queueId: 'pb3',
+    }));
+  });
+
+  it('result_callback: 영구실패 시 status:failed로 콜백 호출', async () => {
+    const resultCallback = { url: 'https://example.com/callback', applicationId: 'app_bms' };
+    const db = makeDb({ pb4: baseQueueDoc({ kind: 'parent_bms', content: '안내', result_callback: resultCallback }) });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: 'invalid', errorMessage: '에러', channel: null });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+    await processQueueDoc(eventFor(db, 'pb4'), { db, sender, notifyResultCallback });
+    expect(notifyResultCallback).toHaveBeenCalledWith(resultCallback.url, expect.objectContaining({
+      applicationId: 'app_bms', status: 'failed', queueId: 'pb4',
+    }));
+    expect(db._queue.get('pb4').status).toBe('failed_permanent');
+  });
+});
+
 describe('kind=direct 즉석 SMS', () => {
   it('sends a plain SMS when kind=direct', async () => {
     const sender = vi.fn(async () => ({ ok: true, retryable: false, channel: 'sms', messageId: 'm', groupId: 'g', statusCode: '2000' }));

@@ -14,9 +14,10 @@ const PURGE_LIMIT = 500; // purge 1회 처리 상한(폭주 방지)
 // 정보성(attendance/parent_notice)은 알림톡, 홍보(promo)는 브랜드 메시지로 발송.
 // promo는 P3 캠페인 callable이 동의 게이트·야간 보정을 통과시킨 뒤에만 enqueue되므로,
 // 워커는 큐 doc의 disable_sms/scheduled_date를 그대로 provider에 전달한다(여기서 재검증 안 함).
-const ALLOWED_KINDS = new Set(['attendance', 'parent_notice', 'promo', 'direct', 'report', 'promo_sms']);
+const ALLOWED_KINDS = new Set(['attendance', 'parent_notice', 'promo', 'direct', 'report', 'promo_sms', 'parent_bms']);
 const PROMO_KIND = 'promo';
 const REPORT_KIND = 'report'; // 일일 학습 리포트 — 정보형 BMS(친구만 수신, 비친구는 발송 단계에서 가입안내로 분기)
+const PARENT_BMS_KIND = 'parent_bms'; // 학부모 안내(진단평가 등) — 정보형 BMS, report와 동일 동작
 const PROMO_SMS_KIND = 'promo_sms'; // 비친구 광고동의자 → 광고 SMS 직접 발송(BMS 대체 비활성 우회)
 // 종결 후 purge 대상 평문 필드(번호·대체발송 본문·학생명 포함 변수맵).
 const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
@@ -28,7 +29,7 @@ const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
 async function defaultSender(payload) {
   const mod = await import('./solapiProvider.js');
   const config = mod.getSolapiConfig();
-  if (payload.kind === PROMO_KIND || payload.kind === REPORT_KIND) return mod.sendKakaoBrandMessage(payload, config);
+  if (payload.kind === PROMO_KIND || payload.kind === REPORT_KIND || payload.kind === PARENT_BMS_KIND) return mod.sendKakaoBrandMessage(payload, config);
   if (payload.kind === 'direct' || payload.kind === PROMO_SMS_KIND) return mod.sendSms(payload, config);
   return mod.sendKakaoAlimtalk(payload, config);
 }
@@ -85,12 +86,12 @@ function buildSendPayload(data) {
       kind: data.kind,
     };
   }
-  if (data.kind === REPORT_KIND) {
+  if (data.kind === REPORT_KIND || data.kind === PARENT_BMS_KIND) {
     return {
       to: data.recipient_phone,
       content: data.content ?? '',
       adFlag: data.ad_flag === true, // 정보형 기본 false
-      disableSms: true, // 비친구는 이미 가입안내로 분기됨 — 리포트는 SMS 대체 안 함
+      disableSms: true, // 비친구는 이미 가입안내로 분기됨 — SMS 대체 안 함
       targeting: data.targeting ?? 'I',
       kind: data.kind,
     };
