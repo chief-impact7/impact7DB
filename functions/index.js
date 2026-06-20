@@ -162,3 +162,6 @@ export const onClassSettingsNaesinPeriodChanged = onDocumentUpdated(
     return null;
   }
 );
+
+// F-11: 학생 중심 성적 요약(student_scores) 동기화 — results·external_score_events 쓰기 trigger.
+export { onExternalScoreWritten, onResultScoreWritten } from './src/syncStudentScores.js';
