@@ -6,6 +6,14 @@ import { maskPhone } from './phoneMask.js';
 // fallback(SMS/LMS)은 솔라피 내장 대체발송이므로 워커는 SMS를 따로 보내지 않고
 // 솔라피 최종 채널(message_logs.channel)만 기록한다.
 
+// 카카오 BMS "채널 친구 아님" 오류 코드(카카오 서버 반환값, 솔라피 API statusCode 필드로 전달).
+// 출처: 카카오 비즈니스 메시지 API 오류 코드표 — 3102: 채널 친구 관계 없음.
+const KAKAO_NOT_FRIEND_CODE = '3102';
+
+// 전화번호에서 숫자만 추출 — solapiProvider.onlyDigits와 동일 규칙.
+// 정적 import 금지(콜드스타트 F7 계약)로 여기에 인라인으로 둔다.
+const onlyDigitsLocal = (value) => String(value ?? '').replace(/\D/g, '');
+
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000]; // 1m, 5m, 15m
 const LEASE_MS = 10 * 60_000; // processing 리스(10분) — 크래시로 고착된 doc을 sweeper가 회수
@@ -220,6 +228,19 @@ async function dispatch(db, ref, data, sender, notifyResultCallback) {
 
   if (result?.ok) {
     await markSent(db, ref, data, result);
+    if (data.kind === PARENT_BMS_KIND) {
+      try {
+        const phoneKey = onlyDigitsLocal(data.recipient_phone);
+        if (phoneKey) {
+          await db.collection('kakao_channel_friends').doc(phoneKey).set(
+            { phone: phoneKey, updated_at: FieldValue.serverTimestamp() },
+            { merge: true },
+          );
+        }
+      } catch (err) {
+        console.error('[queueWorker] 친구 학습 실패(발송 영향 없음):', err?.message ?? err);
+      }
+    }
     await fireResultCallback(notifyResultCallback, ref, data, { status: 'sent', channel: result.channel });
     return;
   }
@@ -231,6 +252,51 @@ async function dispatch(db, ref, data, sender, notifyResultCallback) {
   const channel = result?.channel ?? null;
   const retryable = !!result?.retryable;
   const nextAttempt = (data.attempt_count ?? 0) + 1;
+
+  // parent_bms + 비친구(3102): 친구명단 제거 → 문자 전환 doc 생성 → 원 doc 종결(콜백 없음).
+  // 문자 doc(kind=direct)이 처리 완료 후 result_callback을 호출한다(채널=sms, 1회 보장).
+  if (data.kind === PARENT_BMS_KIND && statusCode === KAKAO_NOT_FRIEND_CODE) {
+    try {
+      const phoneKey = onlyDigitsLocal(data.recipient_phone);
+      if (phoneKey) {
+        await db.collection('kakao_channel_friends').doc(phoneKey).delete();
+      }
+    } catch (err) {
+      console.error('[queueWorker] 친구명단 제거 실패(전환 계속):', err?.message ?? err);
+    }
+    try {
+      const smsDocId = ref.id + '_sms';
+      await db.collection('message_queue').doc(smsDocId).set({
+        kind: 'direct',
+        status: 'pending',
+        recipient_phone: data.recipient_phone,
+        content: data.content,
+        scheduled_date: data.scheduled_date ?? null,
+        attempt_count: 0,
+        created_by: 'bms_fallback',
+        created_at: FieldValue.serverTimestamp(),
+        result_callback: data.result_callback ?? null,
+      });
+    } catch (err) {
+      console.error('[queueWorker] SMS 전환 doc 생성 실패:', err?.message ?? err);
+    }
+    await ref.update({
+      status: 'converted_to_sms',
+      attempt_count: nextAttempt,
+      next_attempt_at: null,
+      last_error_code: statusCode,
+      purge_after: new Date(Date.now() + RETENTION_MS),
+      updated_at: FieldValue.serverTimestamp(),
+    });
+    await writeMessageLog(db, data, ref.id, {
+      status: 'converted_to_sms',
+      channel: null,
+      statusCode,
+      message: '비친구 → SMS 전환',
+    });
+    // 원 doc은 콜백하지 않는다. 문자 doc 처리 완료 시 콜백(channel=sms)이 1회 발생한다.
+    return;
+  }
 
   if (retryable && nextAttempt < MAX_ATTEMPTS) {
     await markRetry(db, ref, nextAttempt, statusCode);

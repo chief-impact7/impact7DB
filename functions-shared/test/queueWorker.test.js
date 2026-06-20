@@ -7,21 +7,32 @@ vi.mock('firebase-admin/firestore', () => ({
 
 const { processQueueDoc, runRetrySweep, purgeExpiredPii, __testing } = await import('../src/queueWorker.js');
 
-// message_queue/message_logs를 흉내내는 인메모리 Firestore.
-function makeDb(initialQueue = {}) {
+// message_queue/message_logs/kakao_channel_friends를 흉내내는 인메모리 Firestore.
+function makeDb(initialQueue = {}, initialFriends = {}) {
   const queue = new Map(Object.entries(initialQueue));
   const logs = [];
+  const friends = new Map(Object.entries(initialFriends));
 
-  function docRef(id) {
+  function docRef(collMap, id) {
     return {
       id,
       async update(patch) {
-        queue.set(id, { ...(queue.get(id) ?? {}), ...patch });
+        collMap.set(id, { ...(collMap.get(id) ?? {}), ...patch });
+      },
+      async set(data, opts) {
+        if (opts?.merge) {
+          collMap.set(id, { ...(collMap.get(id) ?? {}), ...data });
+        } else {
+          collMap.set(id, data);
+        }
+      },
+      async delete() {
+        collMap.delete(id);
       },
     };
   }
 
-  function query() {
+  function query(collMap) {
     const filters = [];
     let limitN = null;
     const q = {
@@ -35,14 +46,14 @@ function makeDb(initialQueue = {}) {
       },
       async get() {
         let docs = [];
-        for (const [id, data] of queue) {
+        for (const [id, data] of collMap) {
           const ok = filters.every(([f, op, v]) => {
             if (op === '==') return data[f] === v;
             if (op === 'in') return Array.isArray(v) && v.includes(data[f]);
             if (op === '<=') return data[f] != null && data[f] <= v;
             return true;
           });
-          if (ok) docs.push({ id, data: () => data, ref: docRef(id) });
+          if (ok) docs.push({ id, data: () => data, ref: docRef(collMap, id) });
         }
         if (limitN != null) docs = docs.slice(0, limitN);
         return { docs };
@@ -56,9 +67,15 @@ function makeDb(initialQueue = {}) {
       if (name === 'message_logs') {
         return { add: async (entry) => { logs.push(entry); return { id: `log${logs.length}` }; } };
       }
+      if (name === 'kakao_channel_friends') {
+        return {
+          doc: (id) => docRef(friends, id),
+          where: (...a) => query(friends).where(...a),
+        };
+      }
       return {
-        doc: (id) => docRef(id),
-        where: (...a) => query().where(...a),
+        doc: (id) => docRef(queue, id),
+        where: (...a) => query(queue).where(...a),
       };
     },
     runTransaction(fn) {
@@ -78,6 +95,7 @@ function makeDb(initialQueue = {}) {
     },
     _queue: queue,
     _logs: logs,
+    _friends: friends,
   };
 }
 
@@ -384,6 +402,118 @@ describe('kind=parent_bms 학부모 정보형 BMS', () => {
       applicationId: 'app_bms', status: 'failed', queueId: 'pb4',
     }));
     expect(db._queue.get('pb4').status).toBe('failed_permanent');
+  });
+});
+
+describe('parent_bms 친구 자동 학습 + 비친구 SMS 전환', () => {
+  const bmsDoc = (overrides = {}) => baseQueueDoc({
+    kind: 'parent_bms',
+    content: '[진단평가] 6/25(수) 오후 2시',
+    recipient_phone: '01099887766',
+    result_callback: { url: 'https://example.com/cb', applicationId: 'app_bms' },
+    ...overrides,
+  });
+
+  it('성공 → kakao_channel_friends에 번호 추가 + result_callback(channel=kakao)', async () => {
+    const db = makeDb({ pb_ok: bmsDoc() });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', statusCode: '2000' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await processQueueDoc(eventFor(db, 'pb_ok'), { db, sender, notifyResultCallback });
+
+    expect(db._queue.get('pb_ok').status).toBe('sent');
+    expect(db._friends.has('01099887766')).toBe(true);
+    expect(db._friends.get('01099887766')).toMatchObject({ phone: '01099887766' });
+    expect(notifyResultCallback).toHaveBeenCalledTimes(1);
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({
+      status: 'sent', channel: 'kakao', applicationId: 'app_bms',
+    }));
+  });
+
+  it('성공 → 친구 학습 실패해도 발송 결과(sent)는 정상', async () => {
+    const db = makeDb({ pb_ok2: bmsDoc() });
+    // friends 컬렉션 set이 throw하도록 오버라이드
+    const origCollection = db.collection.bind(db);
+    db.collection = (name) => {
+      if (name === 'kakao_channel_friends') {
+        return { doc: () => ({ set: async () => { throw new Error('DB 오류'); } }) };
+      }
+      return origCollection(name);
+    };
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm', statusCode: '2000' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await expect(processQueueDoc(eventFor(db, 'pb_ok2'), { db, sender, notifyResultCallback })).resolves.toBeNull();
+    expect(db._queue.get('pb_ok2').status).toBe('sent');
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'sent' }));
+  });
+
+  it('실패(3102=비친구) → 친구명단 제거 + message_queue에 kind=direct 신규 doc + 원 doc converted_to_sms + 원 doc 콜백 없음', async () => {
+    const db = makeDb({ pb_nf: bmsDoc() }, { '01099887766': { phone: '01099887766' } });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: '3102', errorMessage: '채널 친구 아님' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await processQueueDoc(eventFor(db, 'pb_nf'), { db, sender, notifyResultCallback });
+
+    // 친구명단에서 제거
+    expect(db._friends.has('01099887766')).toBe(false);
+
+    // 문자 전환 doc 생성
+    const smsDoc = db._queue.get('pb_nf_sms');
+    expect(smsDoc).toBeDefined();
+    expect(smsDoc.kind).toBe('direct');
+    expect(smsDoc.status).toBe('pending');
+    expect(smsDoc.content).toBe('[진단평가] 6/25(수) 오후 2시');
+    expect(smsDoc.result_callback).toMatchObject({ url: 'https://example.com/cb', applicationId: 'app_bms' });
+
+    // 원 doc 종결
+    expect(db._queue.get('pb_nf').status).toBe('converted_to_sms');
+    expect(db._queue.get('pb_nf').last_error_code).toBe('3102');
+
+    // 원 doc 콜백 없음 — 문자 doc이 처리될 때 콜백
+    expect(notifyResultCallback).not.toHaveBeenCalled();
+  });
+
+  it('실패(3102) → content/result_callback/scheduled_date를 문자 doc에 복제', async () => {
+    const db = makeDb({
+      pb_copy: bmsDoc({ scheduled_date: '2026-06-25 14:00:00', result_callback: { url: 'https://cb.example', applicationId: 'app2' } }),
+    });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: '3102', errorMessage: '비친구' });
+
+    await processQueueDoc(eventFor(db, 'pb_copy'), { db, sender });
+
+    const smsDoc = db._queue.get('pb_copy_sms');
+    expect(smsDoc.content).toBe('[진단평가] 6/25(수) 오후 2시');
+    expect(smsDoc.scheduled_date).toBe('2026-06-25 14:00:00');
+    expect(smsDoc.result_callback).toMatchObject({ url: 'https://cb.example', applicationId: 'app2' });
+    expect(smsDoc.created_by).toBe('bms_fallback');
+    expect(smsDoc.attempt_count).toBe(0);
+  });
+
+  it('실패(기타 retryable 코드) → 기존 retry 경로, 친구명단·문자전환 없음', async () => {
+    const db = makeDb({ pb_retry: bmsDoc() }, { '01099887766': { phone: '01099887766' } });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: true, statusCode: '429', errorMessage: 'rate limit' });
+    const notifyResultCallback = vi.fn();
+
+    await processQueueDoc(eventFor(db, 'pb_retry'), { db, sender, notifyResultCallback });
+
+    expect(db._queue.get('pb_retry').status).toBe('failed_retryable');
+    expect(db._friends.has('01099887766')).toBe(true); // 친구명단 유지
+    expect(db._queue.has('pb_retry_sms')).toBe(false); // 문자 doc 없음
+    expect(notifyResultCallback).not.toHaveBeenCalled();
+  });
+
+  it('실패(기타 permanent 코드) → failed_permanent + result_callback(failed), 친구명단/문자전환 없음', async () => {
+    const db = makeDb({ pb_perm: bmsDoc() }, { '01099887766': { phone: '01099887766' } });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: 'invalid_recipient', errorMessage: '번호 오류' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await processQueueDoc(eventFor(db, 'pb_perm'), { db, sender, notifyResultCallback });
+
+    expect(db._queue.get('pb_perm').status).toBe('failed_permanent');
+    expect(db._friends.has('01099887766')).toBe(true);
+    expect(db._queue.has('pb_perm_sms')).toBe(false);
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'failed' }));
   });
 });
 
