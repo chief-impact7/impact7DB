@@ -40,8 +40,23 @@ describe('resolveStudentId', () => {
         expect(await resolveStudentId(db, { studentName: '이영희' })).toBe(null);
     });
 
+    it('registrationNo 문자열도 studentNumber(number)에 매칭 (타입 정규화)', async () => {
+        await db.doc('students/A_1').set({ name: 'A', studentNumber: 263639 });
+        expect(await resolveStudentId(db, { registrationNo: '263639' })).toBe('A_1');
+    });
+
+    it('registrationNo가 전화번호면 parent_phone_1(하이픈 형식)로 매칭', async () => {
+        await db.doc('students/B_1').set({ name: 'B', studentNumber: 111, parent_phone_1: '010-2211-0500' });
+        expect(await resolveStudentId(db, { registrationNo: '01022110500' })).toBe('B_1');
+    });
+
+    it('parent_phone_1 하이픈 없는 형식도 매칭', async () => {
+        await db.doc('students/C_1').set({ name: 'C', studentNumber: 222, parent_phone_1: '01099887766' });
+        expect(await resolveStudentId(db, { registrationNo: '010-9988-7766' })).toBe('C_1');
+    });
+
     it('매핑 실패 → null', async () => {
-        expect(await resolveStudentId(db, { registrationNo: 999 })).toBe(null);
+        expect(await resolveStudentId(db, { registrationNo: 555123 })).toBe(null);
     });
 });
 

@@ -11,17 +11,37 @@
 // trigger 로직은 db를 받는 순수 helper로 분리해 emulator 테스트가 가능하다.
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { formatPhone } from '@impact7/shared/phone';
 
 // result 문서에는 studentId가 없고 docId도 auto-id다. registrationNo(=학생 studentNumber) 우선,
 // 없으면 studentName으로 역조회한다. 동명이인이면 모호하므로 매핑하지 않는다(누락 로그).
 export async function resolveStudentId(db, data) {
-  if (data.registrationNo != null) {
-    const q = await db.collection('students').where('studentNumber', '==', data.registrationNo).limit(2).get();
-    if (q.size === 1) return q.docs[0].id;
+  const single = async (field, value) => {
+    const q = await db.collection('students').where(field, '==', value).limit(2).get();
+    return q.size === 1 ? q.docs[0].id : null;
+  };
+
+  const reg = data.registrationNo;
+  if (reg != null && String(reg).trim() !== '') {
+    const regStr = String(reg).trim();
+    // studentNumber: 저장 타입(number)·result 타입(string) 혼재 → 양쪽 시도
+    for (const c of [...new Set([regStr, Number(regStr)])].filter(v => v !== '' && v === v)) {
+      const id = await single('studentNumber', c);
+      if (id) return id;
+    }
+    // registrationNo가 전화번호로 들어온 케이스 → parent_phone_1(하이픈 유무 두 형식)
+    const digits = regStr.replace(/\D/g, '');
+    if (digits.length >= 10) {
+      for (const p of [...new Set([digits, formatPhone(digits)])]) {
+        const id = await single('parent_phone_1', p);
+        if (id) return id;
+      }
+    }
   }
+  // 이름(동명이인이면 모호 → null)
   if (data.studentName) {
-    const q = await db.collection('students').where('name', '==', data.studentName).limit(2).get();
-    if (q.size === 1) return q.docs[0].id;
+    const id = await single('name', data.studentName);
+    if (id) return id;
   }
   return null;
 }
