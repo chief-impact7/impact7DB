@@ -78,6 +78,14 @@ function makeDb(initialQueue = {}, initialFriends = {}) {
         where: (...a) => query(queue).where(...a),
       };
     },
+    batch() {
+      const ops = [];
+      return {
+        set(ref, data, opts) { ops.push(() => ref.set(data, opts)); },
+        update(ref, patch) { ops.push(() => ref.update(patch)); },
+        async commit() { for (const op of ops) await op(); },
+      };
+    },
     runTransaction(fn) {
       const tx = {
         async get(ref) {
@@ -488,6 +496,19 @@ describe('parent_bms 친구 자동 학습 + 비친구 SMS 전환', () => {
     expect(smsDoc.result_callback).toMatchObject({ url: 'https://cb.example', applicationId: 'app2' });
     expect(smsDoc.created_by).toBe('bms_fallback');
     expect(smsDoc.attempt_count).toBe(0);
+  });
+
+  it('SMS 전환 batch 실패 → 원본 converted_to_sms 아님 + SMS doc 미생성(유실·split-brain 방지, H-08)', async () => {
+    const db = makeDb({ pb_fail: bmsDoc() });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: '3102', errorMessage: '비친구' });
+    // batch.commit 강제 실패 — fallback doc 생성과 원본 종결이 원자적으로 함께 무산되어야 한다.
+    db.batch = () => ({ set() {}, update() {}, commit: async () => { throw new Error('batch commit failed'); } });
+
+    await expect(processQueueDoc(eventFor(db, 'pb_fail'), { db, sender })).rejects.toThrow(/batch commit failed/);
+
+    // 원본은 converted_to_sms(종결)로 바뀌지 않음 → processing으로 남아 sweeper가 재처리. SMS doc도 안 생김.
+    expect(db._queue.get('pb_fail').status).not.toBe('converted_to_sms');
+    expect(db._queue.has('pb_fail_sms')).toBe(false);
   });
 
   it('실패(기타 retryable 코드) → 기존 retry 경로, 친구명단·문자전환 없음', async () => {
