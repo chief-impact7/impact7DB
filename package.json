@@ -11,6 +11,7 @@
     "test": "npm run test:unit && npm run test:rules",
     "test:unit": "node --test tests/class-enrollment-policy.test.js tests/promo-extractor-core.test.js",
     "test:rules": "firebase emulators:exec --only firestore --project demo-impact7 \"node --test --test-concurrency=1 tests/firestore.rules.*.test.js\"",
+    "test:storage": "firebase emulators:exec --only storage --project demo-impact7 \"node --test tests/storage.rules.test.js\"",
     "import": "node --env-file=.env import-students.js",
     "upsert": "node upsert-students.js",
     "upsert:dry": "node upsert-students.js --dry-run",
