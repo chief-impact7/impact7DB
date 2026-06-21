@@ -7,8 +7,9 @@ import { resolveStudentId, syncResultScore, syncExternalScore } from './src/sync
 
 initializeApp({ credential: applicationDefault(), projectId: 'impact7db' });
 const db = getFirestore();
-const DRY = process.argv.includes('--dry');
-console.log(`${DRY ? '[DRY-RUN]' : '[EXECUTE]'} backfill student_scores\n`);
+// 운영(impact7db) 직접 write — 안전 기본값은 dry. 실제 반영은 --execute 명시 필요(M-02).
+const DRY = !process.argv.includes('--execute');
+console.log(`${DRY ? '[DRY-RUN] (--execute 로 실제 반영)' : '[EXECUTE]'} backfill student_scores\n`);
 
 let academyTotal = 0, academyMapped = 0;
 const academyUnmapped = [];

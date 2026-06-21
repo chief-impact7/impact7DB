@@ -1,5 +1,5 @@
 import admin from 'firebase-admin';
-import { studentFullLabel, currentSchool, SCHOOL_FIELD } from '@impact7/shared/student-label';
+import { studentFullLabel, SCHOOL_FIELD } from '@impact7/shared/student-label';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -21,8 +21,8 @@ snap.forEach(d => {
   if (!hasAnySchool) return;
   const label = studentFullLabel(merged);
   if (x.school_level_grade !== label) update.school_level_grade = label;
-  const mirror = currentSchool(merged);
-  if (x.school !== mirror) update.school = mirror;
+  // 폐기된 school 미러 write 제거(O-02) — school_* 가 SSoT. Admin SDK는 rules를 우회하므로
+  // 여기서 school을 다시 쓰면 삭제한 미러가 되살아난다.
   if (Object.keys(update).length) changes.push({ id: d.id, ref: d.ref, update });
 });
 

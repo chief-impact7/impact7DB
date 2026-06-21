@@ -36,6 +36,9 @@ jobs:
           (cd functions && npm ci)
           (cd functions-shared && npm ci)
 
+      - name: Check @impact7/shared version parity (root+functions+shared)
+        run: npm run check:shared
+
       - name: Lint (functions)
         run: (cd functions && npm run lint)
 
