@@ -141,8 +141,10 @@ export const onLeaveRequestApproved = onDocumentUpdated(
 
 // class_settings(내신반)의 naesin_start/end 변경 시 매핑된 학생들의 명시적 내신 enrollment.end_date 자동 동기화.
 // 5/19 사고(cs.naesin_end만 수정되고 학생 enrollment.end_date가 drift) 재발 방지.
+// 멱등(enrollment.end_date == naesin_end면 skip)하므로 retry 안전. 오류를 삼키지 않고
+// 재전파해 Functions 런타임이 자동 재시도하게 한다(H-05/N-06 — 과거 silent swallow로 영구 drift).
 export const onClassSettingsNaesinPeriodChanged = onDocumentUpdated(
-  { document: 'class_settings/{code}', retry: false },
+  { document: 'class_settings/{code}', retry: true },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -156,8 +158,8 @@ export const onClassSettingsNaesinPeriodChanged = onDocumentUpdated(
       const result = await syncNaesinPeriod(db, csKey, before, after);
       console.log('[onClassSettingsNaesinPeriodChanged]', csKey, JSON.stringify(result));
     } catch (err) {
-      console.error('[onClassSettingsNaesinPeriodChanged] failed:', csKey, err);
-      // retry: false라 단순 로그만 (재실행은 수동 oneoff 스크립트로)
+      console.error('[onClassSettingsNaesinPeriodChanged] failed (will retry):', csKey, err);
+      throw err; // retry: true → 자동 재시도. 멱등이라 중복 history 없음.
     }
     return null;
   }
