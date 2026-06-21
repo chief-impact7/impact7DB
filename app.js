@@ -2145,6 +2145,7 @@ window.showNewStudentForm = () => {
     if (!confirmDiscardUnsaved()) return;
     isEditMode = false;
     currentStudentId = null;
+    storeUpdate({ currentStudentId: null });
     pauseAlertTriggered = false;
     document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
     document.getElementById('detail-header').style.display = 'none';
@@ -2574,59 +2575,56 @@ window.submitNewStudent = async () => {
                 studentData.pause_end_date = deleteField();
             }
 
-            await setDoc(doc(db, 'students', docId), studentData, { merge: true });
-
-            // leave_requests 승인 + history_logs 기록 병렬 처리
-            await Promise.all([
-                // leave_requests 미처리 요청 승인
-                isReturnToActive
-                    ? (async () => {
-                          try {
-                              const leaveQ = query(
-                                  collection(db, 'leave_requests'),
-                                  where('student_id', '==', docId),
-                                  where('status', 'in', ['requested', 'teacher_approved'])
-                              );
-                              const leaveSnap = await getDocs(leaveQ);
-                              await Promise.all(leaveSnap.docs.map(d =>
-                                  updateDoc(d.ref, {
-                                      status: 'approved',
-                                      approved_by: currentUser?.email || 'system',
-                                      approved_at: serverTimestamp(),
-                                      updated_at: serverTimestamp()
-                                  })
-                              ));
-                              // 로컬 캐시 동기화
-                              leaveSnap.docs.forEach(d => {
-                                  const lr = leaveRequests.find(r => r.docId === d.id);
-                                  if (lr) lr.status = 'approved';
-                              });
-                          } catch (leaveErr) {
-                              console.warn('[LEAVE_REQUEST CLEANUP]', leaveErr);
-                          }
-                      })()
-                    : Promise.resolve(),
-                // history_logs 기록
-                addDoc(collection(db, 'history_logs'), {
+            // 학생 문서 + 필수 audit log를 한 batch로 원자 처리 — 한쪽만 저장되는 부분실패 차단(H-04).
+            const batch = writeBatch(db);
+            batch.set(doc(db, 'students', docId), studentData, { merge: true });
+            batch.set(doc(collection(db, 'history_logs')), {
+                doc_id: docId,
+                change_type: isReturnToActive ? 'RETURN' : 'UPDATE',
+                before: beforeStr,
+                after: afterStr,
+                google_login_id: currentUser?.email || 'system',
+                timestamp: serverTimestamp(),
+            });
+            // STATUS_CHANGE: status가 바뀐 경우 별도 레코드(추후 status 이력만 빠르게 조회)
+            if (statusChanged) {
+                batch.set(doc(collection(db, 'history_logs')), {
                     doc_id: docId,
-                    change_type: isReturnToActive ? 'RETURN' : 'UPDATE',
-                    before: beforeStr,
-                    after: afterStr,
+                    change_type: 'STATUS_CHANGE',
+                    before: JSON.stringify({ status: oldStudent.status || '' }),
+                    after: JSON.stringify({ status: studentData.status }),
                     google_login_id: currentUser?.email || 'system',
                     timestamp: serverTimestamp(),
-                }),
-                // STATUS_CHANGE: status가 바뀐 경우 별도 레코드(추후 status 이력만 빠르게 조회)
-                statusChanged
-                    ? addDoc(collection(db, 'history_logs'), {
-                          doc_id: docId,
-                          change_type: 'STATUS_CHANGE',
-                          before: JSON.stringify({ status: oldStudent.status || '' }),
-                          after: JSON.stringify({ status: studentData.status }),
-                          google_login_id: currentUser?.email || 'system',
-                          timestamp: serverTimestamp(),
-                      })
-                    : Promise.resolve(),
-            ]);
+                });
+            }
+            await batch.commit();
+
+            // leave_requests 미처리 요청 승인 — 감사로그와 무관한 best-effort 후처리(원자성 대상 아님).
+            if (isReturnToActive) {
+                try {
+                    const leaveQ = query(
+                        collection(db, 'leave_requests'),
+                        where('student_id', '==', docId),
+                        where('status', 'in', ['requested', 'teacher_approved'])
+                    );
+                    const leaveSnap = await getDocs(leaveQ);
+                    await Promise.all(leaveSnap.docs.map(d =>
+                        updateDoc(d.ref, {
+                            status: 'approved',
+                            approved_by: currentUser?.email || 'system',
+                            approved_at: serverTimestamp(),
+                            updated_at: serverTimestamp()
+                        })
+                    ));
+                    // 로컬 캐시 동기화
+                    leaveSnap.docs.forEach(d => {
+                        const lr = leaveRequests.find(r => r.docId === d.id);
+                        if (lr) lr.status = 'approved';
+                    });
+                } catch (leaveErr) {
+                    console.warn('[LEAVE_REQUEST CLEANUP]', leaveErr);
+                }
+            }
         } else {
             const docId = makeDocId(name, parentPhone1);
             const existingStudent = allStudents.find(s => s.id === docId);
@@ -2679,29 +2677,30 @@ window.submitNewStudent = async () => {
                     mergeData.status_changed_by = currentUser?.email || 'system';
                     mergeData.status_previous = prevStatus || null;
                 }
-                await Promise.all([
-                    setDoc(doc(db, 'students', docId), mergeData, { merge: true }),
-                    addDoc(collection(db, 'history_logs'), {
+                // 학생 + 이력 원자 처리(H-04).
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'students', docId), mergeData, { merge: true });
+                batch.set(doc(collection(db, 'history_logs')), {
+                    doc_id: docId,
+                    change_type: isReEnroll ? 'RETURN' : 'UPDATE',
+                    before: `상태:${prevStatus}`,
+                    after: isReEnroll
+                        ? `상태:${mergeData.status}, 반:${reEnrollCodes} (재등원${appendNote})`
+                        : `첫데이터 재입력: ${name}${appendNote}`,
+                    google_login_id: currentUser?.email || 'system',
+                    timestamp: serverTimestamp(),
+                });
+                if (isReEnroll) {
+                    batch.set(doc(collection(db, 'history_logs')), {
                         doc_id: docId,
-                        change_type: isReEnroll ? 'RETURN' : 'UPDATE',
-                        before: `상태:${prevStatus}`,
-                        after: isReEnroll
-                            ? `상태:${mergeData.status}, 반:${reEnrollCodes} (재등원${appendNote})`
-                            : `첫데이터 재입력: ${name}${appendNote}`,
+                        change_type: 'STATUS_CHANGE',
+                        before: JSON.stringify({ status: prevStatus }),
+                        after: JSON.stringify({ status: mergeData.status }),
                         google_login_id: currentUser?.email || 'system',
                         timestamp: serverTimestamp(),
-                    }),
-                    isReEnroll
-                        ? addDoc(collection(db, 'history_logs'), {
-                              doc_id: docId,
-                              change_type: 'STATUS_CHANGE',
-                              before: JSON.stringify({ status: prevStatus }),
-                              after: JSON.stringify({ status: mergeData.status }),
-                              google_login_id: currentUser?.email || 'system',
-                              timestamp: serverTimestamp(),
-                          })
-                        : Promise.resolve(),
-                ]);
+                    });
+                }
+                await batch.commit();
             } else {
                 // 완전 신규 — 폼에 입력한 수업이 있으면 그 status·enrollments·branch로 생성,
                 // 없으면 기존처럼 '상담' 상태로만 생성.
@@ -2727,19 +2726,21 @@ window.submitNewStudent = async () => {
                     newStudentData.studentNumberIssuedAt = serverTimestamp();
                 }
                 studentData = newStudentData;
-                await Promise.all([
-                    setDoc(doc(db, 'students', docId), newStudentData),
-                    addDoc(collection(db, 'history_logs'), {
-                        doc_id: docId,
-                        change_type: 'ENROLL',
-                        before: '—',
-                        after: `신규 등록: ${name} (${_newEnrollmentsForCreate.map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '수업없음'})`,
-                        google_login_id: currentUser?.email || 'system',
-                        timestamp: serverTimestamp(),
-                    }),
-                ]);
+                // 학생 + 이력 원자 처리(H-04).
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'students', docId), newStudentData);
+                batch.set(doc(collection(db, 'history_logs')), {
+                    doc_id: docId,
+                    change_type: 'ENROLL',
+                    before: '—',
+                    after: `신규 등록: ${name} (${_newEnrollmentsForCreate.map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '수업없음'})`,
+                    google_login_id: currentUser?.email || 'system',
+                    timestamp: serverTimestamp(),
+                });
+                await batch.commit();
             }
             currentStudentId = docId;
+            storeUpdate({ currentStudentId: docId });
         }
 
         _pendingEnrollments = [];
@@ -4803,6 +4804,7 @@ window.applyBulkStatus = async () => {
     if (!(await confirmModal({ title: '일괄 상태 변경', message: `선택한 ${selectedStudentIds.size}명의 상태를 '${newStatus}'(으)로 변경합니다.`, confirmText: '변경' }))) return;
 
     const ids = [...selectedStudentIds];
+    let committed = 0, total = 0;
     try {
         const changes = [];
 
@@ -4811,35 +4813,57 @@ window.applyBulkStatus = async () => {
             if (!student) return;
             const oldStatus = student.status || '—';
             if (oldStatus === newStatus) return;
-            changes.push({ id, name: student.name, from: oldStatus, to: newStatus });
+            // 비재원 전환 시 enrollment 정리(공유 SSoT) — 안 비우면 rules가 batch 전체 거부(M-05).
+            const curEnroll = student.enrollments || [];
+            const { enrollments: reconciled } = reconcileEnrollments(newStatus, curEnroll);
+            const clearedEnroll = reconciled.length !== curEnroll.length;
+            changes.push({ id, name: student.name, from: oldStatus, to: newStatus, reconciled, clearedEnroll });
         });
 
         if (changes.length === 0) { showToast('변경할 학생이 없습니다. (이미 같은 상태)', 'warn'); return; }
+        total = changes.length;
 
         const BATCH_SIZE = 200;
         for (let i = 0; i < changes.length; i += BATCH_SIZE) {
             const chunk = changes.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(c => {
-                batch.update(doc(db, 'students', c.id), { status: newStatus });
-                const historyRef = doc(collection(db, 'history_logs'));
-                batch.set(historyRef, {
+                // status 메타 기록 — 단일저장과 동일한 audit 추적(N-07).
+                const update = {
+                    status: newStatus,
+                    status_changed_at: serverTimestamp(),
+                    status_changed_by: currentUser?.email || 'system',
+                    status_previous: c.from === '—' ? null : c.from,
+                };
+                if (c.clearedEnroll) update.enrollments = c.reconciled;
+                batch.update(doc(db, 'students', c.id), update);
+                batch.set(doc(collection(db, 'history_logs')), {
                     doc_id: c.id, change_type: 'UPDATE',
-                    before: `상태: ${c.from}`, after: `상태: ${c.to} (일괄변경)`,
+                    before: `상태: ${c.from}`, after: `상태: ${c.to} (일괄변경)${c.clearedEnroll ? ', 정규반 정리' : ''}`,
+                    google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                });
+                batch.set(doc(collection(db, 'history_logs')), {
+                    doc_id: c.id, change_type: 'STATUS_CHANGE',
+                    before: JSON.stringify({ status: c.from === '—' ? '' : c.from }),
+                    after: JSON.stringify({ status: c.to }),
                     google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
                 });
             });
             await batch.commit();
+            // 커밋된 청크만 로컬 반영 — 이후 청크가 실패해도 성공분과 로컬 상태가 일관(M-04).
+            chunk.forEach(c => { const s = allStudents.find(s => s.id === c.id); if (s) { s.status = newStatus; if (c.clearedEnroll) s.enrollments = c.reconciled; } });
+            committed += chunk.length;
         }
 
-        changes.forEach(c => { const s = allStudents.find(s => s.id === c.id); if (s) s.status = newStatus; });
         document.getElementById('bulk-status-select-panel').value = '';
         applyFilterAndRender();
         updateBulkEditSummary();
-        showToast(`${changes.length}명의 상태를 '${newStatus}'(으)로 변경했습니다.`, 'success');
+        showToast(`${committed}명의 상태를 '${newStatus}'(으)로 변경했습니다.`, 'success');
     } catch (e) {
         console.error('[BULK STATUS ERROR]', e);
-        showToast('일괄 상태 변경 실패: ' + e.message, 'error');
+        applyFilterAndRender();
+        updateBulkEditSummary();
+        showToast(`일괄 상태 변경 일부 실패: ${committed}/${total}명 처리됨. ${e.message}`, 'error');
     }
 };
 
@@ -5249,17 +5273,18 @@ window.closeBulkDeleteModal = (e) => {
 window.confirmBulkDelete = async () => {
     if (pastSemesterBlocked()) return;
     const ids = [...selectedStudentIds];
+    let committed = 0;
     const confirmBtn = document.querySelector('#bulk-delete-modal .btn-end-class-confirm');
     if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '퇴원 처리 중...'; }
     const bulkDeleteOverlay = document.getElementById('bulk-delete-modal');
     bulkDeleteOverlay.dataset.busy = '1';
 
     try {
-        // 퇴원 처리 전에 학생 이름을 미리 수집
-        const idNameMap = {};
+        // 퇴원 처리 전에 학생 이름·이전상태·enrollment를 미리 수집
+        const idInfo = {};
         ids.forEach(id => {
             const s = allStudents.find(s => s.id === id);
-            idNameMap[id] = s?.name || id;
+            idInfo[id] = { name: s?.name || id, from: s?.status || '', enrollments: s?.enrollments || [] };
         });
 
         const BATCH_SIZE = 200;
@@ -5267,33 +5292,54 @@ window.confirmBulkDelete = async () => {
             const chunk = ids.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(id => {
-                batch.set(doc(db, 'students', id), {
+                const info = idInfo[id];
+                // enrollment 정리(공유 SSoT) — 안 비우면 rules가 batch 전체 거부(M-05).
+                const { enrollments: reconciled } = reconcileEnrollments('퇴원', info.enrollments);
+                const update = {
                     status: '퇴원',
                     withdrawal_date: getTodayDateStr(),
-                }, { merge: true });
-                const historyRef = doc(collection(db, 'history_logs'));
-                batch.set(historyRef, {
+                    status_changed_at: serverTimestamp(),
+                    status_changed_by: currentUser?.email || 'system',
+                    status_previous: info.from || null,
+                };
+                if (reconciled.length !== info.enrollments.length) update.enrollments = reconciled;
+                batch.set(doc(db, 'students', id), update, { merge: true });
+                batch.set(doc(collection(db, 'history_logs')), {
                     doc_id: id, change_type: 'WITHDRAW',
-                    before: `학생: ${idNameMap[id]}`, after: '일괄 퇴원 처리',
+                    before: `학생: ${info.name} (상태:${info.from || '—'})`, after: '일괄 퇴원 처리',
                     google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
                 });
+                // 이미 퇴원이면 퇴원→퇴원 STATUS_CHANGE는 노이즈 — 실제 상태 전이일 때만 기록.
+                if (info.from !== '퇴원') {
+                    batch.set(doc(collection(db, 'history_logs')), {
+                        doc_id: id, change_type: 'STATUS_CHANGE',
+                        before: JSON.stringify({ status: info.from }),
+                        after: JSON.stringify({ status: '퇴원' }),
+                        google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                    });
+                }
             });
             await batch.commit();
+            // 커밋된 청크만 로컬 반영 — 이후 청크 실패해도 성공분과 일관(M-04).
+            chunk.forEach(id => {
+                const s = allStudents.find(s => s.id === id);
+                if (s) { s.status = '퇴원'; s.enrollments = reconcileEnrollments('퇴원', s.enrollments || []).enrollments; }
+            });
+            committed += chunk.length;
         }
 
-        allStudents.forEach(s => {
-            if (!selectedStudentIds.has(s.id)) return;
-            s.status = '퇴원';
-        });
         window.closeBulkDeleteModal();
         window.exitBulkMode();
         buildClassFilterSidebar();
         applyFilterAndRender();
         currentStudentId = null;
-        showToast(`${ids.length}명의 학생이 퇴원 처리되었습니다.`, 'success');
+        storeUpdate({ currentStudentId: null });
+        showToast(`${committed}명의 학생이 퇴원 처리되었습니다.`, 'success');
     } catch (e) {
         console.error('[BULK DELETE ERROR]', e);
-        showToast('일괄 퇴원 처리 실패: ' + e.message, 'error');
+        buildClassFilterSidebar();
+        applyFilterAndRender();
+        showToast(`일괄 퇴원 일부 실패: ${committed}/${ids.length}명 처리됨. ${e.message}`, 'error');
     } finally {
         if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '퇴원'; }
         delete bulkDeleteOverlay.dataset.busy;
@@ -6398,6 +6444,7 @@ window.saveGrammarSpecial = async () => {
         for (let i = 0; i < toSave.length; i += BATCH_SIZE) {
             const chunk = toSave.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
+            const pendingLocalSync = [];
 
             for (const entry of chunk) {
                 const allDays = [...new Set(entry.weeklySchedule.map(ws => ws.day))];
@@ -6436,12 +6483,8 @@ window.saveGrammarSpecial = async () => {
 
                     batch.update(doc(db, 'students', entry.docId), { enrollments });
 
-                    // Local sync
-                    if (existIdx >= 0) {
-                        existingS.enrollments[existIdx] = newEnrollment;
-                    } else {
-                        existingS.enrollments = [...(existingS.enrollments || []), newEnrollment];
-                    }
+                    // 커밋 성공 후에만 로컬 반영(N-08 — commit 전 변경하면 실패 시 phantom 상태).
+                    pendingLocalSync.push(() => { existingS.enrollments = enrollments; });
                 } else {
                     // New student (비원생) — create. 학교는 학부별 필드(SCHOOL_FIELD)에 저장(미러 제거).
                     const _schoolField = SCHOOL_FIELD[entry.level];
@@ -6463,8 +6506,8 @@ window.saveGrammarSpecial = async () => {
 
                     batch.set(doc(db, 'students', entry.docId), studentData);
 
-                    // Add to local allStudents
-                    allStudents.push({ ...studentData, id: entry.docId });
+                    // 커밋 성공 후에만 로컬 추가(N-08).
+                    pendingLocalSync.push(() => { allStudents.push({ ...studentData, id: entry.docId }); });
                 }
 
                 // History log
@@ -6481,6 +6524,7 @@ window.saveGrammarSpecial = async () => {
             }
 
             await batch.commit();
+            pendingLocalSync.forEach(fn => fn());
         }
 
         applyFilterAndRender();

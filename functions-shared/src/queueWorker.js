@@ -264,23 +264,23 @@ async function dispatch(db, ref, data, sender, notifyResultCallback) {
     } catch (err) {
       console.error('[queueWorker] 친구명단 제거 실패(전환 계속):', err?.message ?? err);
     }
-    try {
-      const smsDocId = ref.id + '_sms';
-      await db.collection('message_queue').doc(smsDocId).set({
-        kind: 'direct',
-        status: 'pending',
-        recipient_phone: data.recipient_phone,
-        content: data.content,
-        scheduled_date: data.scheduled_date ?? null,
-        attempt_count: 0,
-        created_by: 'bms_fallback',
-        created_at: FieldValue.serverTimestamp(),
-        result_callback: data.result_callback ?? null,
-      });
-    } catch (err) {
-      console.error('[queueWorker] SMS 전환 doc 생성 실패:', err?.message ?? err);
-    }
-    await ref.update({
+    // fallback SMS doc 생성과 원본 종결을 원자화한다(H-08). 과거엔 SMS doc 생성 실패를
+    // 삼키고도 원본을 converted_to_sms로 종결 → 메시지 유실 + 콜백 영구 미발화(종결 doc은 sweeper 대상도 아님).
+    // batch 실패 시 원본은 'processing'으로 남아 retry sweeper가 재처리한다(유실 없음).
+    const smsDocId = ref.id + '_sms';
+    const batch = db.batch();
+    batch.set(db.collection('message_queue').doc(smsDocId), {
+      kind: 'direct',
+      status: 'pending',
+      recipient_phone: data.recipient_phone,
+      content: data.content,
+      scheduled_date: data.scheduled_date ?? null,
+      attempt_count: 0,
+      created_by: 'bms_fallback',
+      created_at: FieldValue.serverTimestamp(),
+      result_callback: data.result_callback ?? null,
+    });
+    batch.update(ref, {
       status: 'converted_to_sms',
       attempt_count: nextAttempt,
       next_attempt_at: null,
@@ -288,6 +288,7 @@ async function dispatch(db, ref, data, sender, notifyResultCallback) {
       purge_after: new Date(Date.now() + RETENTION_MS),
       updated_at: FieldValue.serverTimestamp(),
     });
+    await batch.commit();
     await writeMessageLog(db, data, ref.id, {
       status: 'converted_to_sms',
       channel: null,

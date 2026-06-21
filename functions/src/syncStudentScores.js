@@ -46,10 +46,22 @@ export async function resolveStudentId(db, data) {
   return null;
 }
 
+// 요약 doc이 없으면(이미 삭제 등) update가 NOT_FOUND를 던진다 — 지울 것이 없으니 멱등 성공.
+// 그 외 오류(권한·일시적 장애)는 삼키지 않고 재전파해 trigger가 재시도하게 한다(M-01).
+export async function deleteSummaryField(ref, field) {
+  try {
+    await ref.update({ [field]: FieldValue.delete(), updated_at: FieldValue.serverTimestamp() });
+  } catch (err) {
+    const code = err?.code;
+    if (code === 5 || code === 'not-found' || /NOT_FOUND/i.test(String(err?.message || err))) return;
+    throw err;
+  }
+}
+
 export async function syncExternalScore(db, eventId, studentId, after) {
   const ref = db.doc(`student_scores/${studentId}`);
   if (!after) {
-    await ref.update({ [`external.${eventId}`]: FieldValue.delete(), updated_at: FieldValue.serverTimestamp() }).catch(() => {});
+    await deleteSummaryField(ref, `external.${eventId}`);
     return { action: 'delete', studentId };
   }
   const eventMeta = (await db.doc(`external_score_events/${eventId}`).get()).data() || {};
@@ -67,7 +79,7 @@ export async function syncResultScore(db, examId, after, before) {
   if (!studentId) return { skipped: 'unresolved', reg: data.registrationNo, name: data.studentName };
   const ref = db.doc(`student_scores/${studentId}`);
   if (!after) {
-    await ref.update({ [`academy.${examId}`]: FieldValue.delete(), updated_at: FieldValue.serverTimestamp() }).catch(() => {});
+    await deleteSummaryField(ref, `academy.${examId}`);
     return { action: 'delete', studentId, examId };
   }
   const examMeta = (await db.doc(`exams/${examId}`).get()).data() || {};
@@ -79,7 +91,7 @@ export async function syncResultScore(db, examId, after, before) {
 }
 
 export const onExternalScoreWritten = onDocumentWritten(
-  { document: 'external_score_events/{eventId}/students/{studentId}', retry: false },
+  { document: 'external_score_events/{eventId}/students/{studentId}', retry: true },
   async (event) => {
     const db = getFirestore();
     await syncExternalScore(db, event.params.eventId, event.params.studentId, event.data?.after?.data());
@@ -88,7 +100,7 @@ export const onExternalScoreWritten = onDocumentWritten(
 );
 
 export const onResultScoreWritten = onDocumentWritten(
-  { document: 'results/{examId}/students/{resultDocId}', retry: false },
+  { document: 'results/{examId}/students/{resultDocId}', retry: true },
   async (event) => {
     const db = getFirestore();
     const r = await syncResultScore(db, event.params.examId, event.data?.after?.data(), event.data?.before?.data());

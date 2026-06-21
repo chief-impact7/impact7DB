@@ -20,21 +20,20 @@ service firebase.storage {
     }
 
     // === impact7HR ===
+    // H-01: HR 파일은 전부 callable(hrUpload*/hrGetFileUrl, Admin SDK 우회) 경유로 전환됨.
+    // 직접 client 접근 전면 차단 — 도메인 직원이면 모든 계약·서명·경비를 read/write하던
+    // 과도한 권한을 닫는다. 역할/토큰 검증·크기·MIME은 서버 callable이 강제한다.
     match /staff/{staffId}/{allPaths=**} {
-      allow read: if isAuthorized();
-      allow write: if isAuthorized();
+      allow read, write: if false;
     }
     match /contracts/{allPaths=**} {
-      allow read: if isAuthorized();
-      allow write: if isAuthorized();
+      allow read, write: if false;
     }
     match /expenses/{expenseId}/{allPaths=**} {
-      allow read: if isAuthorized();
-      allow write: if isAuthorized();
+      allow read, write: if false;
     }
     match /signatures/{allPaths=**} {
-      allow read: if isAuthorized();
-      allow write: if isAuthorized();
+      allow read, write: if false;
     }
 
     // === impact7newDSC ===

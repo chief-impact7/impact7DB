@@ -34,7 +34,6 @@
         <ul class="help-guide-list">
           <li><strong>이름</strong> &mdash; 학생 이름 전체 또는 일부 입력 (예: 김민준)</li>
           <li><strong>전화번호</strong> &mdash; 학부모 또는 학생 연락처 입력</li>
-          <li><strong>초성 검색</strong> &mdash; 한글 초성만 입력 (예: ㄱㅁㅈ &rarr; 김민준)</li>
           <li><strong>학교명</strong> &mdash; 학교 이름으로 검색 (예: 진명여고)</li>
         </ul>
       </section>
@@ -276,7 +275,7 @@
       },
       {
         q: '검색이 안 돼요',
-        a: '검색창에서는 <strong>이름</strong>, <strong>학교명</strong>, <strong>전화번호</strong>, <strong>초성</strong>으로 검색할 수 있습니다. 초성 검색은 한글 자음만 입력하면 됩니다. (예: "ㄱㅁㅈ" &rarr; 김민준) 전화번호는 하이픈(-) 없이 숫자만 입력해도 검색됩니다.',
+        a: '검색창에서는 <strong>이름</strong>, <strong>학교명</strong>, <strong>전화번호</strong>로 검색할 수 있습니다. 전화번호는 하이픈(-) 없이 숫자만 입력해도 검색됩니다.',
       },
       {
         q: '학생 정보를 잘못 입력했어요',
@@ -323,7 +322,7 @@
 
   function createModal() {
     const overlay = document.createElement('div');
-    overlay.className = 'help-guide-overlay';
+    overlay.className = 'help-guide-overlay modal-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', '사용 가이드');
@@ -353,6 +352,7 @@
       </div>
     `;
 
+    overlay.style.display = 'none';
     document.body.appendChild(overlay);
     return overlay;
   }
@@ -361,6 +361,7 @@
 
   let overlayEl = null;
   let activeTab = TABS[0].id;
+  let _previousFocus = null; // 닫을 때 포커스 복원(접근성)
 
   function renderContent() {
     const body = overlayEl.querySelector('.help-guide-body');
@@ -378,8 +379,6 @@
     overlayEl.querySelector('.help-guide-body').setAttribute('aria-labelledby', `help-tab-${tabId}`);
     renderContent();
   }
-
-  let _previousFocus = null;
 
   function openModal() {
     if (!overlayEl) {
@@ -403,20 +402,26 @@
     _previousFocus = document.activeElement;
     activeTab = TABS[0].id;
     switchTab(activeTab);
-    overlayEl.classList.add('help-guide-overlay--visible');
-    document.body.style.overflow = 'hidden';
+    overlayEl.style.display = 'flex';
+    // display 전환과 같은 프레임에 클래스를 켜면 fade-in이 생략됨 — 다음 프레임에 적용
+    requestAnimationFrame(() => overlayEl.classList.add('help-guide-overlay--visible'));
     overlayEl.querySelector('.help-guide-close').focus();
+    document.body.style.overflow = 'hidden';
   }
 
   function closeModal() {
     if (!overlayEl) return;
     overlayEl.classList.remove('help-guide-overlay--visible');
+    // fade-out(0.2s) 후 display:none — modal-manager는 none 시점에 닫힘으로 인식.
+    // 200ms 내 재오픈 시(visible 클래스 복귀) none을 건너뛴다
+    setTimeout(() => {
+      if (!overlayEl.classList.contains('help-guide-overlay--visible')) overlayEl.style.display = 'none';
+    }, 200);
     document.body.style.overflow = '';
     if (_previousFocus) { _previousFocus.focus(); _previousFocus = null; }
   }
 
-  /* ── Keyboard ──────────────────────────────────────────────────────── */
-
+  /* ── Keyboard: Escape로 닫기(접근성) ──────────────────────────────── */
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && overlayEl && overlayEl.classList.contains('help-guide-overlay--visible')) {
       closeModal();

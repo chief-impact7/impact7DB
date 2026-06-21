@@ -25,6 +25,13 @@ import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, purgeExpiredPii } from './src/queueWorker.js';
+import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
+import {
+  handleHrUploadStaffDocument,
+  handleHrUploadContract,
+  handleHrUploadSignedContract,
+  handleHrGetFileUrl,
+} from './src/hrUploadHandler.js';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './src/solapiSecrets.js';
 import { computeLabelUpdate } from './src/studentLabelSync.js';
 
@@ -64,6 +71,25 @@ export const runStudentReportBatchManual = onCall(
   { enforceAppCheck: false, timeoutSeconds: 540, memory: '512MiB' },
   handleRunStudentReportBatchManual,
 );
+
+// HR 공개 페이지(비로그인 신규입사·계약 서명) 토큰 게이트 read 대체 (보안 G02).
+// PUBLIC·토큰 게이트 — request.auth 없이 호출되며(외부인이 impact7 계정 없이 접근), 핸들러가
+// 토큰 존재/사용여부/만료를 검증한 뒤 각 페이지가 표시하는 최소 필드만 마스킹해 반환한다.
+// 주민번호·계좌번호 평문, taxInfo, 문서스캔은 반환하지 않는다. assertAuthorizedStaff 미사용(의도).
+export const getHrPublicToken = onCall({ enforceAppCheck: false }, handleGetHrPublicToken);
+
+// H-01: HR 파일 접근을 전부 callable 경유로 옮기는 서버 골격(ADDITIVE — storage.rules는 후속 단계).
+// 업로드는 base64를 받아 서버가 크기(<20MB)·MIME(PDF/이미지, 매직넘버 재검증)을 검증한 뒤
+// Admin SDK로 write한다(서명 write URL 불필요 → signBlob 의존 없음). 다운로드는 Firebase
+// download token 기반 URL(client getDownloadURL과 동일 형태)을 발급한다.
+// 인증 업로드(직원문서·관리자 계약 PDF)는 원장급 게이트(assertDirector).
+export const hrUploadStaffDocument = onCall({ enforceAppCheck: false }, handleHrUploadStaffDocument);
+export const hrUploadContract = onCall({ enforceAppCheck: false }, handleHrUploadContract);
+// 공개(비로그인) 서명자 PDF 업로드 — 토큰 게이트(존재·미사용·미만료). HR-13 degrade 수정.
+// ownerId/contractId는 토큰 doc에서 도출(호출자 입력 무시). assertAuthorizedStaff 미사용(의도).
+export const hrUploadSignedContract = onCall({ enforceAppCheck: false }, handleHrUploadSignedContract);
+// 다운로드 URL 발급 — 인증(원장급, staff/·contracts/ 경로) 또는 공개 토큰(자기 계약 경로만).
+export const hrGetFileUrl = onCall({ enforceAppCheck: false }, handleHrGetFileUrl);
 
 export const healthCheck = onRequest(
   { invoker: 'public' },

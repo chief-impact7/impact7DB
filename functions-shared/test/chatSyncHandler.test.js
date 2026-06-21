@@ -78,7 +78,8 @@ describe('handleSyncChatMessages', () => {
       msg('1', '2026-06-12T01:00:00Z', '김민준3'),
       msg('2', '2026-06-12T05:00:00Z', '무관 메시지'),
     ]);
-    const result = await handleSyncChatMessages({ firestore, fetchMessages, chatKey: '{}' });
+    // now 고정 — defaultSince(now-3d)=06-09 < fixture(06-12)라 커서가 최신 fetch로 전진.
+    const result = await handleSyncChatMessages({ firestore, fetchMessages, chatKey: '{}', now: '2026-06-12T06:00:00Z' });
     expect(result.last_synced_time).toBe('2026-06-12T05:00:00Z');
     expect(firestore.state().data().last_synced_time).toBe('2026-06-12T05:00:00Z');
   });

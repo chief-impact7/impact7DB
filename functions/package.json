@@ -1,6 +1,8 @@
 {
   "name": "impact7-functions",
-  "engines": { "node": "22" },
+  "engines": {
+    "node": "22"
+  },
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -8,11 +10,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "serve": "firebase emulators:start --only functions,firestore",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "firebase deploy --only functions:leave-request --project impact7db",
     "logs": "firebase functions:log"
   },
   "dependencies": {
-    "@impact7/shared": "github:chief-impact7/impact7-shared#v1.28.0",
+    "@impact7/shared": "github:chief-impact7/impact7-shared#v1.30.0",
     "firebase-admin": "^13.0.0",
     "firebase-functions": "^7.0.0"
   },

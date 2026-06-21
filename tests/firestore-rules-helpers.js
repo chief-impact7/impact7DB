@@ -3,13 +3,14 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const PROJECT_ID = 'impact7db-rules-test';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RULES_PATH = join(__dirname, '..', 'firestore.rules');
 
-export async function createTestEnv() {
+// 파일별 고유 projectId로 격리 — 같은 emulator를 공유하는 여러 테스트 파일이
+// clearFirestore로 서로의 데이터를 지우는 경쟁을 방지(M-08).
+export async function createTestEnv(projectId = 'impact7db-rules-test') {
   return await initializeTestEnvironment({
-    projectId: PROJECT_ID,
+    projectId,
     firestore: {
       rules: fs.readFileSync(RULES_PATH, 'utf8'),
       host: '127.0.0.1',
