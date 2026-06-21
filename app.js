@@ -2145,6 +2145,7 @@ window.showNewStudentForm = () => {
     if (!confirmDiscardUnsaved()) return;
     isEditMode = false;
     currentStudentId = null;
+    storeUpdate({ currentStudentId: null });
     pauseAlertTriggered = false;
     document.querySelectorAll('.list-item').forEach(el => el.classList.remove('active'));
     document.getElementById('detail-header').style.display = 'none';
@@ -2739,6 +2740,7 @@ window.submitNewStudent = async () => {
                 await batch.commit();
             }
             currentStudentId = docId;
+            storeUpdate({ currentStudentId: docId });
         }
 
         _pendingEnrollments = [];
@@ -5331,6 +5333,7 @@ window.confirmBulkDelete = async () => {
         buildClassFilterSidebar();
         applyFilterAndRender();
         currentStudentId = null;
+        storeUpdate({ currentStudentId: null });
         showToast(`${committed}명의 학생이 퇴원 처리되었습니다.`, 'success');
     } catch (e) {
         console.error('[BULK DELETE ERROR]', e);
