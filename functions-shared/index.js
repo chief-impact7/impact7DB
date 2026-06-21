@@ -25,6 +25,7 @@ import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, purgeExpiredPii } from './src/queueWorker.js';
+import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './src/solapiSecrets.js';
 import { computeLabelUpdate } from './src/studentLabelSync.js';
 
@@ -64,6 +65,12 @@ export const runStudentReportBatchManual = onCall(
   { enforceAppCheck: false, timeoutSeconds: 540, memory: '512MiB' },
   handleRunStudentReportBatchManual,
 );
+
+// HR 공개 페이지(비로그인 신규입사·계약 서명) 토큰 게이트 read 대체 (보안 G02).
+// PUBLIC·토큰 게이트 — request.auth 없이 호출되며(외부인이 impact7 계정 없이 접근), 핸들러가
+// 토큰 존재/사용여부/만료를 검증한 뒤 각 페이지가 표시하는 최소 필드만 마스킹해 반환한다.
+// 주민번호·계좌번호 평문, taxInfo, 문서스캔은 반환하지 않는다. assertAuthorizedStaff 미사용(의도).
+export const getHrPublicToken = onCall({ enforceAppCheck: false }, handleGetHrPublicToken);
 
 export const healthCheck = onRequest(
   { invoker: 'public' },
