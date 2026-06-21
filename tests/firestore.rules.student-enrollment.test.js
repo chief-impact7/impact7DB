@@ -49,4 +49,21 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
     const db = authedCtx(env, 't1');
     await assertSucceeds(setDoc(doc(db, 'students/s2'), { name: '김학생', enrollments: [], status: '종강' }));
   });
+
+  test('40개 필드(>36) 정상 문서도 저장 허용 (O-04: 한도 36→48)', async () => {
+    const db = authedCtx(env, 't1');
+    const big = {
+      name: '홍길동', enrollments: ENROLL, status: '재원', parent_phone_1: '010-1111-2222', branch: '본원',
+      level: '중등', grade: 1, school_middle: '봉영여중', school_level_grade: '봉영여중1',
+      student_phone: '010-2', parent_phone_2: '010-3', other_phone: '010-4',
+      guardian_name_1: '모', guardian_name_2: '부', status2: '',
+      pause_start_date: '', pause_end_date: '', scheduled_leave_status: '', pre_withdrawal_status: '',
+      day: [], class_type: '정규', level_code: 'HA', level_symbol: 'HA', class_number: '101',
+      start_date: '2026-01-01', special_start_date: '', special_end_date: '', first_registered: '2026-01-01',
+      has_memo: false, memo: '', return_consult_done: false, return_consult_note: '',
+      return_consult_done_by: '', return_consult_done_at: '', updated_at: '', updated_by: '',
+      nameNormalized: 'hgd', studentNumber: 1, studentNumberSource: 'manual', studentNumberIssuedAt: '',
+    };
+    await assertSucceeds(setDoc(doc(db, 'students/big1'), big)); // 40 fields — 과거 withinFieldLimit(36)이면 거부됐음
+  });
 });

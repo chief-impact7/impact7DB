@@ -96,6 +96,8 @@ service cloud.firestore {
         ];
         return request.resource.data.keys().hasOnly(allowed);
       }
+      // withinFieldLimit는 allowed 목록 크기(48)와 맞춘다 — 과거 36은 hasOnly가 이미 허용한
+      // 필드를 다 채운 정상 문서를 조용히 거부했음(O-04). allowed 확장 시 이 값도 함께 올린다.
 
       // DB/DSC: 읽기+쓰기, Director: 읽기만
       allow read: if isAuthorized();
@@ -109,13 +111,13 @@ service cloud.firestore {
       allow create: if isAuthorized()
         && hasRequiredStudentFields()
         && hasOnlyAllowedStudentFields()
-        && withinFieldLimit(36)
+        && withinFieldLimit(48)
         && enrollmentStatusConsistent();
 
       allow update: if isAuthorized()
         && hasRequiredStudentFields()
         && hasOnlyAllowedStudentFields()
-        && withinFieldLimit(36)
+        && withinFieldLimit(48)
         && (!resource.data.keys().hasAny(['status']) || request.resource.data.keys().hasAny(['status']))
         && enrollmentStatusConsistent();
 
