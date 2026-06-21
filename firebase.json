@@ -25,13 +25,15 @@
       "source": "functions",
       "codebase": "leave-request",
       "runtime": "nodejs22",
-      "ignore": ["node_modules", ".git", "*.log"]
+      "ignore": ["node_modules", ".git", "*.log"],
+      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run lint"]
     },
     {
       "source": "functions-shared",
       "codebase": "shared",
       "runtime": "nodejs22",
-      "ignore": ["node_modules", ".git", "*.log"]
+      "ignore": ["node_modules", ".git", "*.log"],
+      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" test"]
     }
   ]
 }

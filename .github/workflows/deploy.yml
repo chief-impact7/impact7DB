@@ -12,8 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger unified hosting deploy
+        # --fail-with-body: HTTP 4xx/5xx면 비0 종료로 job 실패(토큰 만료·권한오류가 초록으로 묻히던 false positive 차단, H-07).
+        # 통합 빌드 자체의 성공/취소는 impact7-hosting 워크플로가 소유하므로 여기선 dispatch 수락만 보장한다.
         run: |
-          curl -s -X POST https://api.github.com/repos/chief-impact7/impact7-hosting/dispatches \
+          curl --fail-with-body -sS -X POST https://api.github.com/repos/chief-impact7/impact7-hosting/dispatches \
             -H "Authorization: Bearer ${{ secrets.HOSTING_DISPATCH_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             -d '{"event_type":"deploy-unified"}'

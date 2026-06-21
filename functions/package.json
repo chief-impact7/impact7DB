@@ -8,7 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "serve": "firebase emulators:start --only functions,firestore",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "firebase deploy --only functions:leave-request --project impact7db",
     "logs": "firebase functions:log"
   },
   "dependencies": {

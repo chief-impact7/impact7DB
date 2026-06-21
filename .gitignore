@@ -14,7 +14,8 @@ service-account.json.bak*
 
 # 2. Dependencies & Node Modules
 node_modules/
-package-lock.json
+# package-lock.json은 추적한다(재현 가능 빌드 + npm ci). 과거 광역 무시가
+# functions/functions-shared lock까지 제외해 CI가 npm install로 비결정적이었음(M-07).
 npm-debug.log
 yarn-error.log
 firestore-debug.log
