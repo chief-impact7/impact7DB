@@ -1,6 +1,7 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import { generateText } from './vertex.js';
 import { writeLog } from './notifyLog.js';
+import { assertAuthorizedStaff } from './authGuards.js';
 
 const DEFAULT_MODEL = 'gemini-3.5-flash';
 const ALLOWED_MODELS = new Set([
@@ -8,6 +9,27 @@ const ALLOWED_MODELS = new Set([
   'gemini-3.1-pro-preview',
 ]);
 const MAX_PROMPT_CHARS = 50000;
+
+// per-uid 호출 빈도 제한(비용 악용 방어, H-02). 인스턴스 내 슬라이딩 윈도우 —
+// maxInstances 환경에선 인스턴스당 한도이므로 1차 방어선이다(외부계정 차단은 assertAuthorizedStaff가 담당).
+// 교차 인스턴스 강제와 App Check는 호출자(DSC) App Check 도입 후 G12에서 강화.
+const RATE_LIMIT_MAX = 30;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const _rateCalls = new Map();
+
+// 테스트 전용 — 모듈 상태 초기화.
+export function resetRateLimits() {
+  _rateCalls.clear();
+}
+
+function assertWithinRateLimit(uid, now = Date.now()) {
+  const recent = (_rateCalls.get(uid) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT_MAX) {
+    throw new HttpsError('resource-exhausted', 'AI 호출 빈도 제한을 초과했습니다. 잠시 후 다시 시도하세요.');
+  }
+  recent.push(now);
+  _rateCalls.set(uid, recent);
+}
 
 // 로깅 실패가 제품 경로(생성 성공/실패)를 가리지 않도록 non-fatal.
 async function safeLog(entry) {
@@ -34,9 +56,8 @@ function classifyLlmError(err) {
 }
 
 export async function handleLlmGenerate(request) {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
-  }
+  // 직원(학원 도메인) 인증 — 외부 Firebase 계정의 유료 호출 차단(H-02).
+  assertAuthorizedStaff(request.auth);
   const { prompt, model, config } = request.data ?? {};
   if (typeof prompt !== 'string' || !prompt.trim()) {
     throw new HttpsError('invalid-argument', 'prompt(문자열)가 필요합니다.');
@@ -48,6 +69,9 @@ export async function handleLlmGenerate(request) {
     throw new HttpsError('invalid-argument', 'config는 객체여야 합니다.');
   }
   const useModel = model && ALLOWED_MODELS.has(model) ? model : DEFAULT_MODEL;
+
+  // 비용 경로 직전에만 빈도 슬롯 소비 — 무효(zero-cost) 요청으로 자기 잠금 방지.
+  assertWithinRateLimit(request.auth.uid);
 
   try {
     const text = await generateText(useModel, prompt, config ?? {});

@@ -10,21 +10,50 @@ vi.mock('../src/notifyLog.js', () => ({
   writeLog: (...args) => writeLogMock(...args),
 }));
 
-const { handleLlmGenerate } = await import('../src/llmHandler.js');
+const { handleLlmGenerate, resetRateLimits } = await import('../src/llmHandler.js');
 
 beforeEach(() => {
   generateTextMock.mockReset();
   writeLogMock.mockReset();
   generateTextMock.mockResolvedValue('generated');
   writeLogMock.mockResolvedValue({ id: 'log1' });
+  resetRateLimits();
 });
 
-const authReq = (data) => ({ auth: { uid: 'u1' }, data });
+// 직원(학원 도메인) 인증 토큰 포함 — 보안 가드(assertAuthorizedStaff) 통과용.
+const staffToken = { email: 'u1@impact7.kr', email_verified: true };
+const authReq = (data) => ({ auth: { uid: 'u1', token: staffToken }, data });
 
 describe('handleLlmGenerate', () => {
   it('throws unauthenticated when request.auth is missing', async () => {
     await expect(handleLlmGenerate({ data: { prompt: 'hi' } })).rejects.toMatchObject({
       code: 'unauthenticated',
+    });
+  });
+
+  it('throws permission-denied for external (non-impact7) domain accounts (H-02)', async () => {
+    const ext = { auth: { uid: 'ext1', token: { email: 'attacker@gmail.com', email_verified: true } }, data: { prompt: 'hi' } };
+    await expect(handleLlmGenerate(ext)).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(generateTextMock).not.toHaveBeenCalled();
+  });
+
+  it('throws permission-denied when email is not verified', async () => {
+    const unverified = { auth: { uid: 'u1', token: { email: 'u1@impact7.kr', email_verified: false } }, data: { prompt: 'hi' } };
+    await expect(handleLlmGenerate(unverified)).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+
+  it('allows impact7 staff and calls generateText', async () => {
+    const result = await handleLlmGenerate(authReq({ prompt: 'hi' }));
+    expect(result.text).toBe('generated');
+    expect(generateTextMock).toHaveBeenCalled();
+  });
+
+  it('enforces per-uid rate limit → resource-exhausted (H-02)', async () => {
+    for (let i = 0; i < 30; i++) {
+      await handleLlmGenerate(authReq({ prompt: 'hi' }));
+    }
+    await expect(handleLlmGenerate(authReq({ prompt: 'hi' }))).rejects.toMatchObject({
+      code: 'resource-exhausted',
     });
   });
 
