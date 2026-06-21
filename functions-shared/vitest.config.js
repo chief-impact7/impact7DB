@@ -1,9 +1,6 @@
-import { defineConfig, configDefaults } from 'vitest/config';
+import { defineConfig } from 'vitest/config';
 
-// attendanceState 순수 모듈은 node:test로 검증한다(`node --test test/attendanceState.test.js`).
-// vitest는 node:test 형식을 수집할 수 없으므로 전체 `vitest run`에서만 제외한다.
+// attendanceState 포함 모든 테스트를 vitest가 수집한다(과거 node:test 고아 → vitest 전환, M-08).
 export default defineConfig({
-  test: {
-    exclude: [...configDefaults.exclude, 'test/attendanceState.test.js'],
-  },
+  test: {},
 });

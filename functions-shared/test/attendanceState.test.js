@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert';
 import {
   isTabletEligibleStatus, ACTIONS, DAY_STATES,
@@ -37,7 +37,7 @@ test('canDepart — 정책별', () => {
 
 test('allowedActions — 상태·정책별 버튼', () => {
   assert.deepEqual(allowedActions(DAY_STATES.NONE, { checklistComplete: false, departurePolicy: 'block' }), ['등원']);
-  assert.deepEqual(allowedActions(DAY_STATES.OUT, { checklistComplete: true, departurePolicy: 'block' }), ['복귀']);
+  assert.deepEqual(allowedActions(DAY_STATES.OUT, { checklistComplete: true, departurePolicy: 'block' }), ['귀원']);
   assert.deepEqual(allowedActions(DAY_STATES.GONE, { checklistComplete: true, departurePolicy: 'block' }), []);
   // 원내 + 미완료 + block → 하원 버튼 숨김
   assert.deepEqual(allowedActions(DAY_STATES.IN, { checklistComplete: false, departurePolicy: 'block' }), ['외출']);
@@ -58,5 +58,5 @@ test('ACTION_TEMPLATE_KEY — 액션→알림톡 템플릿', () => {
   assert.equal(ACTION_TEMPLATE_KEY['등원'], 'arrival');
   assert.equal(ACTION_TEMPLATE_KEY['하원'], 'departure');
   assert.equal(ACTION_TEMPLATE_KEY['외출'], 'out');
-  assert.equal(ACTION_TEMPLATE_KEY['복귀'], 'return');
+  assert.equal(ACTION_TEMPLATE_KEY['귀원'], 'return');
 });
