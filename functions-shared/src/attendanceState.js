@@ -60,10 +60,13 @@ export const ACTION_TEMPLATE_KEY = {
 };
 
 // KST 12시간제 한국어 "오전/오후 H:MM". 알림톡 #{시각} 변수용.
+// ICU 로케일 비의존 — toLocaleTimeString('ko-KR')은 런타임 ICU 데이터가 없으면
+// '오전'을 'AM'으로 폴백한다(일부 CI/슬림 런타임). KST(UTC+9, DST 없음)로 직접 계산.
 export function formatKstClock12h(date) {
-  const s = date.toLocaleTimeString('ko-KR', {
-    timeZone: 'Asia/Seoul', hour: 'numeric', minute: '2-digit', hour12: true,
-  });
-  // ko-KR 출력 정규화: "오전 10:30" 형태로 공백 보정.
-  return s.replace(/\s+/g, ' ').trim();
+  const kst = new Date(date.getTime() + 9 * 3600 * 1000);
+  const h24 = kst.getUTCHours();
+  const m = kst.getUTCMinutes();
+  const period = h24 < 12 ? '오전' : '오후';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${period} ${h12}:${String(m).padStart(2, '0')}`;
 }
