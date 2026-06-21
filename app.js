@@ -2574,59 +2574,56 @@ window.submitNewStudent = async () => {
                 studentData.pause_end_date = deleteField();
             }
 
-            await setDoc(doc(db, 'students', docId), studentData, { merge: true });
-
-            // leave_requests 승인 + history_logs 기록 병렬 처리
-            await Promise.all([
-                // leave_requests 미처리 요청 승인
-                isReturnToActive
-                    ? (async () => {
-                          try {
-                              const leaveQ = query(
-                                  collection(db, 'leave_requests'),
-                                  where('student_id', '==', docId),
-                                  where('status', 'in', ['requested', 'teacher_approved'])
-                              );
-                              const leaveSnap = await getDocs(leaveQ);
-                              await Promise.all(leaveSnap.docs.map(d =>
-                                  updateDoc(d.ref, {
-                                      status: 'approved',
-                                      approved_by: currentUser?.email || 'system',
-                                      approved_at: serverTimestamp(),
-                                      updated_at: serverTimestamp()
-                                  })
-                              ));
-                              // 로컬 캐시 동기화
-                              leaveSnap.docs.forEach(d => {
-                                  const lr = leaveRequests.find(r => r.docId === d.id);
-                                  if (lr) lr.status = 'approved';
-                              });
-                          } catch (leaveErr) {
-                              console.warn('[LEAVE_REQUEST CLEANUP]', leaveErr);
-                          }
-                      })()
-                    : Promise.resolve(),
-                // history_logs 기록
-                addDoc(collection(db, 'history_logs'), {
+            // 학생 문서 + 필수 audit log를 한 batch로 원자 처리 — 한쪽만 저장되는 부분실패 차단(H-04).
+            const batch = writeBatch(db);
+            batch.set(doc(db, 'students', docId), studentData, { merge: true });
+            batch.set(doc(collection(db, 'history_logs')), {
+                doc_id: docId,
+                change_type: isReturnToActive ? 'RETURN' : 'UPDATE',
+                before: beforeStr,
+                after: afterStr,
+                google_login_id: currentUser?.email || 'system',
+                timestamp: serverTimestamp(),
+            });
+            // STATUS_CHANGE: status가 바뀐 경우 별도 레코드(추후 status 이력만 빠르게 조회)
+            if (statusChanged) {
+                batch.set(doc(collection(db, 'history_logs')), {
                     doc_id: docId,
-                    change_type: isReturnToActive ? 'RETURN' : 'UPDATE',
-                    before: beforeStr,
-                    after: afterStr,
+                    change_type: 'STATUS_CHANGE',
+                    before: JSON.stringify({ status: oldStudent.status || '' }),
+                    after: JSON.stringify({ status: studentData.status }),
                     google_login_id: currentUser?.email || 'system',
                     timestamp: serverTimestamp(),
-                }),
-                // STATUS_CHANGE: status가 바뀐 경우 별도 레코드(추후 status 이력만 빠르게 조회)
-                statusChanged
-                    ? addDoc(collection(db, 'history_logs'), {
-                          doc_id: docId,
-                          change_type: 'STATUS_CHANGE',
-                          before: JSON.stringify({ status: oldStudent.status || '' }),
-                          after: JSON.stringify({ status: studentData.status }),
-                          google_login_id: currentUser?.email || 'system',
-                          timestamp: serverTimestamp(),
-                      })
-                    : Promise.resolve(),
-            ]);
+                });
+            }
+            await batch.commit();
+
+            // leave_requests 미처리 요청 승인 — 감사로그와 무관한 best-effort 후처리(원자성 대상 아님).
+            if (isReturnToActive) {
+                try {
+                    const leaveQ = query(
+                        collection(db, 'leave_requests'),
+                        where('student_id', '==', docId),
+                        where('status', 'in', ['requested', 'teacher_approved'])
+                    );
+                    const leaveSnap = await getDocs(leaveQ);
+                    await Promise.all(leaveSnap.docs.map(d =>
+                        updateDoc(d.ref, {
+                            status: 'approved',
+                            approved_by: currentUser?.email || 'system',
+                            approved_at: serverTimestamp(),
+                            updated_at: serverTimestamp()
+                        })
+                    ));
+                    // 로컬 캐시 동기화
+                    leaveSnap.docs.forEach(d => {
+                        const lr = leaveRequests.find(r => r.docId === d.id);
+                        if (lr) lr.status = 'approved';
+                    });
+                } catch (leaveErr) {
+                    console.warn('[LEAVE_REQUEST CLEANUP]', leaveErr);
+                }
+            }
         } else {
             const docId = makeDocId(name, parentPhone1);
             const existingStudent = allStudents.find(s => s.id === docId);
@@ -2679,29 +2676,30 @@ window.submitNewStudent = async () => {
                     mergeData.status_changed_by = currentUser?.email || 'system';
                     mergeData.status_previous = prevStatus || null;
                 }
-                await Promise.all([
-                    setDoc(doc(db, 'students', docId), mergeData, { merge: true }),
-                    addDoc(collection(db, 'history_logs'), {
+                // 학생 + 이력 원자 처리(H-04).
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'students', docId), mergeData, { merge: true });
+                batch.set(doc(collection(db, 'history_logs')), {
+                    doc_id: docId,
+                    change_type: isReEnroll ? 'RETURN' : 'UPDATE',
+                    before: `상태:${prevStatus}`,
+                    after: isReEnroll
+                        ? `상태:${mergeData.status}, 반:${reEnrollCodes} (재등원${appendNote})`
+                        : `첫데이터 재입력: ${name}${appendNote}`,
+                    google_login_id: currentUser?.email || 'system',
+                    timestamp: serverTimestamp(),
+                });
+                if (isReEnroll) {
+                    batch.set(doc(collection(db, 'history_logs')), {
                         doc_id: docId,
-                        change_type: isReEnroll ? 'RETURN' : 'UPDATE',
-                        before: `상태:${prevStatus}`,
-                        after: isReEnroll
-                            ? `상태:${mergeData.status}, 반:${reEnrollCodes} (재등원${appendNote})`
-                            : `첫데이터 재입력: ${name}${appendNote}`,
+                        change_type: 'STATUS_CHANGE',
+                        before: JSON.stringify({ status: prevStatus }),
+                        after: JSON.stringify({ status: mergeData.status }),
                         google_login_id: currentUser?.email || 'system',
                         timestamp: serverTimestamp(),
-                    }),
-                    isReEnroll
-                        ? addDoc(collection(db, 'history_logs'), {
-                              doc_id: docId,
-                              change_type: 'STATUS_CHANGE',
-                              before: JSON.stringify({ status: prevStatus }),
-                              after: JSON.stringify({ status: mergeData.status }),
-                              google_login_id: currentUser?.email || 'system',
-                              timestamp: serverTimestamp(),
-                          })
-                        : Promise.resolve(),
-                ]);
+                    });
+                }
+                await batch.commit();
             } else {
                 // 완전 신규 — 폼에 입력한 수업이 있으면 그 status·enrollments·branch로 생성,
                 // 없으면 기존처럼 '상담' 상태로만 생성.
@@ -2727,17 +2725,18 @@ window.submitNewStudent = async () => {
                     newStudentData.studentNumberIssuedAt = serverTimestamp();
                 }
                 studentData = newStudentData;
-                await Promise.all([
-                    setDoc(doc(db, 'students', docId), newStudentData),
-                    addDoc(collection(db, 'history_logs'), {
-                        doc_id: docId,
-                        change_type: 'ENROLL',
-                        before: '—',
-                        after: `신규 등록: ${name} (${_newEnrollmentsForCreate.map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '수업없음'})`,
-                        google_login_id: currentUser?.email || 'system',
-                        timestamp: serverTimestamp(),
-                    }),
-                ]);
+                // 학생 + 이력 원자 처리(H-04).
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'students', docId), newStudentData);
+                batch.set(doc(collection(db, 'history_logs')), {
+                    doc_id: docId,
+                    change_type: 'ENROLL',
+                    before: '—',
+                    after: `신규 등록: ${name} (${_newEnrollmentsForCreate.map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '수업없음'})`,
+                    google_login_id: currentUser?.email || 'system',
+                    timestamp: serverTimestamp(),
+                });
+                await batch.commit();
             }
             currentStudentId = docId;
         }
