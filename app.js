@@ -4810,7 +4810,11 @@ window.applyBulkStatus = async () => {
             if (!student) return;
             const oldStatus = student.status || '—';
             if (oldStatus === newStatus) return;
-            changes.push({ id, name: student.name, from: oldStatus, to: newStatus });
+            // 비재원 전환 시 enrollment 정리(공유 SSoT) — 안 비우면 rules가 batch 전체 거부(M-05).
+            const curEnroll = student.enrollments || [];
+            const { enrollments: reconciled } = reconcileEnrollments(newStatus, curEnroll);
+            const clearedEnroll = reconciled.length !== curEnroll.length;
+            changes.push({ id, name: student.name, from: oldStatus, to: newStatus, reconciled, clearedEnroll });
         });
 
         if (changes.length === 0) { showToast('변경할 학생이 없습니다. (이미 같은 상태)', 'warn'); return; }
@@ -4820,18 +4824,31 @@ window.applyBulkStatus = async () => {
             const chunk = changes.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(c => {
-                batch.update(doc(db, 'students', c.id), { status: newStatus });
-                const historyRef = doc(collection(db, 'history_logs'));
-                batch.set(historyRef, {
+                // status 메타 기록 — 단일저장과 동일한 audit 추적(N-07).
+                const update = {
+                    status: newStatus,
+                    status_changed_at: serverTimestamp(),
+                    status_changed_by: currentUser?.email || 'system',
+                    status_previous: c.from === '—' ? null : c.from,
+                };
+                if (c.clearedEnroll) update.enrollments = c.reconciled;
+                batch.update(doc(db, 'students', c.id), update);
+                batch.set(doc(collection(db, 'history_logs')), {
                     doc_id: c.id, change_type: 'UPDATE',
-                    before: `상태: ${c.from}`, after: `상태: ${c.to} (일괄변경)`,
+                    before: `상태: ${c.from}`, after: `상태: ${c.to} (일괄변경)${c.clearedEnroll ? ', 정규반 정리' : ''}`,
+                    google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                });
+                batch.set(doc(collection(db, 'history_logs')), {
+                    doc_id: c.id, change_type: 'STATUS_CHANGE',
+                    before: JSON.stringify({ status: c.from === '—' ? '' : c.from }),
+                    after: JSON.stringify({ status: c.to }),
                     google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
                 });
             });
             await batch.commit();
         }
 
-        changes.forEach(c => { const s = allStudents.find(s => s.id === c.id); if (s) s.status = newStatus; });
+        changes.forEach(c => { const s = allStudents.find(s => s.id === c.id); if (s) { s.status = newStatus; if (c.clearedEnroll) s.enrollments = c.reconciled; } });
         document.getElementById('bulk-status-select-panel').value = '';
         applyFilterAndRender();
         updateBulkEditSummary();
@@ -5254,11 +5271,11 @@ window.confirmBulkDelete = async () => {
     bulkDeleteOverlay.dataset.busy = '1';
 
     try {
-        // 퇴원 처리 전에 학생 이름을 미리 수집
-        const idNameMap = {};
+        // 퇴원 처리 전에 학생 이름·이전상태·enrollment를 미리 수집
+        const idInfo = {};
         ids.forEach(id => {
             const s = allStudents.find(s => s.id === id);
-            idNameMap[id] = s?.name || id;
+            idInfo[id] = { name: s?.name || id, from: s?.status || '', enrollments: s?.enrollments || [] };
         });
 
         const BATCH_SIZE = 200;
@@ -5266,16 +5283,32 @@ window.confirmBulkDelete = async () => {
             const chunk = ids.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(id => {
-                batch.set(doc(db, 'students', id), {
+                const info = idInfo[id];
+                // enrollment 정리(공유 SSoT) — 안 비우면 rules가 batch 전체 거부(M-05).
+                const { enrollments: reconciled } = reconcileEnrollments('퇴원', info.enrollments);
+                const update = {
                     status: '퇴원',
                     withdrawal_date: getTodayDateStr(),
-                }, { merge: true });
-                const historyRef = doc(collection(db, 'history_logs'));
-                batch.set(historyRef, {
+                    status_changed_at: serverTimestamp(),
+                    status_changed_by: currentUser?.email || 'system',
+                    status_previous: info.from || null,
+                };
+                if (reconciled.length !== info.enrollments.length) update.enrollments = reconciled;
+                batch.set(doc(db, 'students', id), update, { merge: true });
+                batch.set(doc(collection(db, 'history_logs')), {
                     doc_id: id, change_type: 'WITHDRAW',
-                    before: `학생: ${idNameMap[id]}`, after: '일괄 퇴원 처리',
+                    before: `학생: ${info.name} (상태:${info.from || '—'})`, after: '일괄 퇴원 처리',
                     google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
                 });
+                // 이미 퇴원이면 퇴원→퇴원 STATUS_CHANGE는 노이즈 — 실제 상태 전이일 때만 기록.
+                if (info.from !== '퇴원') {
+                    batch.set(doc(collection(db, 'history_logs')), {
+                        doc_id: id, change_type: 'STATUS_CHANGE',
+                        before: JSON.stringify({ status: info.from }),
+                        after: JSON.stringify({ status: '퇴원' }),
+                        google_login_id: currentUser?.email || '—', timestamp: serverTimestamp()
+                    });
+                }
             });
             await batch.commit();
         }
@@ -5283,6 +5316,7 @@ window.confirmBulkDelete = async () => {
         allStudents.forEach(s => {
             if (!selectedStudentIds.has(s.id)) return;
             s.status = '퇴원';
+            s.enrollments = reconcileEnrollments('퇴원', s.enrollments || []).enrollments;
         });
         window.closeBulkDeleteModal();
         window.exitBulkMode();
