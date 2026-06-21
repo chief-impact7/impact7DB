@@ -4802,6 +4802,7 @@ window.applyBulkStatus = async () => {
     if (!(await confirmModal({ title: '일괄 상태 변경', message: `선택한 ${selectedStudentIds.size}명의 상태를 '${newStatus}'(으)로 변경합니다.`, confirmText: '변경' }))) return;
 
     const ids = [...selectedStudentIds];
+    let committed = 0, total = 0;
     try {
         const changes = [];
 
@@ -4818,6 +4819,7 @@ window.applyBulkStatus = async () => {
         });
 
         if (changes.length === 0) { showToast('변경할 학생이 없습니다. (이미 같은 상태)', 'warn'); return; }
+        total = changes.length;
 
         const BATCH_SIZE = 200;
         for (let i = 0; i < changes.length; i += BATCH_SIZE) {
@@ -4846,16 +4848,20 @@ window.applyBulkStatus = async () => {
                 });
             });
             await batch.commit();
+            // 커밋된 청크만 로컬 반영 — 이후 청크가 실패해도 성공분과 로컬 상태가 일관(M-04).
+            chunk.forEach(c => { const s = allStudents.find(s => s.id === c.id); if (s) { s.status = newStatus; if (c.clearedEnroll) s.enrollments = c.reconciled; } });
+            committed += chunk.length;
         }
 
-        changes.forEach(c => { const s = allStudents.find(s => s.id === c.id); if (s) { s.status = newStatus; if (c.clearedEnroll) s.enrollments = c.reconciled; } });
         document.getElementById('bulk-status-select-panel').value = '';
         applyFilterAndRender();
         updateBulkEditSummary();
-        showToast(`${changes.length}명의 상태를 '${newStatus}'(으)로 변경했습니다.`, 'success');
+        showToast(`${committed}명의 상태를 '${newStatus}'(으)로 변경했습니다.`, 'success');
     } catch (e) {
         console.error('[BULK STATUS ERROR]', e);
-        showToast('일괄 상태 변경 실패: ' + e.message, 'error');
+        applyFilterAndRender();
+        updateBulkEditSummary();
+        showToast(`일괄 상태 변경 일부 실패: ${committed}/${total}명 처리됨. ${e.message}`, 'error');
     }
 };
 
@@ -5265,6 +5271,7 @@ window.closeBulkDeleteModal = (e) => {
 window.confirmBulkDelete = async () => {
     if (pastSemesterBlocked()) return;
     const ids = [...selectedStudentIds];
+    let committed = 0;
     const confirmBtn = document.querySelector('#bulk-delete-modal .btn-end-class-confirm');
     if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '퇴원 처리 중...'; }
     const bulkDeleteOverlay = document.getElementById('bulk-delete-modal');
@@ -5311,22 +5318,25 @@ window.confirmBulkDelete = async () => {
                 }
             });
             await batch.commit();
+            // 커밋된 청크만 로컬 반영 — 이후 청크 실패해도 성공분과 일관(M-04).
+            chunk.forEach(id => {
+                const s = allStudents.find(s => s.id === id);
+                if (s) { s.status = '퇴원'; s.enrollments = reconcileEnrollments('퇴원', s.enrollments || []).enrollments; }
+            });
+            committed += chunk.length;
         }
 
-        allStudents.forEach(s => {
-            if (!selectedStudentIds.has(s.id)) return;
-            s.status = '퇴원';
-            s.enrollments = reconcileEnrollments('퇴원', s.enrollments || []).enrollments;
-        });
         window.closeBulkDeleteModal();
         window.exitBulkMode();
         buildClassFilterSidebar();
         applyFilterAndRender();
         currentStudentId = null;
-        showToast(`${ids.length}명의 학생이 퇴원 처리되었습니다.`, 'success');
+        showToast(`${committed}명의 학생이 퇴원 처리되었습니다.`, 'success');
     } catch (e) {
         console.error('[BULK DELETE ERROR]', e);
-        showToast('일괄 퇴원 처리 실패: ' + e.message, 'error');
+        buildClassFilterSidebar();
+        applyFilterAndRender();
+        showToast(`일괄 퇴원 일부 실패: ${committed}/${ids.length}명 처리됨. ${e.message}`, 'error');
     } finally {
         if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '퇴원'; }
         delete bulkDeleteOverlay.dataset.busy;
@@ -6431,6 +6441,7 @@ window.saveGrammarSpecial = async () => {
         for (let i = 0; i < toSave.length; i += BATCH_SIZE) {
             const chunk = toSave.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
+            const pendingLocalSync = [];
 
             for (const entry of chunk) {
                 const allDays = [...new Set(entry.weeklySchedule.map(ws => ws.day))];
@@ -6469,12 +6480,8 @@ window.saveGrammarSpecial = async () => {
 
                     batch.update(doc(db, 'students', entry.docId), { enrollments });
 
-                    // Local sync
-                    if (existIdx >= 0) {
-                        existingS.enrollments[existIdx] = newEnrollment;
-                    } else {
-                        existingS.enrollments = [...(existingS.enrollments || []), newEnrollment];
-                    }
+                    // 커밋 성공 후에만 로컬 반영(N-08 — commit 전 변경하면 실패 시 phantom 상태).
+                    pendingLocalSync.push(() => { existingS.enrollments = enrollments; });
                 } else {
                     // New student (비원생) — create. 학교는 학부별 필드(SCHOOL_FIELD)에 저장(미러 제거).
                     const _schoolField = SCHOOL_FIELD[entry.level];
@@ -6496,8 +6503,8 @@ window.saveGrammarSpecial = async () => {
 
                     batch.set(doc(db, 'students', entry.docId), studentData);
 
-                    // Add to local allStudents
-                    allStudents.push({ ...studentData, id: entry.docId });
+                    // 커밋 성공 후에만 로컬 추가(N-08).
+                    pendingLocalSync.push(() => { allStudents.push({ ...studentData, id: entry.docId }); });
                 }
 
                 // History log
@@ -6514,6 +6521,7 @@ window.saveGrammarSpecial = async () => {
             }
 
             await batch.commit();
+            pendingLocalSync.forEach(fn => fn());
         }
 
         applyFilterAndRender();
