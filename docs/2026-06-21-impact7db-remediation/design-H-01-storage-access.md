@@ -66,7 +66,18 @@
 - claim-sync 함수: HR_users role 변경 → setCustomUserClaims 호출 단위 테스트(mock auth).
 - callable submitSignedContract: 토큰 검증·Admin write·URL 반환 + 만료/사용됨 거부.
 
-## 결정 필요 사항 (사용자 확인)
+## ✅ 결정됨 (2026-06-22): 전면 callable 서명URL (옵션 B)
+
+모든 HR 파일 read/write를 callable 경유로 한다. 서버가 역할(인증 직원, HR_users.role — 서버는 Firestore 조회 가능)·토큰(공개 서명자)을 검증한 뒤 처리하고, storage 직접 client 접근은 전면 차단(`allow read,write: if false`, Admin SDK 우회). 공개 서명자 PDF write도 이 방식이라 HR-13 degrade도 해소. custom claims(A)는 불필요.
+
+구현 순서(G02→G10→G03 패턴):
+1. 서버 foundation: functions-shared에 HR 파일 callable(업로드/다운로드, 역할·토큰 게이트, 서명URL 또는 서버 write) + 테스트. additive.
+2. HR 클라 전환: documents.ts·contractPdf.ts·storage.ts·settings 업로드를 callable 호출로.
+3. storage.rules HR 경로 전면 차단 + storage emulator 테스트. (배포는 G12: callable→HR→rules 순)
+
+인프라 주의: 서명 read URL은 런타임 SA의 signBlob 권한(Service Account Token Creator) 필요 — 없으면 서버 스트리밍/다운로드 토큰 대안.
+
+## (참고) 당초 결정 필요 사항
 1. 2단계 역할 게이트를 **custom claims(A)**로 갈지, 아니면 모든 HR 파일 접근을 **callable 서명URL(B 확장)**로 통일할지.
 2. `staff documents` read 권한: director 전용인지, 본인(staffId==uid) 허용인지 — HR의 staffId가 auth uid와 일치하는지 확인 필요.
 3. `signatures/`·`expenses/` 경로를 제거할지(미사용 확정 시) 보존할지.

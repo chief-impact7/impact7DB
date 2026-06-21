@@ -94,7 +94,8 @@ async function readDoc(ref) {
 }
 
 // 토큰 doc을 읽고 존재/사용여부/만료를 검증해 반환. 실패 시 HttpsError throw.
-async function loadValidToken(db, tokenType, tokenId) {
+// PUBLIC 업로드(서명 PDF) callable도 같은 게이트를 써야 하므로 export한다.
+export async function loadValidToken(db, tokenType, tokenId) {
   const meta = TOKEN_TYPES[tokenType];
   if (!meta) throw new HttpsError('invalid-argument', '알 수 없는 tokenType입니다.');
   if (!tokenId) throw new HttpsError('invalid-argument', 'tokenId가 필요합니다.');
