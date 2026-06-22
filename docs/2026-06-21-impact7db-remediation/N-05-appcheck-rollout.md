@@ -1,6 +1,26 @@
 # N-05 — App Check 롤아웃 (비용 callable 보호)
 
-> **상태 (2026-06-22): 내부 callable enforce 완료·운영 반영. 공개/태블릿은 wave 2.**
+> **근본원인 정정 (2026-06-22): enforce 직후 운영 장애 → 전면 롤백(enforce off) → 진짜 원인 확정 후 reCAPTCHA 도메인 수정.**
+>
+> **장애 증상:** enforce ON 직후 dsc.impact7.kr에서 학부모알림 작성·메시지 탭 조회·등원이 모두 `unauthenticated`(HTTP 401). AI(llmGenerate)는 됐다는 보고가 있었으나 실제로는 동일 인스턴스라 같이 깨졌어야 함.
+>
+> **확정 증거 (Cloud Logging, getStudentMessages 401):**
+> ```
+> jsonPayload: { message: "Callable request verification passed",
+>                verifications: { app: "MISSING", auth: "VALID" } }
+> httpRequest: { status: 401, referer: "https://dsc.impact7.kr/" }
+> ```
+> → **auth는 VALID, App Check 토큰만 MISSING.** 호출 출처가 **커스텀 도메인 `dsc.impact7.kr`**인데, reCAPTCHA Enterprise 키 allowedDomains엔 `impact7-app.web.app/impact7db.web.app/firebaseapp.com/localhost`만 있어 **운영 커스텀 도메인이 전부 누락** → 그 도메인에선 reCAPTCHA가 토큰을 발급 못 함 → App Check MISSING → enforce가 401.
+>
+> **오진 정정:** "DB app.js·tablet이 호출자라 init 누락" 가설은 틀림. 실제 메시지/알림/출결/AI callable은 **DSC만** 호출(`data-layer.js`·`checkin.js`, 모두 App Check 붙은 `functions=getFunctions(dataApp,'asia-northeast3')` 공유). DB 프론트는 functions-shared callable을 호출하지 않음(Firestore 직접). 따라서 DB엔 App Check init 불필요. tablet은 `tabletCheckin`만 호출(현재 enforce OFF).
+>
+> **수정 (2026-06-22 적용):** reCAPTCHA 키(6LcS4ywt…) allowedDomains에 운영 도메인 추가 →
+> `impact7.kr, app/db/dsc/hr/exam.impact7.kr, impact7-app/db/dsc/hr/tablet.web.app, firebaseapp.com, localhost`.
+> enforce는 OFF 유지 — **dsc/hr에서 새로고침해 토큰이 app:VALID로 발급되는지 로그로 확인한 뒤** 단계적 재적용.
+>
+> ---
+>
+> **이전 상태 (2026-06-22): 내부 callable enforce 완료·운영 반영. 공개/태블릿은 wave 2.** (← 도메인 누락으로 롤백됨)
 > 카나리(llmGenerate) 실클라 검증(DSC AI 정상) 후 **내부 호출 callable 18종 enforce: true 배포**.
 > - ✅ enforce ON: llmGenerate, generateStudentReportAi, runStudentReportBatchManual, createPromoCampaign,
 >   setPromoConsent, sendParentNotice, getStudentMessages, sendDirectMessage, createBulkMessage,
