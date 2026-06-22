@@ -8,10 +8,11 @@ metadata:
 2026-06-22 두 가지 인프라 함정/해법.
 
 ## 1) 생태계 서브도메인 라우팅 = Cloudflare Worker `impact7-proxy`
-- `*.impact7.kr`(app/db/dsc/hr/exam/dash/logbook/message/survey/kakao/newtest)는 **DNS 더미(AAAA `100::`) + Workers Custom Domain** 으로 단일 Worker에 바인딩된다. Page Rule/Transform/Origin rule **없음** — 라우팅·경로매핑은 전부 Worker 코드.
+- `*.impact7.kr`(app/db/dsc/hr/exam/dash/logbook/message/forms/survey/kakao/newtest)는 **DNS 더미(AAAA `100::`) + Workers Custom Domain** 으로 단일 Worker에 바인딩된다. Page Rule/Transform/Origin rule **없음** — 라우팅·경로매핑은 전부 Worker 코드.
 - 소스: **impact7-hosting/proxy-worker/index.js** (`HOSTS` 맵). 배포: `cd proxy-worker && wrangler deploy`. 워커 이름 **impact7-proxy**(구 newtest-proxy에서 개명, 2026-06-22).
 - 각 호스트는 루트(/)를 진입경로로 rewrite + 하위디렉토리 호스트엔 `<base href>` 주입. 주소창은 서브도메인 유지(프록시, 302 아님).
-- **개명/이관 검증 완료(2026-06-22)**: 옛 `newtest-proxy` 워커는 Cloudflare 계정에 **부재**(`wrangler deployments list --name newtest-proxy` → code 10007) — 잔존 워커로 인한 custom domain 바인딩 충돌 없음. `impact7-proxy` 단일 워커가 전 도메인 서빙, 10개 서브도메인 라이브 **전부 200**(app/db/dsc/hr/exam/dash/logbook/message/survey/newtest). 개명·폴더이관은 워커 식별자·소스 위치만 바꾼 것이라 라우팅 로직·바인딩·origin 매핑 불변 → 앱 영향 없음.
+- **개명/이관 검증 완료(2026-06-22)**: 옛 `newtest-proxy` 워커는 Cloudflare 계정에 **부재**(`wrangler deployments list --name newtest-proxy` → code 10007) — 잔존 워커로 인한 custom domain 바인딩 충돌 없음. `impact7-proxy` 단일 워커가 전 도메인 서빙. 개명·폴더이관은 워커 식별자·소스 위치만 바꾼 것이라 라우팅 로직·바인딩·origin 매핑 불변 → 앱 영향 없음.
+- **forms.impact7.kr 합류 + custom domain 함정(2026-06-22, 재발 주의)**: 신규 서브도메인은 `wrangler.toml` routes에 `custom_domain = true` 추가 + `index.js` `HOSTS` 매핑 + `firebase.json` rewrite(`/forms`→`/forms-admin/index.html`, `/forms/**`·`/forms-admin/api/**`→Cloud Run `impact7-forms-api`)가 한 세트. **함정**: `custom_domain` route를 추가하고 `wrangler deploy`해도 **첫 배포에서 Custom Domain(=DNS 레코드) 생성이 조용히 누락**될 수 있다(워커 코드 업로드는 성공 처리 → `forms.impact7.kr` NXDOMAIN). **해법: `wrangler deploy` 한 번 더 실행** → trigger 목록에 `forms.impact7.kr (custom domain)` 생성됨. 또 새 도메인은 직후 로컬 macOS `mDNSResponder` negative 캐시로 시스템 `curl`이 잠시 `000`(실서비스는 정상 — `--resolve`로 직접연결 시 200·SSL OK로 확인). 즉시 풀려면 `sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder`. 11개 서브도메인 라이브 **전부 200** 검증완료.
 
 ## 2) HR 깔끔한 루트 해법 (완료, /hr 없음)
 - **HR(SvelteKit, base=/hr)** 은 브라우저 경로가 base로 시작해야 부팅 → 통합 `/hr` 콘텐츠를 루트(/)에서 주면 **무한로딩/freeze**(DB/DSC=Vite는 루트서 OK).
