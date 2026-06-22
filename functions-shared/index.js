@@ -44,9 +44,9 @@ setGlobalOptions({
   maxInstances: 10,
 });
 
-// App Check은 후속 과제: 현재 유일 호출자인 DSC가 App Check 미설정이라 false로 시작.
-// 호출자 보호는 handleLlmGenerate의 request.auth(로그인 직원만)로 유지.
-export const llmGenerate = onCall({ enforceAppCheck: false }, handleLlmGenerate);
+// App Check enforce (N-05 카나리). DSC가 App Check init(reCAPTCHA Enterprise) 배포됨 → 토큰 검증.
+// 문제 시 false로 즉시 롤백. 호출자 보호는 request.auth(직원) + rate limit도 유지.
+export const llmGenerate = onCall({ enforceAppCheck: true }, handleLlmGenerate);
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 호출로 생성(기존 consultation/status 콜러블 통합).
 // Chat 언급은 syncChatMessages가 적재한 chat_messages를 조회하므로 여기엔 secret 불필요.
 export const generateStudentReportAi = onCall({ enforceAppCheck: false }, handleGenerateStudentReportAi);
