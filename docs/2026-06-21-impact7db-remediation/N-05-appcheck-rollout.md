@@ -1,6 +1,12 @@
 # N-05 — App Check 롤아웃 계획 (비용 callable 보호)
 
-- 상태: 계획 (자동 활성화 불가 — 콘솔 + 클라 선행)
+> **결론 (2026-06-22): 의도적 미적용 — 추후 필요 시 진행.**
+> App Check는 "외부 계정" 차단이 아니라 "진짜 앱이 아닌 클라이언트(스크립트·봇·토큰 도용 후 앱 외부 호출)"를 막는 기능이다.
+> 핵심 위험인 **외부 계정의 유료/PII 접근은 이미 도메인 인증(assertAuthorizedStaff) + llmGenerate rate limit + 공개 토큰 CSPRNG·1회용·만료로 차단**됐다.
+> App Check가 추가로 막는 시나리오(직원 토큰 탈취 후 스크립트 호출 등)는 사내 도구 특성상 확률이 낮고, reCAPTCHA 키(콘솔)+5앱 클라 init+영구 의존 비용이 크다.
+> → 현 시점 **불필요**. 봇/스크래핑 방어를 강화하고 싶어질 때 아래 계획대로 진행한다. (reCAPTCHA는 App Check 전용 부품이라 그 전엔 발급 불필요.)
+
+- 상태: 의도적 미적용 (자동 활성화 불가 — 콘솔 + 클라 선행)
 - 대상: 비용/민감 callable(llmGenerate, generateStudentReportAi, runStudentReportBatchManual, sendKakao, hrUpload*/getHrPublicToken 등). 현재 전부 `enforceAppCheck: false`.
 
 ## 왜 지금 못 켜나 (load-bearing)
