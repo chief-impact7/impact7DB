@@ -49,7 +49,7 @@ setGlobalOptions({
 export const llmGenerate = onCall({ enforceAppCheck: true }, handleLlmGenerate);
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 호출로 생성(기존 consultation/status 콜러블 통합).
 // Chat 언급은 syncChatMessages가 적재한 chat_messages를 조회하므로 여기엔 secret 불필요.
-export const generateStudentReportAi = onCall({ enforceAppCheck: false }, handleGenerateStudentReportAi);
+export const generateStudentReportAi = onCall({ enforceAppCheck: true }, handleGenerateStudentReportAi);
 
 // CHAT_SA_KEY: DWD로 chief@를 가장해 Chat 메시지를 읽는 SA 키.
 // 하루 1회 chief 스페이스 신규 메시지를 증분 수집 → 재원생 이름 태깅 → chat_messages 적재.
@@ -70,7 +70,7 @@ export const runStudentReportAutomation = onSchedule(
 // manual: director 등급 이상이 새 배치를 즉시 시작(첫 청크). 미완료분은 scheduled 5분 틱이 이어받음.
 // 진행률은 automation_settings(progress_done/progress_total/batch_active)를 onSnapshot 구독.
 export const runStudentReportBatchManual = onCall(
-  { enforceAppCheck: false, timeoutSeconds: 540, memory: '512MiB' },
+  { enforceAppCheck: true, timeoutSeconds: 540, memory: '512MiB' },
   handleRunStudentReportBatchManual,
 );
 
@@ -85,16 +85,16 @@ export const getHrPublicToken = onCall({ enforceAppCheck: false }, handleGetHrPu
 // Admin SDK로 write한다(서명 write URL 불필요 → signBlob 의존 없음). 다운로드는 Firebase
 // download token 기반 URL(client getDownloadURL과 동일 형태)을 발급한다.
 // 인증 업로드(직원문서·관리자 계약 PDF)는 원장급 게이트(assertDirector).
-export const hrUploadStaffDocument = onCall({ enforceAppCheck: false }, handleHrUploadStaffDocument);
-export const hrUploadContract = onCall({ enforceAppCheck: false }, handleHrUploadContract);
+export const hrUploadStaffDocument = onCall({ enforceAppCheck: true }, handleHrUploadStaffDocument);
+export const hrUploadContract = onCall({ enforceAppCheck: true }, handleHrUploadContract);
 // 공개(비로그인) 서명자 PDF 업로드 — 토큰 게이트(존재·미사용·미만료). HR-13 degrade 수정.
 // ownerId/contractId는 토큰 doc에서 도출(호출자 입력 무시). assertAuthorizedStaff 미사용(의도).
 export const hrUploadSignedContract = onCall({ enforceAppCheck: false }, handleHrUploadSignedContract);
 // 다운로드 URL 발급 — 인증(원장급, HR 경로) 또는 공개 토큰(자기 계약 경로만).
 export const hrGetFileUrl = onCall({ enforceAppCheck: false }, handleHrGetFileUrl);
 // 사업자(법인) 문서 업로드(entities/) + HR 파일 삭제 — 원장급 게이트.
-export const hrUploadEntityDocument = onCall({ enforceAppCheck: false }, handleHrUploadEntityDocument);
-export const hrDeleteFile = onCall({ enforceAppCheck: false }, handleHrDeleteFile);
+export const hrUploadEntityDocument = onCall({ enforceAppCheck: true }, handleHrUploadEntityDocument);
+export const hrDeleteFile = onCall({ enforceAppCheck: true }, handleHrDeleteFile);
 
 export const healthCheck = onRequest(
   { invoker: 'public' },
@@ -126,29 +126,29 @@ export const tabletCheckin = onCall({ enforceAppCheck: false }, handleTabletChec
 
 // 홍보(브랜드 메시지) 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo) 배치 enqueue.
 // 야간(광고 제한)이면 익일 08:00 자동 예약. 발송은 워커(onMessageQueued)가 수행.
-export const createPromoCampaign = onCall({ enforceAppCheck: false }, handleCreatePromoCampaign);
+export const createPromoCampaign = onCall({ enforceAppCheck: true }, handleCreatePromoCampaign);
 
 // 홍보 광고 수신동의 설정/철회(옵트아웃). 직원 권한. 철회 시 이후 캠페인 SMS 대체에서 영구 제외.
-export const setPromoConsent = onCall({ enforceAppCheck: false }, handleSetPromoConsent);
+export const setPromoConsent = onCall({ enforceAppCheck: true }, handleSetPromoConsent);
 
 // 개별 학부모 정보성 안내(알림톡) 발송 — 학생 상세 '메시지' 탭. 직원 권한. 동의·야간 제한 없음.
-export const sendParentNotice = onCall({ enforceAppCheck: false }, handleSendParentNotice);
+export const sendParentNotice = onCall({ enforceAppCheck: true }, handleSendParentNotice);
 
 // 학생별 발송 내역(message_logs) 조회 — 메시지 탭 하단. 직원 권한.
-export const getStudentMessages = onCall({ enforceAppCheck: false }, handleGetStudentMessages);
+export const getStudentMessages = onCall({ enforceAppCheck: true }, handleGetStudentMessages);
 
 // 임의 번호 정보성 SMS 즉석 발송 — 메시지 센터 ③블록. 직원 권한. 번호별 kind=direct enqueue.
-export const sendDirectMessage = onCall({ enforceAppCheck: false }, handleSendDirectMessage);
+export const sendDirectMessage = onCall({ enforceAppCheck: true }, handleSendDirectMessage);
 
 // 정보성 대용량 발송 — 메시지 센터 ②블록. 직원 권한. message_queue(kind=promo, targeting=I) 배치 enqueue.
-export const createBulkMessage = onCall({ enforceAppCheck: false }, handleCreateBulkMessage);
+export const createBulkMessage = onCall({ enforceAppCheck: true }, handleCreateBulkMessage);
 
 // 카카오 채널 친구목록 업로드 동기화 / 조회 — 직원 권한.
-export const syncChannelFriends = onCall({ enforceAppCheck: false }, handleSyncChannelFriends);
-export const getChannelFriends = onCall({ enforceAppCheck: false }, handleGetChannelFriends);
+export const syncChannelFriends = onCall({ enforceAppCheck: true }, handleSyncChannelFriends);
+export const getChannelFriends = onCall({ enforceAppCheck: true }, handleGetChannelFriends);
 
 // 일일 학습 리포트 발송 — 직원 권한. 친구→정보형 BMS, 비친구→가입안내 SMS.
-export const sendDailyReport = onCall({ enforceAppCheck: false }, handleSendDailyReport);
+export const sendDailyReport = onCall({ enforceAppCheck: true }, handleSendDailyReport);
 
 // 광고 수신동의 2년 주기 재확인(정보통신망법 §50의8) — 매일 KST 09:00. 골격: 대상 식별·집계.
 // 실제 통지 발송은 동의자·수단 확정 후 연결.
@@ -158,10 +158,10 @@ export const promoConsentReconfirm = onSchedule(
 );
 
 // 관리자 발송 현황 화면(T6)의 수동 재시도 — 실패 큐 doc을 failed_retryable로 되돌려 sweeper 재처리.
-export const retryMessageDelivery = onCall({ enforceAppCheck: false }, handleRetryMessageDelivery);
+export const retryMessageDelivery = onCall({ enforceAppCheck: true }, handleRetryMessageDelivery);
 
 // 발송 현황 집계 — 큐 read를 차단(T11)하므로 대시보드는 이 callable로 카운트+마스킹 실패목록만 받는다.
-export const getMessageDeliveryStatus = onCall({ enforceAppCheck: false }, handleGetMessageDeliveryStatus);
+export const getMessageDeliveryStatus = onCall({ enforceAppCheck: true }, handleGetMessageDeliveryStatus);
 
 // === 메시지 큐 워커 (T3) ===
 // 큐 등록 즉시 단발 발송. 솔라피 호출은 src/queueWorker.js → solapiProvider(T2)에 위임.
