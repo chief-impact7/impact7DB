@@ -17,6 +17,7 @@ metadata:
 - 해법: HR을 **base=''** 로 전용 사이트 **impact7hr.web.app** 에 배포 + `impact7-proxy`의 hr 매핑을 `{ origin: impact7hr.web.app, root:"/", base:"/" }` 로 변경. → hr.impact7.kr/ 가 /hr 없이 깔끔하게 뜬다. (실브라우저 렌더 검증 완료)
 - impact7hr 배포는 **통합 파이프라인(impact7-hosting/deploy.yml)** 이 HR 커밋마다 동기 배포(drift 방지). 통합 `impact7-app/hr`(base=/hr)도 허브 링크용으로 유지(이중 빌드).
 - HR `firebase.json`: `_redirect` → `public:"build"`+SPA rewrite (90ea5f1). impact7-hosting 워커 이관 (04012fa).
+- **함정(SW 캐시)**: HR엔 `static/sw.js` 서비스워커(network-first지만 `fetch(req)`가 HTTP 캐시 존중)가 있어, base 변경 후 옛 base=/hr 셸이 HTTP/SW 캐시에서 서빙돼 **무한로딩**. 수정: CACHE_NAME v1→**v2**(activate에서 옛 캐시 삭제) + 내비게이션 `cache:'reload'`로 HTTP 캐시 우회·미캐시 (4dd79c4). **사용자측은 1회 'Clear site data'** 필요(옛 SW 제거). SPA base 경로 변경 시 SW 캐시명 bump 필수 교훈.
 
 ## 3) App Check enforce — 영구 보류 (확정: 한 번도 작동 안 함)
 - **근본 원인**: reCAPTCHA Enterprise 키 충돌. 페이지에 ①App Check `enterprise.js?render=<siteKey>` ②**Firebase Auth `enterprise.js?render=explicit`**(firebase ^12.15, Auth reCAPTCHA Enterprise 활성)가 둘 다 로드 → Auth가 먼저 로드돼 App Check 키가 grecaptcha에 미등록 → `execute()` "Invalid site key or not loaded" → 토큰 0 → 모든 callable **`app:MISSING`**.
