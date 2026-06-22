@@ -1,6 +1,16 @@
 # N-05 — App Check 롤아웃 (비용 callable 보호)
 
-> **상태 (2026-06-22): 진행 중 — 인프라+클라 완료, enforcement만 메트릭 검증 후 남음.**
+> **상태 (2026-06-22): 내부 callable enforce 완료·운영 반영. 공개/태블릿은 wave 2.**
+> 카나리(llmGenerate) 실클라 검증(DSC AI 정상) 후 **내부 호출 callable 18종 enforce: true 배포**.
+> - ✅ enforce ON: llmGenerate, generateStudentReportAi, runStudentReportBatchManual, createPromoCampaign,
+>   setPromoConsent, sendParentNotice, getStudentMessages, sendDirectMessage, createBulkMessage,
+>   syncChannelFriends, getChannelFriends, sendDailyReport, retryMessageDelivery, getMessageDeliveryStatus(이상 DSC),
+>   hrUploadStaffDocument, hrUploadContract, hrUploadEntityDocument, hrDeleteFile(이상 HR 내부).
+> - ⏸ enforce OFF(의도): getHrPublicToken·hrUploadSignedContract(공개 서명자 — 외부 기기 reCAPTCHA score 오탐 위험),
+>   hrGetFileUrl(dual-use 다운로드, 공개 경로 포함), attendanceCheckin·tabletCheckin(tablet 미적용 — wave 2), sendKakao(stub).
+> - **wave 2**: tablet appId App Check 등록 + tablet 클라 init → checkin류 enforce. 공개 서명은 reCAPTCHA score 모니터링 후 결정(또는 영구 OFF — 이미 토큰 CSPRNG·1회용·만료로 보호).
+
+> **이전 상태 (참고): 진행 중 — 인프라+클라 완료, enforcement만 메트릭 검증 후 남음.**
 > 사용자 결정으로 App Check 도입을 진행했다. 인프라(reCAPTCHA Enterprise 키 + impact7-web 등록)와
 > 클라 init(DSC·HR, 미강제)을 운영 배포했다. **이제 토큰이 흐른다(미강제).**
 > 남은 것은 ① 실트래픽으로 App Check 메트릭이 verified 100%인지 확인 → ② callable별 enforceAppCheck 플립.
