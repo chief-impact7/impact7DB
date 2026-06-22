@@ -60,4 +60,4 @@
 
 - [codegraph 활용 가이드](reference_codegraph_guide.md) — 인덱스 현황, 도메인별 탐색 쿼리, 주요 모듈 위치
 
-- [HR 깔끔한 루트 + 생태계 프록시 워커 + App Check 도메인](project_hr_cleanroot_appcheck_domains.md) — *.impact7.kr 라우팅은 Cloudflare Worker **impact7-proxy**(소스 impact7-hosting/proxy-worker, 구 newtest-proxy 개명). hr는 SvelteKit base=/hr라 루트서 부팅 불가 → base='' 전용 impact7hr.web.app를 루트 프록시(완료, 검증됨). App Check enforce는 reCAPTCHA 키에 *.impact7.kr 등록 필수(app:MISSING 401 함정) (2026-06-22)
+- [HR 깔끔한 루트 + 생태계 프록시 워커 + App Check 도메인](project_hr_cleanroot_appcheck_domains.md) — *.impact7.kr 라우팅은 Cloudflare Worker **impact7-proxy**(소스 impact7-hosting/proxy-worker, 구 newtest-proxy 개명; 옛 워커 계정 부재·10개 서브도메인 라이브 200 검증완료). hr는 SvelteKit base=/hr라 루트서 부팅 불가 → base='' 전용 impact7hr.web.app를 루트 프록시(완료, 검증됨). App Check enforce는 reCAPTCHA 키에 *.impact7.kr 등록 필수(app:MISSING 401 함정) (2026-06-22)

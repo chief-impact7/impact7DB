@@ -11,6 +11,7 @@ metadata:
 - `*.impact7.kr`(app/db/dsc/hr/exam/dash/logbook/message/survey/kakao/newtest)는 **DNS 더미(AAAA `100::`) + Workers Custom Domain** 으로 단일 Worker에 바인딩된다. Page Rule/Transform/Origin rule **없음** — 라우팅·경로매핑은 전부 Worker 코드.
 - 소스: **impact7-hosting/proxy-worker/index.js** (`HOSTS` 맵). 배포: `cd proxy-worker && wrangler deploy`. 워커 이름 **impact7-proxy**(구 newtest-proxy에서 개명, 2026-06-22).
 - 각 호스트는 루트(/)를 진입경로로 rewrite + 하위디렉토리 호스트엔 `<base href>` 주입. 주소창은 서브도메인 유지(프록시, 302 아님).
+- **개명/이관 검증 완료(2026-06-22)**: 옛 `newtest-proxy` 워커는 Cloudflare 계정에 **부재**(`wrangler deployments list --name newtest-proxy` → code 10007) — 잔존 워커로 인한 custom domain 바인딩 충돌 없음. `impact7-proxy` 단일 워커가 전 도메인 서빙, 10개 서브도메인 라이브 **전부 200**(app/db/dsc/hr/exam/dash/logbook/message/survey/newtest). 개명·폴더이관은 워커 식별자·소스 위치만 바꾼 것이라 라우팅 로직·바인딩·origin 매핑 불변 → 앱 영향 없음.
 
 ## 2) HR 깔끔한 루트 해법 (완료, /hr 없음)
 - **HR(SvelteKit, base=/hr)** 은 브라우저 경로가 base로 시작해야 부팅 → 통합 `/hr` 콘텐츠를 루트(/)에서 주면 **무한로딩/freeze**(DB/DSC=Vite는 루트서 OK).
