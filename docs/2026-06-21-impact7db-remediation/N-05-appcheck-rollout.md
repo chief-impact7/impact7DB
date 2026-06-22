@@ -1,12 +1,30 @@
-# N-05 — App Check 롤아웃 계획 (비용 callable 보호)
+# N-05 — App Check 롤아웃 (비용 callable 보호)
 
-> **결론 (2026-06-22): 의도적 미적용 — 추후 필요 시 진행.**
-> App Check는 "외부 계정" 차단이 아니라 "진짜 앱이 아닌 클라이언트(스크립트·봇·토큰 도용 후 앱 외부 호출)"를 막는 기능이다.
-> 핵심 위험인 **외부 계정의 유료/PII 접근은 이미 도메인 인증(assertAuthorizedStaff) + llmGenerate rate limit + 공개 토큰 CSPRNG·1회용·만료로 차단**됐다.
-> App Check가 추가로 막는 시나리오(직원 토큰 탈취 후 스크립트 호출 등)는 사내 도구 특성상 확률이 낮고, reCAPTCHA 키(콘솔)+5앱 클라 init+영구 의존 비용이 크다.
-> → 현 시점 **불필요**. 봇/스크래핑 방어를 강화하고 싶어질 때 아래 계획대로 진행한다. (reCAPTCHA는 App Check 전용 부품이라 그 전엔 발급 불필요.)
+> **상태 (2026-06-22): 진행 중 — 인프라+클라 완료, enforcement만 메트릭 검증 후 남음.**
+> 사용자 결정으로 App Check 도입을 진행했다. 인프라(reCAPTCHA Enterprise 키 + impact7-web 등록)와
+> 클라 init(DSC·HR, 미강제)을 운영 배포했다. **이제 토큰이 흐른다(미강제).**
+> 남은 것은 ① 실트래픽으로 App Check 메트릭이 verified 100%인지 확인 → ② callable별 enforceAppCheck 플립.
+> **블라인드 enforce 금지**: reCAPTCHA 오설정(도메인/score)이면 신규 클라까지 깨지므로, 메트릭 확인 전 켜지 않는다.
 
-- 상태: 의도적 미적용 (자동 활성화 불가 — 콘솔 + 클라 선행)
+## 완료 (운영 반영)
+- reCAPTCHA Enterprise 키: `6LcS4ywtAAAAADd8BBiFo_Fd4XXiXT1Uf3gHGxYl` (score, 도메인 impact7-app.web.app·impact7db.web.app·firebaseapp.com·localhost).
+- App Check 등록: **impact7-web** appId(1:485669859162:web:2cfe866520c0b8f3f74d63 — DB/DSC/HR 공유)에 reCAPTCHA Enterprise provider(tokenTtl 1h, minScore 0.5).
+- 클라 init 배포: **DSC**(firebase-config.js dataApp) + **HR**(config.ts dataApp, 공개페이지 포함). 둘 다 미강제, 토큰 발행 중.
+
+## 남은 단계 (enforcement runbook)
+1. **메트릭 확인**: Firebase 콘솔 App Check 또는 API로 impact7-web의 verified/unverified 비율 확인. 실사용자가 새 클라를 받아 verified가 충분히(>~95%) 오를 때까지 대기(보통 1일 내 — 사용자 새로고침).
+   - 로컬 개발용 디버그 토큰: DSC/HR을 localhost로 열면 콘솔에 디버그 토큰 출력 → App Check 콘솔에 등록해야 로컬서 verified.
+2. **callable별 enforce 플립**(functions-shared/index.js `enforceAppCheck: false`→`true` + 배포). 권장 순서(저위험→):
+   - llmGenerate(카나리, DSC만·비핵심) → generateStudentReportAi·runStudentReportBatchManual → getHrPublicToken·hrUpload*·hrGetFileUrl(HR) .
+   - **주의**: attendanceCheckin·tabletCheckin은 tablet도 호출 → tablet 앱 init+등록(아래 wave 2) 전엔 enforce 금지.
+   - 각 플립 후 해당 기능 1건 smoke. 문제 시 그 callable만 false로 롤백.
+3. **Wave 2 — tablet/exam**: tablet은 자체 appId(impact7-web 아님) → App Check 등록 + tablet 클라 init 후 tabletCheckin/checkin enforce. exam도 호출 callable 있으면 동일.
+
+## 비고
+- 외부 계정/PII는 이미 도메인 인증+rate limit+CSPRNG로 차단됨(App Check는 봇/토큰도용 앱외부호출 보강).
+- reCAPTCHA Enterprise: 월 1만 평가 무료 → 학원 규모 무료권 내 예상.
+
+- 상태: 인프라·클라 완료 / enforcement 대기(메트릭 검증 후)
 - 대상: 비용/민감 callable(llmGenerate, generateStudentReportAi, runStudentReportBatchManual, sendKakao, hrUpload*/getHrPublicToken 등). 현재 전부 `enforceAppCheck: false`.
 
 ## 왜 지금 못 켜나 (load-bearing)
