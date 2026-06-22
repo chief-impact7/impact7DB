@@ -59,3 +59,5 @@
 - [역할값 리네임 원자적 마이그레이션](feedback_role_rename_atomic_migration.md) — rules 배포+데이터 마이그레이션+4-repo 동기화는 한 작업으로, 리스너 에러 콜백 필수 (2026-06-12 HR 원장 RBAC 역전 먹통 사고)
 
 - [codegraph 활용 가이드](reference_codegraph_guide.md) — 인덱스 현황, 도메인별 탐색 쿼리, 주요 모듈 위치
+
+- [HR 깔끔한 루트 + App Check 도메인](project_hr_cleanroot_appcheck_domains.md) — hr.impact7.kr 루트는 SvelteKit base=/hr라 통합 도메인 루트서 부팅 불가 → base='' 전용 사이트 impact7hr에 CI 동기 배포(통합 파이프라인). 남은 건 Cloudflare 직결. App Check enforce는 reCAPTCHA 키에 *.impact7.kr 운영 도메인 등록 필수(app:MISSING 401 함정) (2026-06-22)
