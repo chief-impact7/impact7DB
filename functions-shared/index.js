@@ -31,6 +31,8 @@ import {
   handleHrUploadContract,
   handleHrUploadSignedContract,
   handleHrGetFileUrl,
+  handleHrUploadEntityDocument,
+  handleHrDeleteFile,
 } from './src/hrUploadHandler.js';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './src/solapiSecrets.js';
 import { computeLabelUpdate } from './src/studentLabelSync.js';
@@ -88,8 +90,11 @@ export const hrUploadContract = onCall({ enforceAppCheck: false }, handleHrUploa
 // 공개(비로그인) 서명자 PDF 업로드 — 토큰 게이트(존재·미사용·미만료). HR-13 degrade 수정.
 // ownerId/contractId는 토큰 doc에서 도출(호출자 입력 무시). assertAuthorizedStaff 미사용(의도).
 export const hrUploadSignedContract = onCall({ enforceAppCheck: false }, handleHrUploadSignedContract);
-// 다운로드 URL 발급 — 인증(원장급, staff/·contracts/ 경로) 또는 공개 토큰(자기 계약 경로만).
+// 다운로드 URL 발급 — 인증(원장급, HR 경로) 또는 공개 토큰(자기 계약 경로만).
 export const hrGetFileUrl = onCall({ enforceAppCheck: false }, handleHrGetFileUrl);
+// 사업자(법인) 문서 업로드(entities/) + HR 파일 삭제 — 원장급 게이트.
+export const hrUploadEntityDocument = onCall({ enforceAppCheck: false }, handleHrUploadEntityDocument);
+export const hrDeleteFile = onCall({ enforceAppCheck: false }, handleHrDeleteFile);
 
 export const healthCheck = onRequest(
   { invoker: 'public' },

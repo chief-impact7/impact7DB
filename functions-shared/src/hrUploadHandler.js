@@ -28,6 +28,12 @@ function bucketOf(deps) {
 const SIGN_TOKEN_TYPES = new Set(['contractSigning', 'employeeContractSigning', 'salaryAgreement']);
 const CONTRACT_PDF_TYPES = new Set(['contract', 'salary']);
 
+// 인증 경로 접근이 허용되는 HR Storage 최상위 prefix. 임의 경로 read/delete 차단.
+const HR_FILE_PREFIXES = ['staff/', 'contracts/', 'expenses/', 'signatures/', 'entities/'];
+function isHrPath(path) {
+  return HR_FILE_PREFIXES.some((p) => path.startsWith(p));
+}
+
 // === 1) 인증 직원: 직원 문서 업로드 → staff/{staffId}/documents/{ts}_{safeName} ===
 // 비용/PII가 걸린 파일 쓰기이므로 원장급 게이트(assertDirector). request.data로 staffId만 받고
 // fileName은 정규화한다. 반환 downloadUrl은 클라가 Firestore documents 서브컬렉션에 저장한다.
@@ -130,10 +136,42 @@ export async function handleHrGetFileUrl(request, deps = {}) {
     return getOrCreateDownloadUrl(bucketOf(deps), path, { mintIfMissing: false });
   }
 
-  // 인증 게이트: 원장급만. HR 파일 경로(staff/ 또는 contracts/)만 허용.
+  // 인증 게이트: 원장급만. HR 파일 경로만 허용.
   await assertDirector(request.auth, db);
-  if (!path.startsWith('staff/') && !path.startsWith('contracts/')) {
+  if (!isHrPath(path)) {
     throw new HttpsError('invalid-argument', '허용되지 않은 파일 경로입니다.');
   }
   return getOrCreateDownloadUrl(bucketOf(deps), path);
+}
+
+// === 5) 인증 직원: 사업자(법인) 문서 업로드 → entities/{entityId}/{ts}_{safeName} ===
+export async function handleHrUploadEntityDocument(request, deps = {}) {
+  const db = deps.firestore ?? getFirestore();
+  await assertDirector(request.auth, db);
+
+  const data = request.data ?? {};
+  const entityId = assertSafePathId(data.entityId, 'entityId');
+
+  const { buffer, contentType } = decodeAndValidate(data.dataBase64, data.contentType);
+  const safeName = safeFileName(data.fileName);
+  const path = `entities/${entityId}/${Date.now()}_${safeName}`;
+
+  return writeFileWithDownloadUrl(bucketOf(deps), path, buffer, contentType);
+}
+
+// === 6) 인증 직원: HR 파일 삭제 (직접 deleteObject 차단 대체) ===
+// path는 HR prefix만 허용. 없는 파일은 멱등 성공(deleted:false).
+export async function handleHrDeleteFile(request, deps = {}) {
+  const db = deps.firestore ?? getFirestore();
+  await assertDirector(request.auth, db);
+
+  const path = textOf(request.data?.path);
+  if (!path || !isHrPath(path)) {
+    throw new HttpsError('invalid-argument', '허용되지 않은 파일 경로입니다.');
+  }
+  const file = bucketOf(deps).file(path);
+  const [exists] = await file.exists();
+  if (!exists) return { deleted: false };
+  await file.delete();
+  return { deleted: true };
 }

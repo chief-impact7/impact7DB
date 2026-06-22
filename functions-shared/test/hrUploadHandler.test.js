@@ -8,6 +8,8 @@ const {
   handleHrUploadContract,
   handleHrUploadSignedContract,
   handleHrGetFileUrl,
+  handleHrUploadEntityDocument,
+  handleHrDeleteFile,
 } = await import('../src/hrUploadHandler.js');
 
 const auth = { uid: 'u1', token: { email: 'director@impact7.kr' } };
@@ -47,9 +49,11 @@ function makeFirestore({ role = 'owner', tokens = {} } = {}) {
 function makeBucket({ existing = {} } = {}) {
   const saved = [];
   const meta = { ...existing };
+  const deleted = [];
   return {
     name: 'impact7db.firebasestorage.app',
     _saved: saved,
+    _deleted: deleted,
     file(path) {
       return {
         async save(buffer, opts) {
@@ -63,6 +67,10 @@ function makeBucket({ existing = {} } = {}) {
         },
         async setMetadata(m) {
           meta[path] = { ...(meta[path] ?? {}), metadata: { ...(meta[path]?.metadata ?? {}), ...m.metadata } };
+        },
+        async delete() {
+          deleted.push(path);
+          delete meta[path];
         },
       };
     },
@@ -357,5 +365,61 @@ describe('hrGetFileUrl', () => {
     const bucket = makeBucket({ existing: { [path]: { metadata: {} } } });
     const res = await handleHrGetFileUrl({ auth, data: { path } }, { firestore: makeFirestore({}), bucket });
     expect(res.downloadUrl).toMatch(/token=[0-9a-f-]{36}$/);
+  });
+});
+
+describe('handleHrUploadEntityDocument', () => {
+  it('원장: entities/{id} 경로에 업로드', async () => {
+    const bucket = makeBucket();
+    const res = await handleHrUploadEntityDocument(
+      { auth, data: { entityId: 'e1', fileName: 'biz.pdf', contentType: 'application/pdf', dataBase64: PDF_B64 } },
+      { firestore: makeFirestore({ role: 'owner' }), bucket },
+    );
+    expect(res.path).toMatch(/^entities\/e1\/\d+_biz\.pdf$/);
+    expect(bucket._saved).toHaveLength(1);
+  });
+
+  it('비원장 거부', async () => {
+    const bucket = makeBucket();
+    await expect(handleHrUploadEntityDocument(
+      { auth, data: { entityId: 'e1', fileName: 'b.pdf', contentType: 'application/pdf', dataBase64: PDF_B64 } },
+      { firestore: makeFirestore({ role: 'staff' }), bucket },
+    )).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+
+  it('경로 traversal ID 거부', async () => {
+    const bucket = makeBucket();
+    await expect(handleHrUploadEntityDocument(
+      { auth, data: { entityId: '../staff/x', fileName: 'b.pdf', contentType: 'application/pdf', dataBase64: PDF_B64 } },
+      { firestore: makeFirestore({ role: 'owner' }), bucket },
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+});
+
+describe('handleHrDeleteFile', () => {
+  it('원장: HR 경로 파일 삭제', async () => {
+    const path = 'staff/s1/documents/old.pdf';
+    const bucket = makeBucket({ existing: { [path]: { metadata: {} } } });
+    const res = await handleHrDeleteFile({ auth, data: { path } }, { firestore: makeFirestore({}), bucket });
+    expect(res.deleted).toBe(true);
+    expect(bucket._deleted).toContain(path);
+  });
+
+  it('없는 파일은 멱등 성공(deleted:false)', async () => {
+    const bucket = makeBucket();
+    const res = await handleHrDeleteFile({ auth, data: { path: 'contracts/o/c/x.pdf' } }, { firestore: makeFirestore({}), bucket });
+    expect(res.deleted).toBe(false);
+  });
+
+  it('HR 외 경로 거부', async () => {
+    const bucket = makeBucket();
+    await expect(handleHrDeleteFile({ auth, data: { path: 'exam-papers/x.png' } }, { firestore: makeFirestore({}), bucket }))
+      .rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  it('비원장 거부', async () => {
+    const bucket = makeBucket();
+    await expect(handleHrDeleteFile({ auth, data: { path: 'staff/s1/x.pdf' } }, { firestore: makeFirestore({ role: 'staff' }), bucket }))
+      .rejects.toMatchObject({ code: 'permission-denied' });
   });
 });
