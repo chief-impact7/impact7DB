@@ -1,5 +1,23 @@
 # N-05 — App Check 롤아웃 (비용 callable 보호)
 
+> **확정 결론 (2026-06-22): App Check는 한 번도 작동한 적 없음 — reCAPTCHA 키 충돌. enforce 영구 보류.**
+>
+> 도메인 추가 후에도 실사용자(dsc.impact7.kr) 트래픽이 전부 `app:MISSING`(auth:VALID). 브라우저에서 직접
+> `grecaptcha.enterprise.execute(6LcS4ywt…)` → **"Invalid site key or not loaded in api.js"**.
+>
+> **근본 원인**: 페이지에 reCAPTCHA Enterprise가 **두 소비자**로 로드됨 —
+> ① App Check `enterprise.js?render=<siteKey>` ② **Firebase Auth `enterprise.js?render=explicit`**(firebase ^12.15, Auth reCAPTCHA Enterprise 활성).
+> Auth가 render=explicit로 먼저 로드 → 동일 enterprise.js가 이미 있다고 판단돼 **App Check의 키가 grecaptcha에 등록되지 않음** → App Check 토큰 발급 실패 → 모든 비용/민감 callable `app:MISSING`.
+> 검증 완료: 키 도메인 등록 OK / Firebase App Check 앱 등록(siteKey·tokenTtl·minScore0.5) OK / 배포 번들에 App Check init OK — **충돌만이 원인**.
+>
+> **그래서 과거 enforce가 전부 깨졌던 것**(canary "성공"도 착시 — 로그는 항상 MISSING).
+>
+> **수정 방향(별도 집중 작업 필요, 운영 블라인드 금지)**: Auth와 App Check가 **같은 reCAPTCHA Enterprise 키**를 쓰게 정렬하거나(Firebase 권장), Auth reCAPTCHA Enterprise 사용 여부 재검토, 또는 init 로드 순서/명시 render 제어. staging 빌드에서 `app:VALID` 실발급 확인 후에만 enforce.
+> **현 상태**: enforce 전면 OFF 유지(안전). 외부 악용은 도메인 인증+rate limit+CSPRNG로 이미 차단 — App Check는 봇/토큰도용 보강분.
+>
+> ---
+
+
 > **근본원인 정정 (2026-06-22): enforce 직후 운영 장애 → 전면 롤백(enforce off) → 진짜 원인 확정 후 reCAPTCHA 도메인 수정.**
 >
 > **장애 증상:** enforce ON 직후 dsc.impact7.kr에서 학부모알림 작성·메시지 탭 조회·등원이 모두 `unauthenticated`(HTTP 401). AI(llmGenerate)는 됐다는 보고가 있었으나 실제로는 동일 인스턴스라 같이 깨졌어야 함.

@@ -18,10 +18,10 @@ metadata:
 - impact7hr 배포는 **통합 파이프라인(impact7-hosting/deploy.yml)** 이 HR 커밋마다 동기 배포(drift 방지). 통합 `impact7-app/hr`(base=/hr)도 허브 링크용으로 유지(이중 빌드).
 - HR `firebase.json`: `_redirect` → `public:"build"`+SPA rewrite (90ea5f1). impact7-hosting 워커 이관 (04012fa).
 
-## 3) App Check reCAPTCHA 도메인 (load-bearing)
-- App Check enforce 시 운영 커스텀 도메인이 reCAPTCHA 키 allowedDomains에 없으면 토큰 `app:MISSING` → callable 401(auth는 VALID인데도).
-- reCAPTCHA 키 `6LcS4ywt…`에 `impact7.kr, app/db/dsc/hr/exam.impact7.kr, *.web.app, firebaseapp.com, localhost` 등록 완료.
-- 메시지/알림/출결/AI callable은 **DSC만** 호출(DB app.js 아님). DSC/HR에 App Check init 있음. tablet(tabletCheckin)은 미적용 → wave 2.
-- 재적용 전 dsc/hr 새로고침 후 로그에서 `app:VALID` 확인 게이트. 상세: `docs/2026-06-21-impact7db-remediation/N-05-appcheck-rollout.md`.
+## 3) App Check enforce — 영구 보류 (확정: 한 번도 작동 안 함)
+- **근본 원인**: reCAPTCHA Enterprise 키 충돌. 페이지에 ①App Check `enterprise.js?render=<siteKey>` ②**Firebase Auth `enterprise.js?render=explicit`**(firebase ^12.15, Auth reCAPTCHA Enterprise 활성)가 둘 다 로드 → Auth가 먼저 로드돼 App Check 키가 grecaptcha에 미등록 → `execute()` "Invalid site key or not loaded" → 토큰 0 → 모든 callable **`app:MISSING`**.
+- 도메인 등록(reCAPTCHA 키 allowedDomains에 *.impact7.kr·*.web.app)·Firebase App Check 앱등록·번들 init은 전부 정상 — **충돌만이 원인**. 과거 enforce가 깨진 진짜 이유(canary 성공도 착시).
+- **현 상태**: enforceAppCheck 전면 OFF(안전). 외부 악용은 도메인인증+rate limit+CSPRNG로 차단 중. App Check는 봇/토큰도용 보강분.
+- **재개 조건**: Auth/App Check 같은 reCAPTCHA 키 정렬(또는 Auth reCAPTCHA 재검토/로드순서 제어) → **staging에서 `app:VALID` 실발급 확인 후에만** enforce. blind enforce 금지. 상세: `docs/2026-06-21-impact7db-remediation/N-05-appcheck-rollout.md`.
 
 연관: [[feedback-rules-sync-commit]] [[project-hr-permissions-quality-guard-2026-06-05]]
