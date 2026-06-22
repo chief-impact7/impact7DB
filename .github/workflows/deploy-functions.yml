@@ -8,6 +8,10 @@ on:
     paths:
       - 'functions-shared/**'
       - 'functions/**'
+  # PR에서는 validate만 실행(deploy는 push 전용) — branch protection 필수 체크로 사용(G09).
+  # 경로 필터 없이 모든 master PR에서 돌려, 필수 체크가 항상 보고되게 한다.
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 # dorny/paths-filter@v3가 아직 Node20 런타임이라 Node24로 강제(2026-06-16 GitHub 기본 전환 시 제거 가능)
@@ -53,6 +57,7 @@ jobs:
 
   deploy:
     needs: validate
+    if: github.event_name != 'pull_request'   # PR은 검증만, 배포는 push/dispatch에서만
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
