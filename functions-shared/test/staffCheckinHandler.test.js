@@ -97,4 +97,30 @@ describe('handleStaffCheckin 확정', () => {
       { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })}_st1`) },
     )).rejects.toMatchObject({ code: 'failed-precondition' });
   });
+
+  test('staffId와 phoneKey 불일치는 거부(failed-precondition)', async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active' } },
+      attendance: {},
+    });
+    await expect(handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '999999', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    )).rejects.toMatchObject({ code: 'failed-precondition' });
+  });
+
+  test('동일 액션 20초 내 반복은 duplicate', async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active' } },
+      attendance: { [`${dateStr}_st1`]: { state: '근무중', last_event: { action: '출근', at_ms: Date.now() - 5000 } } },
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    );
+    expect(res.result).toBe('duplicate');
+    expect(res.dayState).toBe('근무중');
+  });
 });

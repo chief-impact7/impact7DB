@@ -65,6 +65,11 @@ export async function handleStaffCheckin(request, deps = {}) {
     if (staff.status !== ACTIVE_STATUS) {
       throw new HttpsError('failed-precondition', '재직 중인 직원만 처리할 수 있습니다.');
     }
+    // 학생 핸들러(studentNumber 재검증)와 동일한 권한 재확인: 조회 단계에서 받은
+    // staffId가 입력 phoneKey의 소유인지 트랜잭션 내에서 다시 확인한다.
+    if (textOf(staff.phoneKey) !== phoneKey) {
+      throw new HttpsError('failed-precondition', '등록번호가 일치하지 않습니다.');
+    }
 
     const att = attSnap.exists ? attSnap.data() : null;
     const curState = att?.state || STAFF_DAY_STATES.NONE;
