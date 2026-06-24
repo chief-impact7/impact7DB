@@ -1285,6 +1285,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 직원 출퇴근 기록 — 서버(Admin SDK)만 기록, 조회는 원장급(HR 월별 조회).
+    match /staff_attendance/{docId} {
+      allow read: if isDirector();
+      allow write: if false;
+    }
+
     // 메시지 발송 로그 — 대시보드 read 허용, 쓰기는 Admin SDK 전용
     match /message_logs/{id} {
       allow read: if isAuthorized();

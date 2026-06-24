@@ -13,6 +13,7 @@ import {
 } from './src/studentReportAutomationHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleTabletCheckin } from './src/tabletCheckinHandler.js';
+import { handleStaffCheckin } from './src/staffCheckinHandler.js';
 import { handleCreatePromoCampaign } from './src/promoCampaignHandler.js';
 import { handleSetPromoConsent } from './src/promoConsentHandler.js';
 import { handleSendParentNotice } from './src/parentNoticeHandler.js';
@@ -123,6 +124,9 @@ export const attendanceCheckin = onCall({ enforceAppCheck: false }, handleAttend
 
 // 태블릿 키오스크 출결·외출 — 조회(후보+허용액션)와 확정(이벤트·daily 동기화·알림톡·하원게이트) 단일 callable.
 export const tabletCheckin = onCall({ enforceAppCheck: false }, handleTabletCheckin);
+
+// 직원 출퇴근 — 휴대폰 번호(phoneKey)로 조회(후보+허용액션)와 확정(staff_attendance 적재). 알림 없음.
+export const staffCheckin = onCall({ enforceAppCheck: false }, handleStaffCheckin);
 
 // 홍보(브랜드 메시지) 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo) 배치 enqueue.
 // 야간(광고 제한)이면 익일 08:00 자동 예약. 발송은 워커(onMessageQueued)가 수행.
