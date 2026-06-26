@@ -139,6 +139,44 @@ export async function sendSms(payload, config, { serviceFactory = defaultService
   }
 }
 
+// BMS 최종 발송결과 코드(getGroupMessages 메시지 statusCode) — 접수(send의 2000)와 별개.
+// 비친구(3120)·야간(3108)은 동기 send 응답엔 없고 비동기 발송결과에만 나타나므로,
+// 워커가 발송 후 이 결과를 사후 조회해 친구톡 도달/문자 전환을 확정한다.
+export const BMS_DELIVERED_CODE = '4000'; // 수신 완료(친구 도달)
+export const BMS_NOT_FRIEND_CODE = '3120'; // 비친구/72h 미사용 — 카톡 미도달(문자 전환 대상)
+export const BMS_NIGHT_BLOCKED_CODE = '3108'; // 야간 발송제한(20:50~08:00) — 정보형 BMS도 차단됨
+
+// 발송 후 솔라피 발송결과를 조회한다. 예외를 던지지 않고 정규화 결과를 반환한다.
+// 반환: { outcome: 'delivered'|'not_friend'|'night_blocked'|'pending'|'failed', statusCode, statusMessage }
+//   - pending: 아직 발송 진행 중이거나 조회가 일시 실패 — 워커가 재조회(상한 관리).
+export async function fetchBrandMessageResult(groupId, config, { serviceFactory = defaultServiceFactory } = {}) {
+  if (!groupId) return { outcome: 'failed', statusCode: 'missing_group_id', statusMessage: 'groupId가 비어 있습니다.' };
+  const cfg = config ?? getSolapiConfig();
+  try {
+    const service = serviceFactory(cfg.apiKey, cfg.apiSecret);
+    const res = await service.getGroupMessages(groupId);
+    return normalizeGroupResult(res);
+  } catch (err) {
+    // 조회 실패는 일시적 오류일 수 있으므로 pending(재조회) — 워커가 재시도 상한을 관리한다.
+    return { outcome: 'pending', statusCode: errorStatusCode(err), statusMessage: errorMessageText(err) };
+  }
+}
+
+function normalizeGroupResult(res) {
+  const list = res?.messageList ?? {};
+  const items = Array.isArray(list) ? list : Object.values(list);
+  if (!items.length) return { outcome: 'pending', statusCode: 'no_messages', statusMessage: '발송결과 미생성' };
+  const m = items[0]; // 건당 1발송 — 방어적으로 첫 메시지 기준
+  const code = String(m.statusCode ?? '');
+  const status = String(m.status ?? '');
+  const statusMessage = m.reason ?? m.statusMessage ?? null;
+  if (code === BMS_DELIVERED_CODE) return { outcome: 'delivered', statusCode: code, statusMessage };
+  if (code === BMS_NOT_FRIEND_CODE) return { outcome: 'not_friend', statusCode: code, statusMessage };
+  if (code === BMS_NIGHT_BLOCKED_CODE) return { outcome: 'night_blocked', statusCode: code, statusMessage };
+  if (status && status !== 'COMPLETE') return { outcome: 'pending', statusCode: code || status, statusMessage };
+  return { outcome: 'failed', statusCode: code || 'unknown', statusMessage };
+}
+
 // 솔라피 send 옵션. scheduledDate가 있으면 예약 발송(솔라피가 보관 후 지정 시각 발송).
 // 광고 야간 제한 대응은 호출자가 resolveAdScheduledAt(promoSchedule.js)로 시각을 보정해 넘긴다.
 function buildSendOptions(payload) {

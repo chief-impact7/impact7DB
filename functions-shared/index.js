@@ -25,7 +25,7 @@ import { handleSendDailyReport } from './src/dailyReportHandler.js';
 import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
-import { processQueueDoc, runRetrySweep, purgeExpiredPii } from './src/queueWorker.js';
+import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii } from './src/queueWorker.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
 import {
   handleHrUploadStaffDocument,
@@ -185,6 +185,13 @@ export const retrySweeper = onSchedule(
     await runRetrySweep();
     await purgeExpiredPii();
   },
+);
+
+// 발송결과 폴링(1분 주기) — parent_bms 접수(2000)는 카톡 도달이 아니므로(비친구 3120·야간 3108은
+// 비동기 결과에만 나타남), getGroupMessages로 최종 결과를 조회해 도달 종결·친구 학습·비친구 문자전환을 확정.
+export const deliveryResultSweeper = onSchedule(
+  { schedule: 'every 1 minutes', timeZone: 'Asia/Seoul', secrets: SOLAPI_SECRETS },
+  () => runDeliveryResultSweep(),
 );
 
 // 어떤 경로로 쓰이든 school/level/grade → school_level_grade 자동 동기화(stale 차단).

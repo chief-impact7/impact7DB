@@ -7,7 +7,7 @@ import { maskPhone } from './phoneMask.js';
 // 클라가 큐 doc을 직접 read하면 네트워크 응답에 평문 번호가 노출되므로, 이 callable이
 // 서버에서 카운트 + 마스킹된 실패 목록만 내려준다. 평문은 서버를 벗어나지 않는다.
 
-const QUEUE_STATUSES = ['pending', 'processing', 'failed_retryable', 'failed_permanent', 'sent'];
+const QUEUE_STATUSES = ['pending', 'processing', 'awaiting_delivery_result', 'failed_retryable', 'failed_permanent', 'sent'];
 const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
 const CHANNELS = ['kakao', 'sms', 'lms'];
 const MAX_FAILURES = 30;

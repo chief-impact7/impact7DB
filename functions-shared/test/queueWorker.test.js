@@ -5,7 +5,7 @@ vi.mock('firebase-admin/firestore', () => ({
   FieldValue: { serverTimestamp: () => '<ts>', delete: () => '<delete>' },
 }));
 
-const { processQueueDoc, runRetrySweep, purgeExpiredPii, __testing } = await import('../src/queueWorker.js');
+const { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii, __testing } = await import('../src/queueWorker.js');
 
 // message_queue/message_logs/kakao_channel_friends를 흉내내는 인메모리 Firestore.
 function makeDb(initialQueue = {}, initialFriends = {}) {
@@ -35,9 +35,16 @@ function makeDb(initialQueue = {}, initialFriends = {}) {
   function query(collMap) {
     const filters = [];
     let limitN = null;
+    let orderField = null;
+    let orderDir = 'asc';
     const q = {
       where(field, op, val) {
         filters.push([field, op, val]);
+        return q;
+      },
+      orderBy(field, dir = 'asc') {
+        orderField = field;
+        orderDir = dir;
         return q;
       },
       limit(n) {
@@ -54,6 +61,14 @@ function makeDb(initialQueue = {}, initialFriends = {}) {
             return true;
           });
           if (ok) docs.push({ id, data: () => data, ref: docRef(collMap, id) });
+        }
+        if (orderField) {
+          docs.sort((a, b) => {
+            const av = a.data()[orderField];
+            const bv = b.data()[orderField];
+            const c = av < bv ? -1 : av > bv ? 1 : 0;
+            return orderDir === 'desc' ? -c : c;
+          });
         }
         if (limitN != null) docs = docs.slice(0, limitN);
         return { docs };
@@ -371,36 +386,39 @@ describe('purgeExpiredPii', () => {
   });
 });
 
-describe('kind=parent_bms 학부모 정보형 BMS', () => {
-  it('sendKakaoBrandMessage로 라우팅(sender payload에 kind:parent_bms)', async () => {
+describe('kind=parent_bms 접수 → 발송결과 대기', () => {
+  it('sendKakaoBrandMessage로 라우팅 + 접수 성공 시 발송결과 대기(awaiting_delivery_result)', async () => {
     const db = makeDb({ pb1: baseQueueDoc({ kind: 'parent_bms', content: '[진단평가] 6/25(수) 오후 2시 실시 예정입니다.', targeting: 'I', ad_flag: false }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', statusCode: '2000' });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', groupId: 'g1', statusCode: '2000' });
     await processQueueDoc(eventFor(db, 'pb1'), { db, sender });
     expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'parent_bms' }));
-    expect(db._queue.get('pb1').status).toBe('sent');
+    // 접수 성공은 카톡 도달이 아님 — 폴링이 확정할 때까지 대기한다.
+    const d = db._queue.get('pb1');
+    expect(d.status).toBe('awaiting_delivery_result');
+    expect(d.solapi_group_id).toBe('g1');
+    expect(d.delivery_check_at).toBeInstanceOf(Date);
   });
 
   it('payload: targeting I, adFlag false, disableSms true', async () => {
     const db = makeDb({ pb2: baseQueueDoc({ kind: 'parent_bms', content: '안내', ad_flag: false, targeting: 'I' }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm2', statusCode: '2000' });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm2', groupId: 'g2', statusCode: '2000' });
     await processQueueDoc(eventFor(db, 'pb2'), { db, sender });
     expect(sender).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'parent_bms', to: '01012345678', content: '안내', targeting: 'I', adFlag: false, disableSms: true,
     }));
   });
 
-  it('result_callback: 성공 시 status:sent로 콜백 호출', async () => {
+  it('접수 성공 시 콜백 보류(폴링이 도달/전환 확정 후 1회 콜백)', async () => {
     const resultCallback = { url: 'https://example.com/callback', applicationId: 'app_bms' };
     const db = makeDb({ pb3: baseQueueDoc({ kind: 'parent_bms', content: '안내', result_callback: resultCallback }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm3', statusCode: '2000' });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm3', groupId: 'g3', statusCode: '2000' });
     const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
     await processQueueDoc(eventFor(db, 'pb3'), { db, sender, notifyResultCallback });
-    expect(notifyResultCallback).toHaveBeenCalledWith(resultCallback.url, expect.objectContaining({
-      applicationId: 'app_bms', status: 'sent', channel: 'kakao', queueId: 'pb3',
-    }));
+    expect(notifyResultCallback).not.toHaveBeenCalled();
+    expect(db._queue.get('pb3').status).toBe('awaiting_delivery_result');
   });
 
-  it('result_callback: 영구실패 시 status:failed로 콜백 호출', async () => {
+  it('접수 단계 영구실패 시 status:failed로 콜백 호출', async () => {
     const resultCallback = { url: 'https://example.com/callback', applicationId: 'app_bms' };
     const db = makeDb({ pb4: baseQueueDoc({ kind: 'parent_bms', content: '안내', result_callback: resultCallback }) });
     const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: 'invalid', errorMessage: '에러', channel: null });
@@ -411,9 +429,21 @@ describe('kind=parent_bms 학부모 정보형 BMS', () => {
     }));
     expect(db._queue.get('pb4').status).toBe('failed_permanent');
   });
+
+  it('야간(21시 KST) 접수 시 scheduled_date를 다음 08:00로 보정해 예약 발송', async () => {
+    const db = makeDb({ pb5: baseQueueDoc({ kind: 'parent_bms', content: '안내', targeting: 'I', ad_flag: false }) });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm5', groupId: 'g5', statusCode: '2000' });
+    const night = new Date('2026-06-25T12:00:00Z'); // 21:00 KST
+    await processQueueDoc(eventFor(db, 'pb5'), { db, sender, now: night });
+    expect(sender.mock.calls[0][0].scheduledDate).toBe('2026-06-26 08:00:00');
+    const d = db._queue.get('pb5');
+    expect(d.scheduled_date).toBe('2026-06-26 08:00:00');
+    // 폴링 시작은 예약 발송(08:00 KST = 23:00Z) 이후여야 — 조기 타임아웃 오전환 방지(리뷰 HIGH).
+    expect(d.delivery_check_at.getTime()).toBeGreaterThanOrEqual(new Date('2026-06-25T23:00:00Z').getTime());
+  });
 });
 
-describe('parent_bms 친구 자동 학습 + 비친구 SMS 전환', () => {
+describe('parent_bms 접수 단계 실패(동기) — 친구명단·문자전환 없음', () => {
   const bmsDoc = (overrides = {}) => baseQueueDoc({
     kind: 'parent_bms',
     content: '[진단평가] 6/25(수) 오후 2시',
@@ -422,96 +452,7 @@ describe('parent_bms 친구 자동 학습 + 비친구 SMS 전환', () => {
     ...overrides,
   });
 
-  it('성공 → kakao_channel_friends에 번호 추가 + result_callback(channel=kakao)', async () => {
-    const db = makeDb({ pb_ok: bmsDoc() });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', statusCode: '2000' });
-    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
-
-    await processQueueDoc(eventFor(db, 'pb_ok'), { db, sender, notifyResultCallback });
-
-    expect(db._queue.get('pb_ok').status).toBe('sent');
-    expect(db._friends.has('01099887766')).toBe(true);
-    expect(db._friends.get('01099887766')).toMatchObject({ phone: '01099887766' });
-    expect(notifyResultCallback).toHaveBeenCalledTimes(1);
-    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({
-      status: 'sent', channel: 'kakao', applicationId: 'app_bms',
-    }));
-  });
-
-  it('성공 → 친구 학습 실패해도 발송 결과(sent)는 정상', async () => {
-    const db = makeDb({ pb_ok2: bmsDoc() });
-    // friends 컬렉션 set이 throw하도록 오버라이드
-    const origCollection = db.collection.bind(db);
-    db.collection = (name) => {
-      if (name === 'kakao_channel_friends') {
-        return { doc: () => ({ set: async () => { throw new Error('DB 오류'); } }) };
-      }
-      return origCollection(name);
-    };
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm', statusCode: '2000' });
-    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
-
-    await expect(processQueueDoc(eventFor(db, 'pb_ok2'), { db, sender, notifyResultCallback })).resolves.toBeNull();
-    expect(db._queue.get('pb_ok2').status).toBe('sent');
-    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'sent' }));
-  });
-
-  it('실패(3102=비친구) → 친구명단 제거 + message_queue에 kind=direct 신규 doc + 원 doc converted_to_sms + 원 doc 콜백 없음', async () => {
-    const db = makeDb({ pb_nf: bmsDoc() }, { '01099887766': { phone: '01099887766' } });
-    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: '3102', errorMessage: '채널 친구 아님' });
-    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
-
-    await processQueueDoc(eventFor(db, 'pb_nf'), { db, sender, notifyResultCallback });
-
-    // 친구명단에서 제거
-    expect(db._friends.has('01099887766')).toBe(false);
-
-    // 문자 전환 doc 생성
-    const smsDoc = db._queue.get('pb_nf_sms');
-    expect(smsDoc).toBeDefined();
-    expect(smsDoc.kind).toBe('direct');
-    expect(smsDoc.status).toBe('pending');
-    expect(smsDoc.content).toBe('[진단평가] 6/25(수) 오후 2시');
-    expect(smsDoc.result_callback).toMatchObject({ url: 'https://example.com/cb', applicationId: 'app_bms' });
-
-    // 원 doc 종결
-    expect(db._queue.get('pb_nf').status).toBe('converted_to_sms');
-    expect(db._queue.get('pb_nf').last_error_code).toBe('3102');
-
-    // 원 doc 콜백 없음 — 문자 doc이 처리될 때 콜백
-    expect(notifyResultCallback).not.toHaveBeenCalled();
-  });
-
-  it('실패(3102) → content/result_callback/scheduled_date를 문자 doc에 복제', async () => {
-    const db = makeDb({
-      pb_copy: bmsDoc({ scheduled_date: '2026-06-25 14:00:00', result_callback: { url: 'https://cb.example', applicationId: 'app2' } }),
-    });
-    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: '3102', errorMessage: '비친구' });
-
-    await processQueueDoc(eventFor(db, 'pb_copy'), { db, sender });
-
-    const smsDoc = db._queue.get('pb_copy_sms');
-    expect(smsDoc.content).toBe('[진단평가] 6/25(수) 오후 2시');
-    expect(smsDoc.scheduled_date).toBe('2026-06-25 14:00:00');
-    expect(smsDoc.result_callback).toMatchObject({ url: 'https://cb.example', applicationId: 'app2' });
-    expect(smsDoc.created_by).toBe('bms_fallback');
-    expect(smsDoc.attempt_count).toBe(0);
-  });
-
-  it('SMS 전환 batch 실패 → 원본 converted_to_sms 아님 + SMS doc 미생성(유실·split-brain 방지, H-08)', async () => {
-    const db = makeDb({ pb_fail: bmsDoc() });
-    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: '3102', errorMessage: '비친구' });
-    // batch.commit 강제 실패 — fallback doc 생성과 원본 종결이 원자적으로 함께 무산되어야 한다.
-    db.batch = () => ({ set() {}, update() {}, commit: async () => { throw new Error('batch commit failed'); } });
-
-    await expect(processQueueDoc(eventFor(db, 'pb_fail'), { db, sender })).rejects.toThrow(/batch commit failed/);
-
-    // 원본은 converted_to_sms(종결)로 바뀌지 않음 → processing으로 남아 sweeper가 재처리. SMS doc도 안 생김.
-    expect(db._queue.get('pb_fail').status).not.toBe('converted_to_sms');
-    expect(db._queue.has('pb_fail_sms')).toBe(false);
-  });
-
-  it('실패(기타 retryable 코드) → 기존 retry 경로, 친구명단·문자전환 없음', async () => {
+  it('접수 retryable 코드 → 기존 retry 경로(발송결과 대기 아님)', async () => {
     const db = makeDb({ pb_retry: bmsDoc() }, { '01099887766': { phone: '01099887766' } });
     const sender = vi.fn().mockResolvedValue({ ok: false, retryable: true, statusCode: '429', errorMessage: 'rate limit' });
     const notifyResultCallback = vi.fn();
@@ -520,11 +461,11 @@ describe('parent_bms 친구 자동 학습 + 비친구 SMS 전환', () => {
 
     expect(db._queue.get('pb_retry').status).toBe('failed_retryable');
     expect(db._friends.has('01099887766')).toBe(true); // 친구명단 유지
-    expect(db._queue.has('pb_retry_sms')).toBe(false); // 문자 doc 없음
+    expect(db._queue.has('pb_retry_sms')).toBe(false);
     expect(notifyResultCallback).not.toHaveBeenCalled();
   });
 
-  it('실패(기타 permanent 코드) → failed_permanent + result_callback(failed), 친구명단/문자전환 없음', async () => {
+  it('접수 permanent 코드 → failed_permanent + 콜백(failed)', async () => {
     const db = makeDb({ pb_perm: bmsDoc() }, { '01099887766': { phone: '01099887766' } });
     const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: 'invalid_recipient', errorMessage: '번호 오류' });
     const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
@@ -535,6 +476,149 @@ describe('parent_bms 친구 자동 학습 + 비친구 SMS 전환', () => {
     expect(db._friends.has('01099887766')).toBe(true);
     expect(db._queue.has('pb_perm_sms')).toBe(false);
     expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'failed' }));
+  });
+});
+
+describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
+  const PAST = new Date('2026-06-25T00:00:00Z');
+  const NOW = new Date('2026-06-25T00:05:00Z');
+  const awaitingDoc = (overrides = {}) => ({
+    kind: 'parent_bms',
+    content: '[진단평가] 6/25(수) 오후 2시',
+    recipient_phone: '01099887766',
+    result_callback: { url: 'https://example.com/cb', applicationId: 'app_bms' },
+    status: 'awaiting_delivery_result',
+    solapi_group_id: 'grp1',
+    delivery_check_at: PAST,
+    delivery_check_count: 0,
+    attempt_count: 1,
+    ...overrides,
+  });
+
+  it('도달(4000) → sent + 친구 학습 + 콜백(channel=kakao)', async () => {
+    const db = makeDb({ pb_ok: awaitingDoc() });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'delivered', statusCode: '4000' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
+
+    expect(resultFetcher).toHaveBeenCalledWith('grp1');
+    expect(db._queue.get('pb_ok').status).toBe('sent');
+    expect(db._friends.has('01099887766')).toBe(true);
+    expect(db._friends.get('01099887766')).toMatchObject({ phone: '01099887766' });
+    expect(notifyResultCallback).toHaveBeenCalledTimes(1);
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({
+      status: 'sent', channel: 'kakao', applicationId: 'app_bms',
+    }));
+  });
+
+  it('도달 → 친구 학습 실패해도 sent + 콜백', async () => {
+    const db = makeDb({ pb_ok2: awaitingDoc() });
+    const orig = db.collection.bind(db);
+    db.collection = (name) => {
+      if (name === 'kakao_channel_friends') return { doc: () => ({ set: async () => { throw new Error('DB 오류'); } }) };
+      return orig(name);
+    };
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'delivered', statusCode: '4000' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
+
+    expect(db._queue.get('pb_ok2').status).toBe('sent');
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'sent' }));
+  });
+
+  it('비친구(3120) → 친구명단 제거 + kind=direct 문자 doc + 원 doc converted_to_sms + 원 doc 콜백 없음', async () => {
+    const db = makeDb({ pb_nf: awaitingDoc() }, { '01099887766': { phone: '01099887766' } });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'not_friend', statusCode: '3120' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
+
+    expect(db._friends.has('01099887766')).toBe(false);
+    const smsDoc = db._queue.get('pb_nf_sms');
+    expect(smsDoc).toBeDefined();
+    expect(smsDoc.kind).toBe('direct');
+    expect(smsDoc.status).toBe('pending');
+    expect(smsDoc.content).toBe('[진단평가] 6/25(수) 오후 2시');
+    expect(smsDoc.result_callback).toMatchObject({ url: 'https://example.com/cb', applicationId: 'app_bms' });
+    expect(db._queue.get('pb_nf').status).toBe('converted_to_sms');
+    expect(db._queue.get('pb_nf').last_error_code).toBe('3120');
+    expect(notifyResultCallback).not.toHaveBeenCalled();
+  });
+
+  it('비친구 → content/result_callback/scheduled_date를 문자 doc에 복제', async () => {
+    const db = makeDb({
+      pb_copy: awaitingDoc({ scheduled_date: '2026-06-25 14:00:00', result_callback: { url: 'https://cb.example', applicationId: 'app2' } }),
+    });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'not_friend', statusCode: '3120' });
+
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+
+    const smsDoc = db._queue.get('pb_copy_sms');
+    expect(smsDoc.content).toBe('[진단평가] 6/25(수) 오후 2시');
+    expect(smsDoc.scheduled_date).toBe('2026-06-25 14:00:00');
+    expect(smsDoc.result_callback).toMatchObject({ url: 'https://cb.example', applicationId: 'app2' });
+    expect(smsDoc.created_by).toBe('bms_fallback');
+    expect(smsDoc.attempt_count).toBe(0);
+  });
+
+  it('야간(3108) → 문자 전환', async () => {
+    const db = makeDb({ pb_nb: awaitingDoc() });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'night_blocked', statusCode: '3108' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    expect(db._queue.get('pb_nb').status).toBe('converted_to_sms');
+    expect(db._queue.get('pb_nb_sms').kind).toBe('direct');
+  });
+
+  it('SMS 전환 batch 실패 → 원본 converted_to_sms 아님 + SMS doc 미생성(유실 방지, H-08)', async () => {
+    const db = makeDb({ pb_fail: awaitingDoc() });
+    db.batch = () => ({ set() {}, update() {}, commit: async () => { throw new Error('batch commit failed'); } });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'not_friend', statusCode: '3120' });
+
+    await expect(runDeliveryResultSweep({ db, resultFetcher, now: NOW })).rejects.toThrow(/batch commit failed/);
+
+    expect(db._queue.get('pb_fail').status).not.toBe('converted_to_sms');
+    expect(db._queue.has('pb_fail_sms')).toBe(false);
+  });
+
+  it('발송 실패(failed) → failed_permanent + 콜백(failed)', async () => {
+    const db = makeDb({ pb_pf: awaitingDoc() });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'failed', statusCode: '3014', statusMessage: '수신번호 오류' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+
+    await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
+
+    expect(db._queue.get('pb_pf').status).toBe('failed_permanent');
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('미확정(pending) → 재조회 카운트 증가 + delivery_check_at 재연장(종결 안 함)', async () => {
+    const db = makeDb({ pb_pend: awaitingDoc({ delivery_check_count: 2 }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'pending', statusCode: 'no_messages' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    const d = db._queue.get('pb_pend');
+    expect(d.status).toBe('awaiting_delivery_result');
+    expect(d.delivery_check_count).toBe(3);
+    expect(d.delivery_check_at.getTime()).toBeGreaterThan(NOW.getTime());
+  });
+
+  it('미확정 상한 초과 → 유실 방지로 문자 전환', async () => {
+    const db = makeDb({ pb_to: awaitingDoc({ delivery_check_count: 14 }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'pending' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    expect(db._queue.get('pb_to').status).toBe('converted_to_sms');
+    expect(db._queue.get('pb_to').last_error_code).toBe('delivery_result_timeout');
+  });
+
+  it('delivery_check_at 미도래 doc은 폴링하지 않는다', async () => {
+    const FUTURE = new Date('2026-06-25T01:00:00Z');
+    const db = makeDb({ pb_future: awaitingDoc({ delivery_check_at: FUTURE }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'delivered', statusCode: '4000' });
+    const res = await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    expect(res.processed).toBe(0);
+    expect(resultFetcher).not.toHaveBeenCalled();
+    expect(db._queue.get('pb_future').status).toBe('awaiting_delivery_result');
   });
 });
 
