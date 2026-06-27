@@ -6736,7 +6736,12 @@ document.addEventListener('keydown', (e) => {
         if (getComputedStyle(m).display !== 'none') modal = m;
     });
     if (!modal) return;
-    if (e.key === 'Escape') { modal.style.display = 'none'; return; }
+    if (e.key === 'Escape') {
+        const fn = modal.getAttribute('onclick')?.match(/window\.(\w+)\(/)?.[1];
+        if (fn && typeof window[fn] === 'function') window[fn]();
+        else modal.style.display = 'none';
+        return;
+    }
     const f = [...modal.querySelectorAll(
         'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     )].filter(el => el.offsetParent !== null);
