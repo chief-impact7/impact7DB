@@ -14,9 +14,9 @@
 
     /* Semantic status colors */
     --danger: #c82014;
-    --danger-strong: #c5221f;
+    --danger-strong: #a01810;
     --danger-bg: #fce8e6;
-    --warn: #e37400;
+    --warn: #c2410c;
     --warn-bg: #fef7e0;
     --notice: #e65100;     /* 읽기전용 배너·오버라이드·신규 표시용 주황 (휴원 상태색 아님 — 휴원은 --warn) */
     --notice-bg: #fff3e0;
