@@ -13,14 +13,14 @@
     --bg-secondary: var(--sbux-ceramic);
 
     /* Semantic status colors */
-    --danger: #ea4335;
+    --danger: #c82014;
     --danger-strong: #c5221f;
     --danger-bg: #fce8e6;
-    --warn: #b06000;
+    --warn: #e37400;
     --warn-bg: #fef7e0;
     --notice: #e65100;     /* 읽기전용 배너·오버라이드·신규 표시용 주황 (휴원 상태색 아님 — 휴원은 --warn) */
     --notice-bg: #fff3e0;
-    --success: #137333;
+    --success: #006241;
     --success-bg: #e6f4ea;
 
     /* z-index 스케일 (date-picker.js 팝오버는 1200 고정 — 이 스케일 위) */
@@ -45,11 +45,11 @@
     --surface-hover: #edebe9;
     --outline: rgba(0,0,0,0.38);
     --text-main: rgba(0,0,0,0.87);
-    --text-sec: rgba(0,0,0,0.58);
+    --text-sec: rgba(0,0,0,0.64);
     --hover-bg: #edebe9;
     --active-bg: #d4e9e2;
     --active-text: #006241;
-    --border: rgba(0,0,0,0.12);
+    --border: #e7e3db;
     /* radius 토큰 — 시각 무변경 보장을 위해 동일값(6/8/12/100px)만 치환함.
        9·10·16·18·20·24px 잔존은 의도적 보존 — 토큰으로 스냅하면 라운딩이 변형됨 */
     --radius-sm: 6px;
