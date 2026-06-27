@@ -1,4 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
+import { installKeyboardActivation, installModalA11y } from './a11y-dom.js';
 import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
 import { auth, db, dataAuthReady } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
@@ -6722,32 +6723,15 @@ window.runPromotion = async () => {
     }
 };
 
-// ─── 접근성: role=button 키보드 활성화 + 모달 Esc 닫기/Tab 포커스 트랩 ────────
-// (DSC a11y 패턴) role=button인 span/li/div는 native가 아니라 Enter/Space로
-// click이 안 되므로 위임으로 활성화. 모달은 보이는 .modal-overlay를 대상으로 한다.
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-        const el = e.target.closest('[role="button"][tabindex]');
-        if (el && el === e.target) { e.preventDefault(); el.click(); return; }
-    }
-    if (e.key !== 'Escape' && e.key !== 'Tab') return;
-    let modal = null;
-    document.querySelectorAll('.modal-overlay').forEach(m => {
-        if (getComputedStyle(m).display !== 'none') modal = m;
-    });
-    if (!modal) return;
-    if (e.key === 'Escape') {
-        const fn = modal.getAttribute('onclick')?.match(/window\.(\w+)\(/)?.[1];
+// ─── 접근성: 키보드 활성화 + 모달 Esc 닫기/Tab 포커스 트랩 (공유 a11y-dom.js) ──
+// DB는 role=button[tabindex] 비-native 요소를 활성화. 모달 Esc는 onclick의 close
+// 함수를 호출해 cleanup(_resolve 등)까지 실행한다(없으면 display 토글).
+installKeyboardActivation('[role="button"][tabindex]');
+installModalA11y({
+    modalSelector: '.modal-overlay',
+    closeModal: (m) => {
+        const fn = m.getAttribute('onclick')?.match(/window\.(\w+)\(/)?.[1];
         if (fn && typeof window[fn] === 'function') window[fn]();
-        else modal.style.display = 'none';
-        return;
-    }
-    const f = [...modal.querySelectorAll(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    )].filter(el => el.offsetParent !== null);
-    if (!f.length) return;
-    const first = f[0], last = f[f.length - 1];
-    if (!modal.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
-    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        else m.style.display = 'none';
+    },
 });
