@@ -1,0 +1,51 @@
+{
+  "_comment": "impact7 에코시스템 디자인 토큰 SSoT(단일 진실 원천). 토큰 값은 여기서만 바꾼다. check-design-tokens.mjs가 각 앱 CSS와 대조해 drift를 차단한다. 코어(그린·배경·본문)는 원래 일치, 상태색·border·보조텍스트는 2026-06-28 DSC 기준으로 통일. 변형(bg/strong/container)·다크모드는 SSoT 밖(각 앱 자유).",
+  "files": {
+    "dsc": "/Users/jongsooyi/projects/impact7newDSC/daily-ops.css",
+    "db": "/Users/jongsooyi/projects/impact7DB/style.css",
+    "hr": "/Users/jongsooyi/projects/impact7HR/src/app.css",
+    "exam": "/Users/jongsooyi/projects/impact7exam/src/app/globals.css"
+  },
+  "tokens": {
+    "primary": {
+      "value": "#00754A",
+      "note": "Green Accent — CTA/브랜드",
+      "vars": { "dsc": "--primary", "db": "--primary", "hr": "--color-brand-accent", "exam": "--green-accent" }
+    },
+    "surface": {
+      "value": "#f2f0eb",
+      "note": "Neutral Warm — 페이지 캔버스",
+      "vars": { "dsc": "--surface", "db": "--surface", "hr": "--color-page-bg", "exam": "--cream" }
+    },
+    "text-main": {
+      "value": "rgba(0,0,0,0.87)",
+      "note": "본문 텍스트",
+      "vars": { "dsc": "--text-main", "db": "--text-main", "hr": "--color-text-primary", "exam": "--text-black" }
+    },
+    "text-sec": {
+      "value": "rgba(0,0,0,0.64)",
+      "note": "보조 텍스트 — AA 통과 대비",
+      "vars": { "dsc": "--text-sec", "db": "--text-sec", "hr": "--color-text-secondary", "exam": "--text-muted" }
+    },
+    "success": {
+      "value": "#006241",
+      "note": "성공 — Starbucks 짙은 그린 (exam은 전용 토큰 없음)",
+      "vars": { "dsc": "--success", "db": "--success", "hr": "--color-success" }
+    },
+    "danger": {
+      "value": "#c82014",
+      "note": "위험/오류",
+      "vars": { "dsc": "--danger", "db": "--danger", "hr": "--color-danger", "exam": "--md-error" }
+    },
+    "warning": {
+      "value": "#c2410c",
+      "note": "경고 — AA 통과 주황 (exam은 전용 토큰 없음)",
+      "vars": { "dsc": "--warning", "db": "--warn", "hr": "--color-warning" }
+    },
+    "border": {
+      "value": "#e7e3db",
+      "note": "베이지 hairline",
+      "vars": { "dsc": "--border", "db": "--border", "hr": "--color-border-default", "exam": "--hairline" }
+    }
+  }
+}
