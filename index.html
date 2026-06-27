@@ -11,6 +11,7 @@
     <link rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="a11y.css">
     <script>/* 다크모드 FOUC 방지 — 기본은 라이트, 사용자가 명시적으로 켠 경우만 다크 */
         try { if (localStorage.getItem('impact7db-theme') === 'dark')
             document.documentElement.dataset.theme = 'dark';
@@ -65,11 +66,11 @@
                         <span class="material-symbols-outlined" aria-hidden="true">toggle_on</span>상태
                     </summary>
                     <ul class="nav-list">
-                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="등원예정">등원예정</li>
-                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="재원">재원</li>
-                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="실휴원">실휴원</li>
-                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="가휴원">가휴원</li>
-                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="퇴원">퇴원</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="등원예정" role="button" tabindex="0">등원예정</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="재원" role="button" tabindex="0">재원</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="실휴원" role="button" tabindex="0">실휴원</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="가휴원" role="button" tabindex="0">가휴원</li>
+                        <li class="menu-l3 nav-item" data-filter-type="status" data-filter-value="퇴원" role="button" tabindex="0">퇴원</li>
                     </ul>
                 </details>
 
@@ -79,9 +80,9 @@
                         <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>수업종류
                     </summary>
                     <ul class="nav-list">
-                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="정규">정규</li>
-                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="특강">특강</li>
-                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="내신">내신</li>
+                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="정규" role="button" tabindex="0">정규</li>
+                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="특강" role="button" tabindex="0">특강</li>
+                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="내신" role="button" tabindex="0">내신</li>
                     </ul>
                 </details>
             </details>
@@ -100,13 +101,13 @@
                     <span class="material-symbols-outlined" aria-hidden="true">school</span>School
                 </summary>
                 <ul class="nav-list">
-                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="초등">
+                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="초등" role="button" tabindex="0">
                         <span class="label-color c-green"></span>초등
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="중등">
+                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="중등" role="button" tabindex="0">
                         <span class="label-color c-blue"></span>중등
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="고등">
+                    <li class="menu-l2 nav-item" data-filter-type="level" data-filter-value="고등" role="button" tabindex="0">
                         <span class="label-color c-red"></span>고등
                     </li>
                 </ul>
@@ -128,10 +129,10 @@
                     <span class="material-symbols-outlined" aria-hidden="true">location_city</span>Branch
                 </summary>
                 <ul class="nav-list">
-                    <li class="menu-l2 nav-item" data-filter-type="branch" data-filter-value="2단지">
+                    <li class="menu-l2 nav-item" data-filter-type="branch" data-filter-value="2단지" role="button" tabindex="0">
                         <span class="material-symbols-outlined" aria-hidden="true">apartment</span>2단지
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="branch" data-filter-value="10단지">
+                    <li class="menu-l2 nav-item" data-filter-type="branch" data-filter-value="10단지" role="button" tabindex="0">
                         <span class="material-symbols-outlined" aria-hidden="true">apartment</span>10단지
                     </li>
                 </ul>
@@ -153,25 +154,25 @@
                     <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>Scheduled
                 </summary>
                 <ul class="nav-list">
-                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="월">
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="월" role="button" tabindex="0">
                         <span class="day-dot">월</span>월요일
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="화">
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="화" role="button" tabindex="0">
                         <span class="day-dot">화</span>화요일
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="수">
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="수" role="button" tabindex="0">
                         <span class="day-dot">수</span>수요일
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="목">
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="목" role="button" tabindex="0">
                         <span class="day-dot">목</span>목요일
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="금">
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="금" role="button" tabindex="0">
                         <span class="day-dot">금</span>금요일
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="토">
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="토" role="button" tabindex="0">
                         <span class="day-dot">토</span>토요일
                     </li>
-                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="일">
+                    <li class="menu-l2 nav-item" data-filter-type="day" data-filter-value="일" role="button" tabindex="0">
                         <span class="day-dot">일</span>일요일
                     </li>
                 </ul>
@@ -190,10 +191,10 @@
                         <span class="on-leave-sub-count" id="on-leave-expected-count"></span>
                     </summary>
                     <ul class="nav-list">
-                        <li class="menu-l3 nav-item" data-filter-type="leave" data-filter-value="expected_actual">
+                        <li class="menu-l3 nav-item" data-filter-type="leave" data-filter-value="expected_actual" role="button" tabindex="0">
                             실휴원 <span class="on-leave-sub-count" id="lv-exp-actual"></span>
                         </li>
-                        <li class="menu-l3 nav-item" data-filter-type="leave" data-filter-value="expected_pending">
+                        <li class="menu-l3 nav-item" data-filter-type="leave" data-filter-value="expected_pending" role="button" tabindex="0">
                             가휴원 <span class="on-leave-sub-count" id="lv-exp-pending"></span>
                         </li>
                     </ul>
@@ -212,22 +213,22 @@
                         <span class="on-leave-sub-count" id="on-leave-nonreturn-count"></span>
                     </summary>
                     <ul class="nav-list">
-                        <li class="menu-l3 nav-item" data-filter-type="leave" data-filter-value="nonreturn_actual">Actual (실휴원)</li>
-                        <li class="menu-l3 nav-item" data-filter-type="leave" data-filter-value="nonreturn_pending">Pending (가휴원)</li>
+                        <li class="menu-l3 nav-item" data-filter-type="leave" data-filter-value="nonreturn_actual" role="button" tabindex="0">Actual (실휴원)</li>
+                        <li class="menu-l3 nav-item" data-filter-type="leave" data-filter-value="nonreturn_pending" role="button" tabindex="0">Pending (가휴원)</li>
                     </ul>
                 </details>
             </details>
 
             <!-- L1: Daily Stats (일별 통계) -->
             <div class="l1-group stats-nav-item" style="display:none">
-                <div class="menu-l1 nav-item" onclick="window.showDailyStats()">
+                <div class="menu-l1 nav-item" onclick="window.showDailyStats()" role="button" tabindex="0" aria-label="일별 통계">
                     <span class="material-symbols-outlined" aria-hidden="true">bar_chart</span>Daily Stats
                 </div>
             </div>
 
             <!-- L1: Analytics — 학생 인원현황 분석/추출 (필터 메뉴와 분리된 도구) -->
             <div class="l1-group analytics-nav-item" style="display:none">
-                <div class="menu-l1 nav-item" onclick="window.openPromoExtractView()">
+                <div class="menu-l1 nav-item" onclick="window.openPromoExtractView()" role="button" tabindex="0" aria-label="Analytics">
                     <span class="material-symbols-outlined" aria-hidden="true">analytics</span>Analytics
                 </div>
             </div>
@@ -542,9 +543,9 @@
                 </div>
 
                 <!-- 탭 바 (조회 모드에서만 표시) -->
-                <div class="tab-bar" id="detail-tab-bar">
-                    <button class="tab-btn active" onclick="window.switchDetailTab('info')">기본정보</button>
-                    <button class="tab-btn" onclick="window.switchDetailTab('history')">수업이력</button>
+                <div class="tab-bar" id="detail-tab-bar" role="tablist">
+                    <button class="tab-btn active" onclick="window.switchDetailTab('info')" role="tab" aria-selected="true" aria-controls="detail-view">기본정보</button>
+                    <button class="tab-btn" onclick="window.switchDetailTab('history')" role="tab" aria-selected="false" aria-controls="history-view">수업이력</button>
                 </div>
 
                 <!-- 조회 모드 -->
@@ -1009,7 +1010,7 @@
     </div>
 
     <!-- 과거 학기 조회 모달 -->
-    <div id="past-semester-modal" class="modal-overlay" onclick="window.closePastSemesterModal(event)" style="display:none;">
+    <div id="past-semester-modal" class="modal-overlay" onclick="window.closePastSemesterModal(event)" style="display:none;" role="dialog" aria-modal="true" aria-label="학기 조회">
         <div class="modal-card" style="max-width:380px;">
             <div class="modal-header">
                 <h3 id="past-semester-title">학기 조회</h3>
@@ -1022,7 +1023,7 @@
     </div>
 
     <!-- 관리자 설정 모달 -->
-    <div id="admin-settings-modal" class="modal-overlay" onclick="window.closeAdminSettingsModal(event)" style="display:none;">
+    <div id="admin-settings-modal" class="modal-overlay" onclick="window.closeAdminSettingsModal(event)" style="display:none;" role="dialog" aria-modal="true" aria-label="설정">
         <div class="modal-card admin-settings-card">
             <div class="modal-header">
                 <h3>설정</h3>
@@ -1030,17 +1031,17 @@
                     <span class="material-symbols-outlined" aria-hidden="true">close</span>
                 </button>
             </div>
-            <div class="admin-settings-tabs">
-                <button class="admin-tab active" onclick="window.switchAdminTab('semester')">학기 설정</button>
-                <button class="admin-tab" onclick="window.switchAdminTab('promotion')">자동 승급</button>
+            <div class="admin-settings-tabs" role="tablist">
+                <button class="admin-tab active" onclick="window.switchAdminTab('semester')" role="tab" aria-selected="true" aria-controls="admin-tab-semester">학기 설정</button>
+                <button class="admin-tab" onclick="window.switchAdminTab('promotion')" role="tab" aria-selected="false" aria-controls="admin-tab-promotion">자동 승급</button>
             </div>
             <div class="modal-body" style="padding:0;">
                 <!-- 학기 설정 탭 -->
                 <div id="admin-tab-semester" class="admin-tab-panel">
-                    <div class="admin-level-tabs">
-                        <button class="admin-level-tab active" onclick="window.switchLevelTab('초등')">초등</button>
-                        <button class="admin-level-tab" onclick="window.switchLevelTab('중등')">중등</button>
-                        <button class="admin-level-tab" onclick="window.switchLevelTab('고등')">고등</button>
+                    <div class="admin-level-tabs" role="tablist">
+                        <button class="admin-level-tab active" onclick="window.switchLevelTab('초등')" role="tab" aria-selected="true" aria-controls="admin-semester-body">초등</button>
+                        <button class="admin-level-tab" onclick="window.switchLevelTab('중등')" role="tab" aria-selected="false" aria-controls="admin-semester-body">중등</button>
+                        <button class="admin-level-tab" onclick="window.switchLevelTab('고등')" role="tab" aria-selected="false" aria-controls="admin-semester-body">고등</button>
                     </div>
                     <div id="admin-semester-body"></div>
                 </div>

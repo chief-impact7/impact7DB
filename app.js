@@ -1069,14 +1069,16 @@ function updateListItemIcons(studentId) {
         const m = document.createElement('span');
         m.className = 'item-icon item-icon-memo';
         m.title = '메모 있음';
-        m.innerHTML = '<span class="material-symbols-outlined">sticky_note_2</span>';
+        m.setAttribute('aria-hidden', 'true');
+        m.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">sticky_note_2</span>';
         statusEl ? titleSpan.insertBefore(m, statusEl) : titleSpan.appendChild(m);
     }
     if (hasSibling) {
         const si = document.createElement('span');
         si.className = 'item-icon item-icon-sibling';
         si.title = `형제: ${siblingNames}`;
-        si.innerHTML = '<span class="material-symbols-outlined">group</span>';
+        si.setAttribute('aria-hidden', 'true');
+        si.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">group</span>';
         statusEl ? titleSpan.insertBefore(si, statusEl) : titleSpan.appendChild(si);
     }
 }
@@ -1140,6 +1142,8 @@ function buildDynamicFilterSidebar({ listId, filterKey, emptyMsg, getItems, sort
         li.className = 'menu-l2 nav-item' + (activeFilters[filterKey] === value ? ' active' : '');
         li.dataset.filterType = filterKey;
         li.dataset.filterValue = value;
+        li.setAttribute('role', 'button');
+        li.tabIndex = 0;
         const countHtml = canViewClassCounts() ? `<span class="class-filter-count">${countMap[value]}</span>` : '';
         li.innerHTML = `<span class="class-filter-item"><span class="class-filter-code">${labelFn(value)}</span></span>${countHtml}`;
         li.addEventListener('click', () => {
@@ -1662,11 +1666,11 @@ function renderStudentItem(s, container) {
     // 형제 아이콘
     const hasSibling = siblingMap[s.id] && siblingMap[s.id].size > 0;
     const siblingNames = hasSibling ? [...siblingMap[s.id]].map(sid => allStudents.find(x => x.id === sid)?.name).filter(Boolean).join(', ') : '';
-    const siblingIcon = hasSibling ? `<span class="item-icon item-icon-sibling" title="형제: ${esc(siblingNames)}"><span class="material-symbols-outlined">group</span></span>` : '';
+    const siblingIcon = hasSibling ? `<span class="item-icon item-icon-sibling" title="형제: ${esc(siblingNames)}" aria-hidden="true"><span class="material-symbols-outlined" aria-hidden="true">group</span></span>` : '';
 
     // 메모 아이콘
     const hasMemo = memoCache[s.id];
-    const memoIcon = hasMemo ? `<span class="item-icon item-icon-memo" title="메모 있음"><span class="material-symbols-outlined">sticky_note_2</span></span>` : '';
+    const memoIcon = hasMemo ? `<span class="item-icon item-icon-memo" title="메모 있음" aria-hidden="true"><span class="material-symbols-outlined" aria-hidden="true">sticky_note_2</span></span>` : '';
 
     // 휴원종료일 표시 (실휴원/가휴원인 경우)
     let pauseDateHtml = '';
@@ -2079,7 +2083,7 @@ window.selectStudent = (studentId, studentData, targetElement) => {
             if (!sib) return '';
             const sch = abbreviateSchool(sib);
             const label = sch && sch !== '—' ? `${sib.name} (${sch})` : (sib.name || sid);
-            return `<a class="sibling-link" onclick="window.goToStudent('${escAttr(sid)}')">${esc(label)}</a>`;
+            return `<a class="sibling-link" onclick="window.goToStudent('${escAttr(sid)}')" role="button" tabindex="0">${esc(label)}</a>`;
         }).filter(Boolean);
         sibEl.innerHTML = links.join(', ');
         sibRow.style.display = links.length ? '' : 'none';
@@ -4502,17 +4506,19 @@ function switchDetailTab(tab) {
 
     // 활성 학생용 탭이므로 과거이력 뷰는 항상 닫는다
     setPastHistoryViewVisible(false);
-    tabBtns.forEach(b => b.classList.remove('active'));
+    tabBtns.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
 
     if (tab === 'history') {
         infoView.style.display = 'none';
         histView.style.display = 'block';
         tabBtns[1]?.classList.add('active');
+        tabBtns[1]?.setAttribute('aria-selected', 'true');
         if (currentStudentId) loadHistory(currentStudentId);
     } else {
         infoView.style.display = 'block';
         histView.style.display = 'none';
         tabBtns[0]?.classList.add('active');
+        tabBtns[0]?.setAttribute('aria-selected', 'true');
     }
 }
 window.switchDetailTab = switchDetailTab;
@@ -5672,7 +5678,7 @@ function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
     }
 
     return `
-        <div style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="this.querySelector('.lr-expand').style.display = this.querySelector('.lr-expand').style.display === 'none' ? 'block' : 'none'">
+        <div style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;" role="button" tabindex="0" onclick="this.querySelector('.lr-expand').style.display = this.querySelector('.lr-expand').style.display === 'none' ? 'block' : 'none'">
             <div style="display:flex;align-items:center;gap:6px;">
                 ${_leaveRequestTypeBadge(r, studentStatus)} ${_leaveRequestStatusBadge(r)}
                 <span style="font-size:12px;color:var(--text-sec);margin-left:4px;">${esc(dateStr)}</span>
@@ -6560,16 +6566,20 @@ window.closeAdminSettingsModal = (e) => {
 };
 
 window.switchAdminTab = (tab) => {
-    document.querySelectorAll('.admin-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.admin-tab').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
     document.querySelectorAll('.admin-tab-panel').forEach(p => p.style.display = 'none');
-    document.querySelector(`.admin-tab[onclick*="${tab}"]`).classList.add('active');
+    const activeTab = document.querySelector(`.admin-tab[onclick*="${tab}"]`);
+    activeTab.classList.add('active');
+    activeTab.setAttribute('aria-selected', 'true');
     document.getElementById(`admin-tab-${tab}`).style.display = '';
 };
 
 window.switchLevelTab = (level) => {
     _adminCurrentLevel = level;
-    document.querySelectorAll('.admin-level-tab').forEach(b => b.classList.remove('active'));
-    document.querySelector(`.admin-level-tab[onclick*="'${level}'"]`).classList.add('active');
+    document.querySelectorAll('.admin-level-tab').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
+    const activeTab = document.querySelector(`.admin-level-tab[onclick*="'${level}'"]`);
+    activeTab.classList.add('active');
+    activeTab.setAttribute('aria-selected', 'true');
     renderLevelSemesterSettings(level);
 };
 
@@ -6711,3 +6721,28 @@ window.runPromotion = async () => {
         runBtn.textContent = '승급 실행';
     }
 };
+
+// ─── 접근성: role=button 키보드 활성화 + 모달 Esc 닫기/Tab 포커스 트랩 ────────
+// (DSC a11y 패턴) role=button인 span/li/div는 native가 아니라 Enter/Space로
+// click이 안 되므로 위임으로 활성화. 모달은 보이는 .modal-overlay를 대상으로 한다.
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+        const el = e.target.closest('[role="button"][tabindex]');
+        if (el && el === e.target) { e.preventDefault(); el.click(); return; }
+    }
+    if (e.key !== 'Escape' && e.key !== 'Tab') return;
+    let modal = null;
+    document.querySelectorAll('.modal-overlay').forEach(m => {
+        if (getComputedStyle(m).display !== 'none') modal = m;
+    });
+    if (!modal) return;
+    if (e.key === 'Escape') { modal.style.display = 'none'; return; }
+    const f = [...modal.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )].filter(el => el.offsetParent !== null);
+    if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (!modal.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
