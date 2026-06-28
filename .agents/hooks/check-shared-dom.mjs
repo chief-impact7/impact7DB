@@ -17,6 +17,11 @@ const apps = {
   db: '/Users/jongsooyi/projects/impact7DB/a11y-dom.js',
 };
 const onlyApp = process.argv.includes('--app') ? process.argv[process.argv.indexOf('--app') + 1] : null;
+// 잘못된 --app(오타·값 누락)이 "0건 검사 후 통과"하는 silent bypass를 막는다.
+if (onlyApp !== null && !apps[onlyApp]) {
+  console.error(`❌ 알 수 없는 앱: "${onlyApp}" (가능: ${Object.keys(apps).join(' / ')})`);
+  process.exit(1);
+}
 
 const drift = [];
 let checked = 0;
@@ -33,6 +38,10 @@ if (drift.length) {
   console.error('❌ 공유 DOM 유틸 drift (마스터: .agents/shared-dom/a11y-dom.js):');
   for (const d of drift) console.error('   ' + d);
   console.error('\n→ 마스터를 고쳤으면 각 앱 루트로 복사, 앱에서 고쳤으면 마스터에 반영 후 재배포하라.');
+  process.exit(1);
+}
+if (checked === 0) {
+  console.error('❌ 검사한 앱이 0건 — 대상 설정을 확인하라.');
   process.exit(1);
 }
 console.log(`✅ 공유 DOM 유틸 동기화 일치 — ${checked}개 앱${onlyApp ? ` (${onlyApp})` : ''}`);
