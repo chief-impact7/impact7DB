@@ -187,3 +187,12 @@ firebase deploy --only functions:shared --project impact7db
 | 2026-06-09 | store.js 동기화 취약점 4개 보완(leaveRequests 7곳·currentFilteredStudents·KST날짜·naesinHelpers drift) + 에이전트 하네스 정합성 업데이트 | app.js, promo-extractor.js, functions/src/naesinHelpers.js, agents/db-developer.md, agents/dsc-developer.md, agents/exam-developer.md, agents/impact-analyst.md | store.state가 stale 참조를 갖는 alias drift 버그 수정; 에이전트 파일의 차트 라이브러리(Recharts→echarts)·store.js 사용법·codegraph 탐색 원칙·consultation 컬렉션 맵 갱신 |
 | 2026-06-13 | functions-developer 에이전트 + student-report-ai 스킬 신설, 오케스트레이터 연결 | agents/functions-developer.md, skills/student-report-ai, skills/impact7-orchestrator, skills/firestore-rules-sync | functions-shared(Cloud Functions 백엔드: Gemini callable·secret·무중단 배포) 전담 부재 갭 해소(db-developer는 app.js 프론트). 학생 AI 리포트 도메인 지식(데이터모델 함정·통합 핸들러·Chat DWD 연동)을 student-report/PLAN.md에서 스킬로 이관. rules-sync에 CRLF 보존(cp) 교훈 추가 |
 | 2026-06-18 | tablet 앱(출결 키오스크) 하네스 편입 — tablet-developer 신설, impact-analyst/qa-validator 확장, 오케스트레이터 연결 | agents/tablet-developer.md, agents/impact-analyst.md, agents/qa-validator.md, skills/impact7-orchestrator | 신규 태블릿 출결/외출 키오스크 앱(/Users/jongsooyi/projects/tablet, Vanilla JS+Vite) 전담 부재 갭 해소. 태블릿은 Firestore 직접 접근 없이 tabletCheckin callable 경유 → 백엔드(functions-developer)·DSC 캐시(dsc-developer)와 크로스앱. 신규 컬렉션 attendance_events/kiosk_devices 컬렉션 맵 추가, callable shape 경계면을 qa-validator에 추가 |
+
+## 프론트엔드 수렴 정책 (impact7 에코시스템)
+
+분열된 프레임워크(바닐라 DSC·DB / Svelte HR / Next exam)를 강제 통합하지 않고 **점진 수렴**한다.
+
+- **신규 화면·앱은 React(Next)로** 만든다. 기존 바닐라·Svelte는 강제 마이그레이션하지 않고 수명이 다할 때 React로 교체.
+- **공유 UI는 `@impact7/ui`** (`github:chief-impact7/impact7-ui`). React 앱은 컴포넌트 직접 import, 바닐라/Svelte 앱은 `@impact7/ui/mount` 어댑터로 부분 마운트(islands) — **반드시 `unmount`로 정리, 한 앱 *내부* 프레임워크 혼용 남발 금지**(ROI 높은 영역만).
+- **공유 레이어 재사용**: 디자인=`design-tokens.json` SSoT, 로직=`@impact7/shared`, 접근성=`a11y.css`/`a11y-dom.js`. 컴포넌트(렌더링)만 프레임워크 종속이므로 그 위 레이어는 항상 공유.
+- 토큰/공유DOM drift는 `impact7DB/.agents/hooks/check-design-tokens.mjs`·`check-shared-dom.mjs`(pre-push)가 차단.
