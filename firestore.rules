@@ -915,11 +915,11 @@ service cloud.firestore {
       allow write: if isDirector();
 
       // 온보딩: 비인증 사용자가 유효한 토큰으로 staff 문서 생성 (통합: 교사/행정/단기 3종 토큰)
-      // hasOnly = 교사필드 ∪ {position(행정)} ∪ {department, affiliation, interviewDate, resignationDate}.
+      // hasOnly = 교사필드 ∪ {position(행정)} ∪ {department, affiliation, interviewDate, resignationDate} ∪ {phoneKey, englishName(키오스크 매칭/표시, 무권한)}.
       // 권한 부여 필드(role 등)는 목록에 없으므로 온보딩 create로 권한 주입 불가.
       allow create: if request.resource.data.status == 'onboarding'
         && request.resource.data.keys().hasAll(['tokenId'])
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'residentNumber', 'birthDate', 'address', 'subject', 'bankInfo', 'taxInfo', 'documents', 'staffType', 'status', 'joinDate', 'onboardingCompletedAt', 'memo', 'tokenId', 'position', 'department', 'affiliation', 'interviewDate', 'resignationDate'])
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'residentNumber', 'birthDate', 'address', 'subject', 'bankInfo', 'taxInfo', 'documents', 'staffType', 'status', 'joinDate', 'onboardingCompletedAt', 'memo', 'tokenId', 'position', 'department', 'affiliation', 'interviewDate', 'resignationDate', 'phoneKey', 'englishName'])
         && (
           hrOnboardingTokenValid(/databases/$(database)/documents/onboardingTokens/$(request.resource.data.tokenId))
           || hrOnboardingTokenValid(/databases/$(database)/documents/employeeOnboardingTokens/$(request.resource.data.tokenId))

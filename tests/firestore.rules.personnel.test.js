@@ -183,6 +183,18 @@ describe('staff 통합 온보딩(3토큰)·계약서명(다토큰) 규칙 (Task 
     }));
   });
 
+  test('교사 온보딩: phoneKey·englishName 포함(키오스크 매칭/표시) → 성공', async () => {
+    await seedToken('onboardingTokens', 'tok-kiosk');
+    const db = unauthedCtx(env);
+    await assertSucceeds(setDoc(doc(db, 'staff/u-kiosk'), {
+      name: '키오스크교사', phone: '01077778888', email: 'k@school.kr',
+      residentNumber: '920303-1234567', birthDate: '1992-03-03', address: '서울',
+      subject: '수학', staffType: '정규직', department: '교수',
+      phoneKey: '017777', englishName: 'Kiosk Teacher',
+      status: 'onboarding', tokenId: 'tok-kiosk',
+    }));
+  });
+
   // ── 보안 부정: 온보딩 create ───────────────────────────────────────────
   test('보안: 존재하지 않는 토큰(비인증) → 거부', async () => {
     const db = unauthedCtx(env);
