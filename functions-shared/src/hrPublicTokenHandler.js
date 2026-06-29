@@ -131,7 +131,8 @@ export async function handleGetHrPublicToken(request, deps = {}) {
   // 계약/근로계약 서명: staff/employee 마스터 + 해당 계약 subdoc을 함께 반환.
   if (tokenType === 'contractSigning' || tokenType === 'employeeContractSigning') {
     const isEmployee = tokenType === 'employeeContractSigning';
-    const partyCol = isEmployee ? 'employees' : 'staff';
+    // 통합 staff: 행정 party도 staff에 존재(마이그레이션이 ID 보존). party 컬렉션을 staff로 일원화.
+    const partyCol = 'staff';
     const partyId = textOf(isEmployee ? token.employeeId : token.staffId);
     const contractId = textOf(token.contractId);
     if (!partyId || !contractId) {

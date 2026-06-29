@@ -52,6 +52,28 @@ service cloud.firestore {
     }
 
     // =========================================================================
+    // [HR] 통합 staff 공개 온보딩·서명 토큰 검증 헬퍼 (다토큰)
+    // Firestore rules는 컬렉션 경로를 변수화하지 못하므로 호출부에서 완성된 path를
+    // 넘기고, exists()로 get()을 가드해 미존재 컬렉션 분기가 OR 평가를 깨지 않게 한다.
+    // =========================================================================
+    function hrOnboardingTokenValid(tokenPath) {
+      return exists(tokenPath)
+        && get(tokenPath).data.status == 'pending'
+        && get(tokenPath).data.expiresAt > request.time;
+    }
+    function hrSigningTokenValid(tokenPath, contractId) {
+      return exists(tokenPath)
+        && get(tokenPath).data.contractId == contractId
+        && get(tokenPath).data.status == 'pending'
+        && get(tokenPath).data.expiresAt > request.time;
+    }
+    function hrSigningTokenForContract(tokenPath, contractId) {
+      return exists(tokenPath)
+        && get(tokenPath).data.contractId == contractId
+        && get(tokenPath).data.expiresAt > request.time;
+    }
+
+    // =========================================================================
     // [공통] 학생 마스터 컬렉션
     // =========================================================================
     match /students/{docId} {
@@ -892,13 +914,17 @@ service cloud.firestore {
       allow read: if isLoggedIn();
       allow write: if isDirector();
 
-      // 온보딩: 비인증 사용자가 유효한 토큰으로 staff 문서 생성
+      // 온보딩: 비인증 사용자가 유효한 토큰으로 staff 문서 생성 (통합: 교사/행정/단기 3종 토큰)
+      // hasOnly = 교사필드 ∪ {position(행정)} ∪ {department, affiliation, interviewDate, resignationDate}.
+      // 권한 부여 필드(role 등)는 목록에 없으므로 온보딩 create로 권한 주입 불가.
       allow create: if request.resource.data.status == 'onboarding'
         && request.resource.data.keys().hasAll(['tokenId'])
-        && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'residentNumber', 'birthDate', 'address', 'subject', 'bankInfo', 'taxInfo', 'documents', 'staffType', 'status', 'joinDate', 'onboardingCompletedAt', 'memo', 'tokenId'])
-        && exists(/databases/$(database)/documents/onboardingTokens/$(request.resource.data.tokenId))
-        && get(/databases/$(database)/documents/onboardingTokens/$(request.resource.data.tokenId)).data.status == 'pending'
-        && get(/databases/$(database)/documents/onboardingTokens/$(request.resource.data.tokenId)).data.expiresAt > request.time;
+        && request.resource.data.keys().hasOnly(['name', 'phone', 'email', 'residentNumber', 'birthDate', 'address', 'subject', 'bankInfo', 'taxInfo', 'documents', 'staffType', 'status', 'joinDate', 'onboardingCompletedAt', 'memo', 'tokenId', 'position', 'department', 'affiliation', 'interviewDate', 'resignationDate'])
+        && (
+          hrOnboardingTokenValid(/databases/$(database)/documents/onboardingTokens/$(request.resource.data.tokenId))
+          || hrOnboardingTokenValid(/databases/$(database)/documents/employeeOnboardingTokens/$(request.resource.data.tokenId))
+          || hrOnboardingTokenValid(/databases/$(database)/documents/shortTermTokens/$(request.resource.data.tokenId))
+        );
 
       // 비인증 staff 읽기는 getHrPublicToken callable로 이전(G03) — 공개 get 제거.
 
@@ -908,15 +934,16 @@ service cloud.firestore {
         allow write: if isDirector();
 
         // 비인증 계약서 읽기는 getHrPublicToken callable로 이전(G03). 서명 update만 유지.
-        // ready→signed: 계약서 서명 (contractSigningToken 검증)
+        // ready→signed: 계약서 서명 (통합: 교사 contractSigningTokens 또는 행정 employeeContractSigningTokens)
         allow update: if resource.data.status == 'ready'
           && request.resource.data.status == 'signed'
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['signatures', 'status', 'updatedAt', 'signedPdfUrl', 'signingTokenId'])
           && 'signingTokenId' in request.resource.data
-          && get(/databases/$(database)/documents/contractSigningTokens/$(request.resource.data.signingTokenId)).data.contractId == contractId
-          && get(/databases/$(database)/documents/contractSigningTokens/$(request.resource.data.signingTokenId)).data.status == 'pending'
-          && get(/databases/$(database)/documents/contractSigningTokens/$(request.resource.data.signingTokenId)).data.expiresAt > request.time;
+          && (
+            hrSigningTokenValid(/databases/$(database)/documents/contractSigningTokens/$(request.resource.data.signingTokenId), contractId)
+            || hrSigningTokenValid(/databases/$(database)/documents/employeeContractSigningTokens/$(request.resource.data.signingTokenId), contractId)
+          );
         // signed/salary_agreement_sent→자기자신: 급여약정서 서명 (salaryAgreementToken 검증, status 불변)
         // status는 director가 'salary_agreement_sent'로 바꾼 뒤 강사가 서명하므로 두 상태 모두 허용
         allow update: if resource.data.status in ['signed', 'salary_agreement_sent']
@@ -929,13 +956,16 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/salaryAgreementTokens/$(request.resource.data.agreementTokenId)).data.expiresAt > request.time;
         // signed/salary_agreement_sent→자기자신: signedPdfUrl 재업로드 수리 (서명 후 PDF 업로드 실패 복구용)
         // 기존 signingToken이 같은 contractId를 가리키고 유효기간 내이면 허용. signature·status는 불변.
+        // 통합: 교사 contractSigningTokens 또는 행정 employeeContractSigningTokens (서명 후 status는 pending 아님).
         allow update: if resource.data.status in ['signed', 'salary_agreement_sent']
           && request.resource.data.status == resource.data.status
           && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['signedPdfUrl', 'updatedAt'])
           && 'signingTokenId' in resource.data
-          && get(/databases/$(database)/documents/contractSigningTokens/$(resource.data.signingTokenId)).data.contractId == contractId
-          && get(/databases/$(database)/documents/contractSigningTokens/$(resource.data.signingTokenId)).data.expiresAt > request.time;
+          && (
+            hrSigningTokenForContract(/databases/$(database)/documents/contractSigningTokens/$(resource.data.signingTokenId), contractId)
+            || hrSigningTokenForContract(/databases/$(database)/documents/employeeContractSigningTokens/$(resource.data.signingTokenId), contractId)
+          );
       }
 
       match /assignments/{id} {

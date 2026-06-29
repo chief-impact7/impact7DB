@@ -267,11 +267,12 @@ describe('handleGetHrPublicToken — employee contract signing', () => {
     signatures: { employee: null },
   };
 
-  it('returns masked employee + contract, never sensitive fields', async () => {
+  it('returns masked employee + contract from unified staff, never sensitive fields', async () => {
+    // 통합 staff: 행정 party·계약은 staff/{employeeId}(ID 보존)에서 읽는다.
     const db = makeDb({
       'employeeContractSigningTokens/t1': { employeeId: 'em1', contractId: 'c9', employeeName: '이직원', status: 'pending', expiresAt: FUTURE },
-      'employees/em1': employeeDoc,
-      'employees/em1/contracts/c9': contractDoc,
+      'staff/em1': employeeDoc,
+      'staff/em1/contracts/c9': contractDoc,
     });
     const res = await handleGetHrPublicToken({ data: { tokenType: 'employeeContractSigning', tokenId: 't1' } }, { db });
 
