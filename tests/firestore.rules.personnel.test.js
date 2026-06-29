@@ -1,6 +1,6 @@
 import { test, before, after, describe } from 'node:test';
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { setDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { setDoc, doc, getDoc, updateDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import { createTestEnv, authedCtx, unauthedCtx } from './firestore-rules-helpers.js';
 
 describe('staff 통합 규칙 — department 필드 포함', () => {
@@ -284,5 +284,134 @@ describe('staff 통합 온보딩(3토큰)·계약서명(다토큰) 규칙 (Task 
       signingTokenId: 'no-such-token',
       updatedAt: new Date(),
     }));
+  });
+});
+
+describe('staff read PII 제한 — director+manager 전체, shortterm은 단기만 (Task rules45 #5)', () => {
+  let env;
+  before(async () => {
+    env = await createTestEnv('rules-test-personnel-readpii');
+    await env.clearFirestore();
+  });
+  after(async () => { await env?.cleanup(); });
+
+  // HR_users/{uid}.role 시드 후 인증 컨텍스트 반환.
+  async function ctxWithRole(uid, role) {
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), `HR_users/${uid}`), { role });
+    });
+    return authedCtx(env, uid);
+  }
+
+  // 규칙 우회로 staff 문서 시드(부서별).
+  async function seedStaff(id, department) {
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), `staff/${id}`), {
+        name: `직원-${id}`, department,
+        residentNumber: '900101-1234567', // PII
+      });
+    });
+  }
+
+  before(async () => {
+    await seedStaff('prof1', '교수');
+    await seedStaff('admin1', '행정');
+    await seedStaff('short1', '단기');
+    await seedStaff('short2', '단기');
+  });
+
+  test('director(principal): 교수 문서 read → 성공', async () => {
+    const db = await ctxWithRole('dir1', 'principal');
+    await assertSucceeds(getDoc(doc(db, 'staff/prof1')));
+  });
+
+  test('director(owner): 행정 문서 read → 성공', async () => {
+    const db = await ctxWithRole('dir2', 'owner');
+    await assertSucceeds(getDoc(doc(db, 'staff/admin1')));
+  });
+
+  test('manager: 교수 문서 read → 성공(전체 열람)', async () => {
+    const db = await ctxWithRole('mgr1', 'manager');
+    await assertSucceeds(getDoc(doc(db, 'staff/prof1')));
+  });
+
+  test('manager: 단기 문서 read → 성공', async () => {
+    const db = await ctxWithRole('mgr2', 'manager');
+    await assertSucceeds(getDoc(doc(db, 'staff/short1')));
+  });
+
+  test('shortterm: 단기 부서 문서 read → 성공(기존 동작 보존)', async () => {
+    const db = await ctxWithRole('st1', 'shortterm');
+    await assertSucceeds(getDoc(doc(db, 'staff/short1')));
+  });
+
+  test('shortterm: 교수 문서 read → 거부(PII 차단)', async () => {
+    const db = await ctxWithRole('st2', 'shortterm');
+    await assertFails(getDoc(doc(db, 'staff/prof1')));
+  });
+
+  test('shortterm: 행정 문서 read → 거부(PII 차단)', async () => {
+    const db = await ctxWithRole('st3', 'shortterm');
+    await assertFails(getDoc(doc(db, 'staff/admin1')));
+  });
+
+  test('staff: 어떤 staff 문서도 read → 거부', async () => {
+    const db = await ctxWithRole('stf1', 'staff');
+    await assertFails(getDoc(doc(db, 'staff/short1')));
+    await assertFails(getDoc(doc(db, 'staff/prof1')));
+  });
+
+  test('teacher: staff 문서 read → 거부', async () => {
+    const db = await ctxWithRole('tch1', 'teacher');
+    await assertFails(getDoc(doc(db, 'staff/short1')));
+  });
+
+  // ── LIST 쿼리 규칙 평가 ──────────────────────────────────────────────
+  test('shortterm LIST: where(department==단기) 쿼리 → 성공', async () => {
+    const db = await ctxWithRole('st-list-ok', 'shortterm');
+    await assertSucceeds(getDocs(query(collection(db, 'staff'), where('department', '==', '단기'))));
+  });
+
+  test('shortterm LIST: 무제약 staff 열거 → 거부(전 직원 PII 노출 차단)', async () => {
+    const db = await ctxWithRole('st-list-bad', 'shortterm');
+    await assertFails(getDocs(collection(db, 'staff')));
+  });
+
+  test('shortterm LIST: where(department==교수) 쿼리 → 거부', async () => {
+    const db = await ctxWithRole('st-list-prof', 'shortterm');
+    await assertFails(getDocs(query(collection(db, 'staff'), where('department', '==', '교수'))));
+  });
+
+  test('manager LIST: 무제약 staff 열거 → 성공(전체 열람)', async () => {
+    const db = await ctxWithRole('mgr-list', 'manager');
+    await assertSucceeds(getDocs(collection(db, 'staff')));
+  });
+
+  // ── 레거시 컬렉션 우회 차단(employees·shortTermStaff) ─────────────────
+  // staff 잠금을 우회해 동일 PII를 읽던 레거시 경로를 함께 닫았는지 검증.
+  test('legacy employees: staff 역할 read → 거부(우회 차단)', async () => {
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), 'employees/e1'), {
+        name: '레거시직원', residentNumber: '900101-1234567', bankInfo: { accountNumber: '123' },
+      });
+    });
+    const staffDb = await ctxWithRole('legacy-staff', 'staff');
+    await assertFails(getDoc(doc(staffDb, 'employees/e1')));
+    await assertFails(getDocs(collection(staffDb, 'employees')));
+  });
+
+  test('legacy employees: manager read → 성공', async () => {
+    const db = await ctxWithRole('legacy-mgr', 'manager');
+    await assertSucceeds(getDoc(doc(db, 'employees/e1')));
+  });
+
+  test('legacy shortTermStaff: teacher 역할 read → 거부', async () => {
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), 'shortTermStaff/st-legacy'), {
+        name: '레거시단기', residentNumber: '950505-2345678',
+      });
+    });
+    const tchDb = await ctxWithRole('legacy-tch', 'teacher');
+    await assertFails(getDoc(doc(tchDb, 'shortTermStaff/st-legacy')));
   });
 });

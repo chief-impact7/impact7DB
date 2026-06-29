@@ -29,6 +29,7 @@ service cloud.firestore {
     }
     function isOwner() { return isLoggedIn() && getUserRole() == 'owner'; }
     function isDirector() { return isLoggedIn() && getUserRole() in ['owner', 'principal']; }
+    function isManager() { return isLoggedIn() && getUserRole() == 'manager'; }
     function isStaff() { return isLoggedIn() && getUserRole() == 'staff'; }
     function isShortTerm() { return isLoggedIn() && getUserRole() == 'shortterm'; }
     // AI 일괄 생성(비용 발생) 권한: director 등급 이상. isDirector는 'director' role을 포함하지 않으므로 별도 헬퍼.
@@ -875,7 +876,8 @@ service cloud.firestore {
     // [Director] 단기 인원
     // =========================================================================
     match /shortTermStaff/{docId} {
-      allow read: if isDirector() || isShortTerm();
+      // 레거시 단기 컬렉션(통합 staff로 마이그레이션됨). manager도 전체 열람(staff와 일관).
+      allow read: if isDirector() || isManager() || isShortTerm();
       allow write: if isDirector() || isShortTerm();
 
       // 비인증: 토큰 기반 등록 (필수 필드 + hasOnly + 토큰 검증)
@@ -911,7 +913,10 @@ service cloud.firestore {
     // [Director] Staff + 서브컬렉션
     // =========================================================================
     match /staff/{staffId} {
-      allow read: if isLoggedIn();
+      // PII 보호: 전 직원 신원 정보(주민번호·계좌·연락처)를 director+manager만 전체 열람.
+      // shortterm은 단기 부서 문서만 읽을 수 있다(LIST는 department==단기로 제약된 쿼리여야 통과).
+      allow read: if isDirector() || isManager()
+        || (isShortTerm() && resource.data.department == '단기');
       allow write: if isDirector();
 
       // 온보딩: 비인증 사용자가 유효한 토큰으로 staff 문서 생성 (통합: 교사/행정/단기 3종 토큰)
@@ -1062,7 +1067,9 @@ service cloud.firestore {
     // [Director] Employees + 서브컬렉션
     // =========================================================================
     match /employees/{employeeId} {
-      allow read: if isLoggedIn();
+      // 레거시 컬렉션(통합 staff로 마이그레이션됨, 클라 read 없음). staff와 동일하게 PII read 차단:
+      // director+manager만. isLoggedIn() 개방은 staff 잠금(#5)을 우회하는 동일 PII 노출이라 닫는다.
+      allow read: if isDirector() || isManager();
       allow write: if isDirector();
       allow create: if request.resource.data.status == 'onboarding'
         && request.resource.data.keys().hasAll(['tokenId'])

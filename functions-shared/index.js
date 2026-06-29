@@ -27,6 +27,7 @@ import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii } from './src/queueWorker.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
+import { handleSubmitEmployeeContractSignature } from './src/employeeContractSignatureHandler.js';
 import {
   handleHrUploadStaffDocument,
   handleHrUploadContract,
@@ -80,6 +81,12 @@ export const runStudentReportBatchManual = onCall(
 // 토큰 존재/사용여부/만료를 검증한 뒤 각 페이지가 표시하는 최소 필드만 마스킹해 반환한다.
 // 주민번호·계좌번호 평문, taxInfo, 문서스캔은 반환하지 않는다. assertAuthorizedStaff 미사용(의도).
 export const getHrPublicToken = onCall({ enforceAppCheck: false }, handleGetHrPublicToken);
+
+// Task rules45 #4: 공개(비로그인) 근로계약서 서명 제출 — PUBLIC·토큰 게이트.
+// 비인증 서명자가 막히던 staff.status='active' write를 서버로 이전. 토큰 검증 후
+// 계약 서명+status, staff.status='active', 토큰 소진을 단일 트랜잭션으로 원자 갱신한다.
+// 경로 ID는 토큰 doc에서만 도출(호출자 입력 무시). assertAuthorizedStaff 미사용(의도).
+export const submitEmployeeContractSignature = onCall({ enforceAppCheck: false }, handleSubmitEmployeeContractSignature);
 
 // H-01: HR 파일 접근을 전부 callable 경유로 옮기는 서버 골격(ADDITIVE — storage.rules는 후속 단계).
 // 업로드는 base64를 받아 서버가 크기(<20MB)·MIME(PDF/이미지, 매직넘버 재검증)을 검증한 뒤
