@@ -14,6 +14,7 @@ import {
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleTabletCheckin } from './src/tabletCheckinHandler.js';
 import { handleStaffCheckin } from './src/staffCheckinHandler.js';
+import { handleEditStaffAttendance } from './src/staffAttendanceEditHandler.js';
 import { handleCreatePromoCampaign } from './src/promoCampaignHandler.js';
 import { handleSetPromoConsent } from './src/promoConsentHandler.js';
 import { handleSendParentNotice } from './src/parentNoticeHandler.js';
@@ -136,6 +137,10 @@ export const tabletCheckin = onCall({ enforceAppCheck: false, minInstances: 1 },
 // 직원 출퇴근 — 휴대폰 번호(phoneKey)로 조회(후보+허용액션)와 확정(staff_attendance 적재). 알림 없음.
 // minInstances:1 — 키오스크와 동시 호출되므로 함께 웜 유지(콜드스타트 ~1.6s 제거).
 export const staffCheckin = onCall({ enforceAppCheck: false, minInstances: 1 }, handleStaffCheckin);
+
+// 근태 레코드 보정 — manager+가 staff_attendance의 출근/퇴근 시각·메모를 교정(write:false라 callable admin만 수정).
+// 별도 저장소 impact7HR UI가 호출. region(asia-northeast3) 전역 상속.
+export const editStaffAttendance = onCall({ enforceAppCheck: false }, handleEditStaffAttendance);
 
 // 홍보(브랜드 메시지) 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo) 배치 enqueue.
 // 야간(광고 제한)이면 익일 08:00 자동 예약. 발송은 워커(onMessageQueued)가 수행.

@@ -27,3 +27,15 @@ export async function assertDirector(auth, db) {
     throw new HttpsError('permission-denied', '원장 권한이 필요합니다.');
   }
 }
+
+// 관리자급 이상(owner/principal/manager) 판정 — firestore.rules의 isDirector()||isManager()와 동일 소스.
+// 근태 보정처럼 director 미만이라도 manager가 수행해야 하는 작업에 사용. (assertDirector보다 한 단계 넓다.)
+export async function assertManagerOrAbove(auth, db) {
+  assertAuthorizedStaff(auth);
+  const firestore = db || getFirestore();
+  const snap = await firestore.collection('HR_users').doc(auth.uid).get();
+  const role = snap.exists ? snap.data().role : null;
+  if (role !== 'owner' && role !== 'principal' && role !== 'manager') {
+    throw new HttpsError('permission-denied', '관리자 권한이 필요합니다.');
+  }
+}
