@@ -32,10 +32,11 @@ async function seed() {
     documents: { idCopy: null, bankbook: null, resume: null, certificates: [], taxWithholdingConsent: null },
     staffType: 'teacher', status: 'active', joinDate: '2024-01-01', onboardingCompletedAt: null, memo: '',
   };
-  await db.collection('employees').add(emp1);
+  const empRef = await db.collection('employees').add(emp1);
+  await empRef.collection('contracts').add({ contractType: '정식(4대보험)', startDate: '2025-01-01', endDate: '2025-12-31', status: 'completed' });
   await db.collection('employees').add(emp2);
   await db.collection('shortTermStaff').add(st1);
   await db.collection('staff').add(teacher1);
-  console.log('[seed] employees 2, shortTermStaff 1, 교사 1(dept 미설정) 삽입');
+  console.log('[seed] employees 2, shortTermStaff 1, 교사 1(dept 미설정) 삽입, 김행정 계약 1건 추가');
 }
 seed().catch(e => { console.error(e); process.exit(1); });

@@ -29,6 +29,20 @@ async function verify() {
     console.error('계약 복사 누락!');
     process.exit(2);
   }
+
+  // employees 계약 서브컬렉션 복사 확인
+  const empsAll = await db.collection('employees').get();
+  let eSrc = 0, eCopied = 0;
+  for (const d of empsAll.docs) {
+    const a = await db.collection('employees').doc(d.id).collection('contracts').get();
+    const b = await db.collection('staff').doc(d.id).collection('contracts').get();
+    eSrc += a.size; eCopied += b.size;
+  }
+  console.log(`[verify] employees 계약 원본 ${eSrc} → staff 복사 ${eCopied}`);
+  if (eCopied < eSrc) {
+    console.error('employees 계약 복사 누락!');
+    process.exit(2);
+  }
 }
 
 verify().catch(e => { console.error(e); process.exit(1); });

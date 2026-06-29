@@ -43,6 +43,17 @@ async function run() {
     await w.close();
   }
   console.log(`[apply] staff 이전 ${plan.length}건 완료(merge), 단기 계약 서브컬렉션 복사 포함`);
+  // employees 계약 서브컬렉션 복사: employees/{id}/contracts → staff/{id}/contracts
+  for (const d of emps.docs) {
+    const subs = await db.collection('employees').doc(d.id).collection('contracts').get();
+    if (subs.empty) continue;
+    const w = db.bulkWriter();
+    for (const c of subs.docs) {
+      w.set(db.collection('staff').doc(d.id).collection('contracts').doc(c.id), c.data(), { merge: true });
+    }
+    await w.close();
+  }
+  console.log('[apply] employees 계약 서브컬렉션 복사 포함');
   // 기존 staff(교사) 중 department 미설정 → '교수' 백필 (staffSnap은 이전 복사 전 원본)
   const writer = db.bulkWriter();
   for (const d of needBackfill) {
