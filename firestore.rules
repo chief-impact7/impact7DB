@@ -1324,7 +1324,7 @@ service cloud.firestore {
 
     // 직원 출퇴근 기록 — 서버(Admin SDK)만 기록, 조회는 원장급(HR 월별 조회).
     match /staff_attendance/{docId} {
-      allow read: if isDirector();
+      allow read: if isDirector() || isManager();
       allow write: if false;
     }
 
