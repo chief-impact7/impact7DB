@@ -9,7 +9,8 @@ async function verify() {
   let emptyPhoneKey = 0;
   for (const d of staff.docs) {
     const s = d.data();
-    byDept[s.department || '(없음)'] = (byDept[s.department || '(없음)'] || 0) + 1;
+    const dept = s.department || '(없음)';
+    byDept[dept] = (byDept[dept] || 0) + 1;
     if (!s.phoneKey) emptyPhoneKey++;
   }
   console.log('[verify] staff 부서별:', byDept);
@@ -24,7 +25,10 @@ async function verify() {
     src += a.size; copied += b.size;
   }
   console.log(`[verify] 단기 계약 원본 ${src} → staff 복사 ${copied}`);
-  if (copied < src) { console.error('계약 복사 누락!'); process.exit(2); }
+  if (copied < src) {
+    console.error('계약 복사 누락!');
+    process.exit(2);
+  }
 }
 
 verify().catch(e => { console.error(e); process.exit(1); });
