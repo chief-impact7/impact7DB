@@ -34,9 +34,13 @@ async function seed() {
   };
   const empRef = await db.collection('employees').add(emp1);
   await empRef.collection('contracts').add({ contractType: '정식(4대보험)', startDate: '2025-01-01', endDate: '2025-12-31', status: 'completed' });
+  await empRef.collection('performanceNotes').add({
+    employeeId: empRef.id, tag: 'positive', content: '업무 우수',
+    createdBy: 'seed', createdAt: admin.firestore.Timestamp.fromDate(new Date('2025-06-01')), updatedAt: null,
+  });
   await db.collection('employees').add(emp2);
   await db.collection('shortTermStaff').add(st1);
   await db.collection('staff').add(teacher1);
-  console.log('[seed] employees 2, shortTermStaff 1, 교사 1(dept 미설정) 삽입, 김행정 계약 1건 추가');
+  console.log('[seed] employees 2, shortTermStaff 1, 교사 1(dept 미설정) 삽입, 김행정 계약 1건·인사메모 1건 추가');
 }
 seed().catch(e => { console.error(e); process.exit(1); });

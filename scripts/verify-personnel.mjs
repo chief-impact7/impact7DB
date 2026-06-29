@@ -43,6 +43,21 @@ async function verify() {
     console.error('employees 계약 복사 누락!');
     process.exit(2);
   }
+
+  // 인사메모(performanceNotes) 서브컬렉션 복사 확인 (shortTermStaff·employees → staff)
+  let pnSrc = 0, pnCopied = 0;
+  for (const [parent, snap] of [['shortTermStaff', sts], ['employees', empsAll]]) {
+    for (const d of snap.docs) {
+      const a = await db.collection(parent).doc(d.id).collection('performanceNotes').get();
+      const b = await db.collection('staff').doc(d.id).collection('performanceNotes').get();
+      pnSrc += a.size; pnCopied += b.size;
+    }
+  }
+  console.log(`[verify] 인사메모 원본 ${pnSrc} → staff 복사 ${pnCopied}`);
+  if (pnCopied < pnSrc) {
+    console.error('인사메모(performanceNotes) 복사 누락!');
+    process.exit(2);
+  }
 }
 
 verify().catch(e => { console.error(e); process.exit(1); });

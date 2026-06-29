@@ -54,6 +54,27 @@ async function run() {
     await w.close();
   }
   console.log('[apply] employees 계약 서브컬렉션 복사 포함');
+  // 단기 인사메모 서브컬렉션 복사: shortTermStaff/{id}/performanceNotes → staff/{id}/performanceNotes
+  for (const d of sts.docs) {
+    const subs = await db.collection('shortTermStaff').doc(d.id).collection('performanceNotes').get();
+    if (subs.empty) continue;
+    const w = db.bulkWriter();
+    for (const n of subs.docs) {
+      w.set(db.collection('staff').doc(d.id).collection('performanceNotes').doc(n.id), n.data(), { merge: true });
+    }
+    await w.close();
+  }
+  // employees 인사메모 서브컬렉션 복사: employees/{id}/performanceNotes → staff/{id}/performanceNotes
+  for (const d of emps.docs) {
+    const subs = await db.collection('employees').doc(d.id).collection('performanceNotes').get();
+    if (subs.empty) continue;
+    const w = db.bulkWriter();
+    for (const n of subs.docs) {
+      w.set(db.collection('staff').doc(d.id).collection('performanceNotes').doc(n.id), n.data(), { merge: true });
+    }
+    await w.close();
+  }
+  console.log('[apply] 인사메모(performanceNotes) 서브컬렉션 복사 포함');
   // 기존 staff(교사) 중 department 미설정 → '교수' 백필 (staffSnap은 이전 복사 전 원본)
   const writer = db.bulkWriter();
   for (const d of needBackfill) {
