@@ -415,3 +415,110 @@ describe('staff read PII 제한 — director+manager 전체, shortterm은 단기
     await assertFails(getDoc(doc(tchDb, 'shortTermStaff/st-legacy')));
   });
 });
+
+describe('staff write 권한 — director+manager 허용 (근태현황 빠른입력)', () => {
+  let env;
+  before(async () => {
+    env = await createTestEnv('rules-test-personnel-write');
+    await env.clearFirestore();
+  });
+  after(async () => { await env?.cleanup(); });
+
+  // HR_users/{uid}.role 시드 후 인증 컨텍스트 반환.
+  async function ctxWithRole(uid, role) {
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), `HR_users/${uid}`), { role });
+    });
+    return authedCtx(env, uid);
+  }
+
+  test('director: staff create(근태기록) → 성공', async () => {
+    const db = await ctxWithRole('dir-write1', 'principal');
+    await assertSucceeds(setDoc(doc(db, 'staff/direct-create'), {
+      name: '관리자-생성',
+      email: 'admin-new@school.kr',
+      department: '행정',
+    }));
+  });
+
+  test('director: staff update(근태기록) → 성공', async () => {
+    // 규칙 우회로 문서 생성
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), 'staff/dir-update-target'), {
+        name: '관리자-수정대상',
+        department: '행정',
+      });
+    });
+    const db = await ctxWithRole('dir-write2', 'principal');
+    await assertSucceeds(updateDoc(doc(db, 'staff/dir-update-target'), {
+      name: '관리자-수정됨',
+    }));
+  });
+
+  test('manager: staff create(근태기록) → 성공', async () => {
+    const db = await ctxWithRole('mgr-write1', 'manager');
+    await assertSucceeds(setDoc(doc(db, 'staff/mgr-create'), {
+      name: '매니저-생성',
+      email: 'mgr-new@school.kr',
+      department: '교무',
+    }));
+  });
+
+  test('manager: staff update(근태기록) → 성공', async () => {
+    // 규칙 우회로 문서 생성
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), 'staff/mgr-update-target'), {
+        name: '매니저-수정대상',
+        department: '교무',
+      });
+    });
+    const db = await ctxWithRole('mgr-write2', 'manager');
+    await assertSucceeds(updateDoc(doc(db, 'staff/mgr-update-target'), {
+      name: '매니저-수정됨',
+    }));
+  });
+
+  test('staff: staff create → 거부', async () => {
+    const db = await ctxWithRole('stf-write1', 'staff');
+    await assertFails(setDoc(doc(db, 'staff/stf-create-fail'), {
+      name: '직원-거부',
+      email: 'staff-fail@school.kr',
+    }));
+  });
+
+  test('staff: staff update → 거부', async () => {
+    // 규칙 우회로 문서 생성
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), 'staff/stf-update-fail'), {
+        name: '직원-수정불가',
+        department: '행정',
+      });
+    });
+    const db = await ctxWithRole('stf-write2', 'staff');
+    await assertFails(updateDoc(doc(db, 'staff/stf-update-fail'), {
+      name: '수정시도',
+    }));
+  });
+
+  test('teacher: staff create → 거부', async () => {
+    const db = await ctxWithRole('tch-write1', 'teacher');
+    await assertFails(setDoc(doc(db, 'staff/tch-create-fail'), {
+      name: '교사-거부',
+      email: 'teacher-fail@school.kr',
+    }));
+  });
+
+  test('shortterm: staff update → 거부', async () => {
+    // 규칙 우회로 문서 생성
+    await env.withSecurityRulesDisabled(async (sec) => {
+      await setDoc(doc(sec.firestore(), 'staff/st-update-fail'), {
+        name: '단기-수정불가',
+        department: '단기',
+      });
+    });
+    const db = await ctxWithRole('st-write1', 'shortterm');
+    await assertFails(updateDoc(doc(db, 'staff/st-update-fail'), {
+      name: '수정시도',
+    }));
+  });
+});

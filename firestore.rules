@@ -917,7 +917,7 @@ service cloud.firestore {
       // shortterm은 단기 부서 문서만 읽을 수 있다(LIST는 department==단기로 제약된 쿼리여야 통과).
       allow read: if isDirector() || isManager()
         || (isShortTerm() && resource.data.department == '단기');
-      allow write: if isDirector();
+      allow write: if isDirector() || isManager();
 
       // 온보딩: 비인증 사용자가 유효한 토큰으로 staff 문서 생성 (통합: 교사/행정/단기 3종 토큰)
       // hasOnly = 교사필드 ∪ {position(행정)} ∪ {department, affiliation, interviewDate, resignationDate} ∪ {phoneKey, englishName(키오스크 매칭/표시, 무권한)}.
