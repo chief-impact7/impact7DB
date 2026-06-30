@@ -9,6 +9,7 @@ import { maskPhone } from './phoneMask.js';
 // BMS 발송결과 "수신 완료"(친구 도달) 코드 — message_logs 기록용. 접수(2000)는 카톡 도달이
 // 아니므로 비친구(3120)·야간(3108)은 발송결과 폴링에서 판정한다(코드 정본은 solapiProvider.js).
 const BMS_DELIVERED_CODE = '4000';
+const SMS_DELIVERED_CODE = '4000'; // SMS/LMS 수신 완료 — direct/promo_sms 발송결과 확정용
 // 발송결과 폴링 파라미터: parent_bms 접수 후 도달/비친구가 확정되기까지 사후 조회한다.
 const DELIVERY_FIRST_DELAY_MS = 2 * 60_000; // 접수 후 첫 결과 조회까지 대기(2분)
 const DELIVERY_RECHECK_MS = 2 * 60_000; // 미확정 시 재조회 간격(2분)
@@ -49,9 +50,11 @@ async function defaultSender(payload) {
 }
 
 // 발송결과 사후 조회기(폴링). 접수≠도달이므로 groupId로 최종 발송결과를 조회한다.
-async function defaultResultFetcher(groupId) {
+// SMS(direct/promo_sms)와 BMS는 결과 코드 의미가 달라 조회 함수를 kind로 분기한다.
+async function defaultResultFetcher(groupId, kind) {
   const mod = await import('./solapiProvider.js');
   const config = mod.getSolapiConfig();
+  if (kind === 'direct' || kind === PROMO_SMS_KIND) return mod.fetchSmsResult(groupId, config);
   return mod.fetchBrandMessageResult(groupId, config);
 }
 
@@ -261,6 +264,14 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
       await markAwaitingDeliveryResult(db, ref, data, result, new Date(base.getTime() + DELIVERY_FIRST_DELAY_MS));
       return;
     }
+    if ((data.kind === 'direct' || data.kind === PROMO_SMS_KIND) && result.groupId) {
+      // SMS/LMS 접수 성공(2000)도 통신사 도달을 보장하지 않는다(예: 3058 "전송경로 없음"은
+      // 비동기 발송결과에만 나타남). 종결하지 않고 발송결과 폴링이 도달/실패를 확정한다.
+      // groupId가 없으면 사후조회가 불가능(매번 missing_group_id로 읽혀 중복 재발송 유발)하므로
+      // 폴링에 넣지 않고 아래에서 기존처럼 즉시 종결한다.
+      await markAwaitingDeliveryResult(db, ref, data, result, new Date(now.getTime() + DELIVERY_FIRST_DELAY_MS));
+      return;
+    }
     await markSent(db, ref, data, result);
     await fireResultCallback(notifyResultCallback, ref, data, { status: 'sent', channel: result.channel });
     return;
@@ -322,6 +333,32 @@ async function finalizeBmsDelivered(db, ref, data, notifyResultCallback) {
   await fireResultCallback(notifyResultCallback, ref, data, { status: 'sent', channel: 'kakao' });
 }
 
+// SMS/LMS 도달 확정(4000): 종결 + 로그(channel=sms). BMS와 달리 친구 학습은 없다(카카오 미경유).
+async function finalizeSmsDelivered(db, ref, data, notifyResultCallback) {
+  await ref.update({
+    status: 'sent',
+    delivery_check_at: null,
+    purge_after: new Date(Date.now() + RETENTION_MS),
+    updated_at: FieldValue.serverTimestamp(),
+  });
+  await writeMessageLog(db, data, ref.id, { status: 'sent', channel: 'sms', statusCode: SMS_DELIVERED_CODE });
+  await fireResultCallback(notifyResultCallback, ref, data, { status: 'sent', channel: 'sms' });
+}
+
+// SMS 통신사 미도달 → 같은 번호로 재발송 예약(failed_retryable). attempt_count는 awaiting 진입 시
+// 이미 증가했으므로 여기서 올리지 않는다(폴링 진입마다 1씩 누적 → MAX_ATTEMPTS에서 종료). retrySweeper가
+// 백오프 후 재발송하고, 그 결과는 다시 발송결과 폴링이 확정한다.
+async function markSmsRetry(db, ref, attemptCount, statusCode) {
+  const backoff = BACKOFF_MS[Math.min(attemptCount - 1, BACKOFF_MS.length - 1)];
+  await ref.update({
+    status: 'failed_retryable',
+    next_attempt_at: new Date(Date.now() + backoff),
+    delivery_check_at: null, // awaiting 폴링 필드 정리(재발송 후 다시 설정됨)
+    last_error_code: statusCode ?? null,
+    updated_at: FieldValue.serverTimestamp(),
+  });
+}
+
 // 카톡 미도달(비친구 3120 / 야간 3108 / 장시간 미확정) → 친구명단 제거 + 문자(direct) 전환 doc 생성
 // + 원 doc 종결. fallback doc 생성과 원본 종결을 batch로 원자화한다(H-08): batch 실패 시 원본은
 // 이전 상태로 남아 sweeper가 재처리(유실·split-brain 방지). 콜백은 문자 doc 처리 시 1회(channel=sms).
@@ -381,25 +418,40 @@ async function claimDeliveryCheck(db, ref, now) {
 
 // 클레임된 awaiting doc 1건의 발송결과를 조회해 종결/전환/재연장한다.
 async function processDeliveryResult(db, ref, data, resultFetcher, notifyResultCallback, now) {
-  const result = await resultFetcher(data.solapi_group_id);
+  const result = await resultFetcher(data.solapi_group_id, data.kind);
   const count = (data.delivery_check_count ?? 0) + 1;
   const attemptCount = data.attempt_count ?? 0;
+  const isSms = data.kind === 'direct' || data.kind === PROMO_SMS_KIND;
 
   switch (result?.outcome) {
     case 'delivered':
-      await finalizeBmsDelivered(db, ref, data, notifyResultCallback);
+      if (isSms) await finalizeSmsDelivered(db, ref, data, notifyResultCallback);
+      else await finalizeBmsDelivered(db, ref, data, notifyResultCallback);
       return;
     case 'not_friend':
     case 'night_blocked':
+      // BMS 전용 결과 — SMS 발송결과에선 나오지 않는다.
       await convertBmsToSms(db, ref, data, result.statusCode, attemptCount);
       return;
     case 'failed':
-      await markPermanent(db, ref, data, attemptCount, { statusCode: result.statusCode, message: result.statusMessage, channel: null });
-      await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: null });
+      // SMS 통신사 미도달(예: 3058)은 일시적일 수 있어 상한까지 재발송, 이후 영구 실패로 종결.
+      if (isSms && attemptCount < MAX_ATTEMPTS) {
+        await markSmsRetry(db, ref, attemptCount, result.statusCode);
+      } else {
+        await markPermanent(db, ref, data, attemptCount, { statusCode: result.statusCode, message: result.statusMessage, channel: isSms ? 'sms' : null });
+        await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: isSms ? 'sms' : null });
+      }
       return;
-    default: // 'pending' 또는 미상 — 재조회. 상한 초과 시 유실 방지를 위해 문자로 전환.
+    default: // 'pending' 또는 미상 — 재조회. 상한 초과 시 유실 방지 처리(BMS=문자전환, SMS=미확정 종결).
       if (count >= MAX_DELIVERY_CHECKS) {
-        await convertBmsToSms(db, ref, data, 'delivery_result_timeout', attemptCount);
+        if (!isSms) {
+          await convertBmsToSms(db, ref, data, 'delivery_result_timeout', attemptCount);
+        } else {
+          // SMS 접수 성공분은 도달했을 공산이 크다(결과 미수신 ≠ 발송 실패). 재발송은 중복 위험이
+          // 있으므로 재발송 없이 미확정으로 종결한다. (명시적 failed(예: 3058)만 재발송 대상.)
+          await markPermanent(db, ref, data, attemptCount, { statusCode: 'delivery_result_timeout', message: '발송결과 미확정', channel: 'sms' });
+          await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: 'sms' });
+        }
       } else {
         await ref.update({
           delivery_check_count: count,

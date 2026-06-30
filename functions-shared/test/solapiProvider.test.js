@@ -227,7 +227,7 @@ describe('sendSms', () => {
   });
 });
 
-import { fetchBrandMessageResult } from '../src/solapiProvider.js';
+import { fetchBrandMessageResult, fetchSmsResult } from '../src/solapiProvider.js';
 
 describe('fetchBrandMessageResult (BMS 발송결과 사후 조회)', () => {
   const cfg = { apiKey: 'k', apiSecret: 's', pfId: 'pf', from: '0226490509' };
@@ -277,6 +277,49 @@ describe('fetchBrandMessageResult (BMS 발송결과 사후 조회)', () => {
   it('groupId 없으면 API 호출 없이 failed', async () => {
     const { serviceFactory, getGroupMessages } = withGetGroup(async () => ({}));
     const r = await fetchBrandMessageResult('', cfg, { serviceFactory });
+    expect(getGroupMessages).not.toHaveBeenCalled();
+    expect(r.outcome).toBe('failed');
+  });
+});
+
+describe('fetchSmsResult (SMS/LMS 발송결과 사후 조회)', () => {
+  const cfg = { apiKey: 'k', apiSecret: 's', pfId: 'pf', from: '0226490509' };
+  const groupRes = (msg) => ({ messageList: { [msg.messageId ?? 'M1']: msg } });
+  function withGetGroup(impl) {
+    const getGroupMessages = vi.fn(impl);
+    return { getGroupMessages, serviceFactory: vi.fn(() => ({ getGroupMessages })) };
+  }
+
+  it('4000 수신완료 → delivered', async () => {
+    const { serviceFactory, getGroupMessages } = withGetGroup(async () => groupRes({ messageId: 'M1', status: 'COMPLETE', statusCode: '4000', reason: '수신 완료' }));
+    const r = await fetchSmsResult('G1', cfg, { serviceFactory });
+    expect(getGroupMessages).toHaveBeenCalledWith('G1');
+    expect(r).toMatchObject({ outcome: 'delivered', statusCode: '4000' });
+  });
+
+  it('3058 전송경로 없음 → failed(재발송 대상)', async () => {
+    const { serviceFactory } = withGetGroup(async () => groupRes({ status: 'COMPLETE', statusCode: '3058', reason: '전송경로 없음' }));
+    expect(await fetchSmsResult('G1', cfg, { serviceFactory })).toMatchObject({ outcome: 'failed', statusCode: '3058' });
+  });
+
+  it('발송 진행중(COMPLETE 아님) → pending', async () => {
+    const { serviceFactory } = withGetGroup(async () => groupRes({ status: 'PENDING', statusCode: null }));
+    expect((await fetchSmsResult('G1', cfg, { serviceFactory })).outcome).toBe('pending');
+  });
+
+  it('결과 메시지 없음 → pending', async () => {
+    const { serviceFactory } = withGetGroup(async () => ({ messageList: {} }));
+    expect((await fetchSmsResult('G1', cfg, { serviceFactory })).outcome).toBe('pending');
+  });
+
+  it('조회 예외 → pending(일시 오류, 재조회 대상)', async () => {
+    const { serviceFactory } = withGetGroup(async () => { throw { _tag: 'NetworkError', message: 'timeout' }; });
+    expect((await fetchSmsResult('G1', cfg, { serviceFactory })).outcome).toBe('pending');
+  });
+
+  it('groupId 없으면 API 호출 없이 failed', async () => {
+    const { serviceFactory, getGroupMessages } = withGetGroup(async () => ({}));
+    const r = await fetchSmsResult('', cfg, { serviceFactory });
     expect(getGroupMessages).not.toHaveBeenCalled();
     expect(r.outcome).toBe('failed');
   });

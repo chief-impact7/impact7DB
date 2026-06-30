@@ -502,7 +502,7 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
 
     await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
 
-    expect(resultFetcher).toHaveBeenCalledWith('grp1');
+    expect(resultFetcher).toHaveBeenCalledWith('grp1', 'parent_bms');
     expect(db._queue.get('pb_ok').status).toBe('sent');
     expect(db._friends.has('01099887766')).toBe(true);
     expect(db._friends.get('01099887766')).toMatchObject({ phone: '01099887766' });
@@ -629,18 +629,93 @@ describe('kind=direct 즉석 SMS', () => {
     await processQueueDoc(eventFor(db, 'd1'), { db, sender });
 
     expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'direct', to: '01012345678', text: '안내문' }));
-    expect(db._queue.get('d1').status).toBe('sent');
+    // 접수 성공도 통신사 도달은 미확정 — 발송결과 폴링 대기로 전이(즉시 sent 아님).
+    const d1 = db._queue.get('d1');
+    expect(d1.status).toBe('awaiting_delivery_result');
+    expect(d1.solapi_group_id).toBe('g');
+  });
+
+  it('groupId 없는 접수성공 → 폴링 없이 즉시 sent(사후조회 불가, 중복 방지)', async () => {
+    const sender = vi.fn(async () => ({ ok: true, retryable: false, channel: 'sms', groupId: null, statusCode: 'count_missing' }));
+    const db = makeDb({ d2: { kind: 'direct', status: 'pending', recipient_phone: '01012345678', content: '안내문', attempt_count: 0 } });
+    await processQueueDoc(eventFor(db, 'd2'), { db, sender });
+    expect(db._queue.get('d2').status).toBe('sent');
   });
 });
 
 describe('kind=promo_sms 비친구 광고 SMS', () => {
   it('sendSms로 라우팅되고 payload가 to/text 형태', async () => {
-    const sender = vi.fn(async () => ({ ok: true, retryable: false, channel: 'sms', messageId: 'm', statusCode: '2000' }));
+    const sender = vi.fn(async () => ({ ok: true, retryable: false, channel: 'sms', messageId: 'm', groupId: 'g', statusCode: '2000' }));
     const db = makeDb({ ps1: { kind: 'promo_sms', status: 'pending', recipient_phone: '01012345678', content: '(광고)안내 무료거부 080', ad_flag: true, attempt_count: 0 } });
     await processQueueDoc(eventFor(db, 'ps1'), { db, sender });
 
     expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'promo_sms', to: '01012345678', text: '(광고)안내 무료거부 080' }));
-    expect(db._queue.get('ps1').status).toBe('sent');
+    expect(db._queue.get('ps1').status).toBe('awaiting_delivery_result');
+  });
+});
+
+describe('SMS 발송결과 폴링 (runDeliveryResultSweep, kind=direct/promo_sms)', () => {
+  const PAST = new Date('2026-06-25T00:00:00Z');
+  const NOW = new Date('2026-06-25T00:05:00Z');
+  const smsAwaiting = (overrides = {}) => ({
+    kind: 'direct',
+    content: '안내문',
+    recipient_phone: '01012345678',
+    status: 'awaiting_delivery_result',
+    solapi_group_id: 'grpS',
+    delivery_check_at: PAST,
+    delivery_check_count: 0,
+    attempt_count: 1,
+    ...overrides,
+  });
+
+  it('도달(4000) → sent + 로그(channel=sms), 친구 학습 없음', async () => {
+    const db = makeDb({ s_ok: smsAwaiting() });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'delivered', statusCode: '4000' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    expect(resultFetcher).toHaveBeenCalledWith('grpS', 'direct');
+    expect(db._queue.get('s_ok').status).toBe('sent');
+    expect(db._friends.has('01012345678')).toBe(false); // SMS는 친구 학습 안 함
+    expect(db._logs.at(-1)).toMatchObject({ status: 'sent', channel: 'sms' });
+  });
+
+  it('통신사 미도달(3058) + attempt<3 → 재발송 예약(failed_retryable, 로그 없음)', async () => {
+    const db = makeDb({ s_rt: smsAwaiting({ attempt_count: 1 }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'failed', statusCode: '3058', statusMessage: '전송경로 없음' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    const d = db._queue.get('s_rt');
+    expect(d.status).toBe('failed_retryable');
+    expect(d.next_attempt_at.getTime()).toBeGreaterThan(NOW.getTime());
+    expect(d.last_error_code).toBe('3058');
+    expect(d.delivery_check_at).toBe(null);
+    expect(db._logs).toHaveLength(0);
+  });
+
+  it('미도달 + attempt 상한(3) → failed_permanent + 콜백(failed, channel=sms)', async () => {
+    const db = makeDb({ s_pf: smsAwaiting({ attempt_count: 3, result_callback: { url: 'https://cb', applicationId: 'a' } }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'failed', statusCode: '3058' });
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+    await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
+    expect(db._queue.get('s_pf').status).toBe('failed_permanent');
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://cb', expect.objectContaining({ status: 'failed', channel: 'sms' }));
+  });
+
+  it('미확정(pending) 상한 초과 → 재발송 없이 미확정 종결(중복 방지, 문자 전환 doc 안 만듦)', async () => {
+    const db = makeDb({ s_to: smsAwaiting({ delivery_check_count: 14, attempt_count: 1 }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'pending' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    const d = db._queue.get('s_to');
+    expect(d.status).toBe('failed_permanent');
+    expect(d.last_error_code).toBe('delivery_result_timeout');
+    expect(db._queue.has('s_to_sms')).toBe(false);
+  });
+
+  it('promo_sms도 SMS 결과 조회로 라우팅된다', async () => {
+    const db = makeDb({ ps_ok: smsAwaiting({ kind: 'promo_sms', solapi_group_id: 'grpP' }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'delivered', statusCode: '4000' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    expect(resultFetcher).toHaveBeenCalledWith('grpP', 'promo_sms');
+    expect(db._queue.get('ps_ok').status).toBe('sent');
   });
 });
 
