@@ -3,7 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 
 // 키오스크 전용 허용 계정 — 학원 도메인 계정이 없는 태블릿 단말 로그인용.
 // 출결/직원출퇴근 callable에만 허용한다(알림톡·LLM 등 민감 기능은 학원 도메인 전용).
-const KIOSK_EMAILS = new Set(['impact7enf@gmail.com']);
+const KIOSK_EMAILS = new Set(['impact7eng@gmail.com']);
 
 // 직원 계정(학원 도메인) 판정 — 보안 경계는 항상 callable 서버측이다.
 // allowKiosk=true면 키오스크 전용 계정도 허용한다.

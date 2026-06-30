@@ -17,8 +17,8 @@ describe('isAuthorizedStaffEmail', () => {
   });
 
   test('키오스크 계정은 allowKiosk에서만 허용', () => {
-    expect(isAuthorizedStaffEmail('impact7enf@gmail.com')).toBe(false);
-    expect(isAuthorizedStaffEmail('impact7enf@gmail.com', { allowKiosk: true })).toBe(true);
+    expect(isAuthorizedStaffEmail('impact7eng@gmail.com')).toBe(false);
+    expect(isAuthorizedStaffEmail('impact7eng@gmail.com', { allowKiosk: true })).toBe(true);
     // 화이트리스트 밖 gmail은 allowKiosk여도 거부
     expect(isAuthorizedStaffEmail('other@gmail.com', { allowKiosk: true })).toBe(false);
   });
@@ -36,8 +36,8 @@ describe('assertAuthorizedStaff', () => {
   });
 
   test('키오스크 계정은 allowKiosk 한정 통과(기본은 거부)', () => {
-    expect(() => assertAuthorizedStaff(tok('impact7enf@gmail.com'))).toThrow();
-    expect(() => assertAuthorizedStaff(tok('impact7enf@gmail.com'), { allowKiosk: true })).not.toThrow();
+    expect(() => assertAuthorizedStaff(tok('impact7eng@gmail.com'))).toThrow();
+    expect(() => assertAuthorizedStaff(tok('impact7eng@gmail.com'), { allowKiosk: true })).not.toThrow();
   });
 
   test('화이트리스트 밖 외부 계정은 allowKiosk여도 거부', () => {
