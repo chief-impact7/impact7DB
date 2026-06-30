@@ -1,10 +1,12 @@
 // 직원 출퇴근 상태머신 — 순수 함수(부수효과 없음). 서버 검증·허용액션 계산의 단일 소스.
 // 학생 attendanceState.js 패턴을 복제하되 체크리스트·하원게이트가 없어 더 단순하다.
+import { ATTENDANCE_ACTIONS } from '@impact7/shared/attendance-action';
 
+// 외출/귀원은 학생과 같은 shared 표준 라벨을 재사용한다(출근/퇴근은 직원 전용).
 export const STAFF_ACTIONS = {
   CLOCK_IN: '출근',
-  OUT: '외출',
-  RETURN: '복귀',
+  OUT: ATTENDANCE_ACTIONS.out,
+  RETURN: ATTENDANCE_ACTIONS.return,
   CLOCK_OUT: '퇴근',
 };
 

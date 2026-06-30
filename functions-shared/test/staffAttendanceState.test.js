@@ -22,7 +22,7 @@ test('nextStaffDayState — 잘못된 전이는 null', () => {
 test('staffAllowedActions — 상태별 버튼', () => {
   assert.deepEqual(staffAllowedActions(STAFF_DAY_STATES.NONE), ['출근']);
   assert.deepEqual(staffAllowedActions(STAFF_DAY_STATES.IN), ['외출', '퇴근']);
-  assert.deepEqual(staffAllowedActions(STAFF_DAY_STATES.OUT), ['복귀']);
+  assert.deepEqual(staffAllowedActions(STAFF_DAY_STATES.OUT), ['귀원']);
   assert.deepEqual(staffAllowedActions(STAFF_DAY_STATES.DONE), []);
   assert.deepEqual(staffAllowedActions(undefined), ['출근']); // 기본=미출근
 });

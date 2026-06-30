@@ -123,4 +123,19 @@ describe('handleStaffCheckin 확정', () => {
     expect(res.result).toBe('duplicate');
     expect(res.dayState).toBe('근무중');
   });
+
+  test("구 클라이언트 '복귀'는 '귀원'으로 정규화 — 외출중에서 근무중 복귀", async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active' } },
+      attendance: { [`${dateStr}_st1`]: { state: '외출중', last_event: { action: '외출', at_ms: Date.now() - 60000 } } },
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '복귀' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    );
+    expect(res.result).toBe('created');
+    expect(res.dayState).toBe('근무중');
+    expect(res.action).toBe('귀원');
+  });
 });
