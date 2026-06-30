@@ -15,6 +15,7 @@ import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleTabletCheckin } from './src/tabletCheckinHandler.js';
 import { handleStaffCheckin } from './src/staffCheckinHandler.js';
 import { handleEditStaffAttendance } from './src/staffAttendanceEditHandler.js';
+import { handleDeleteStaffAttendance } from './src/staffAttendanceDeleteHandler.js';
 import { handleCreatePromoCampaign } from './src/promoCampaignHandler.js';
 import { handleSetPromoConsent } from './src/promoConsentHandler.js';
 import { handleSendParentNotice } from './src/parentNoticeHandler.js';
@@ -141,6 +142,10 @@ export const staffCheckin = onCall({ enforceAppCheck: false, minInstances: 1 }, 
 // 근태 레코드 보정 — manager+가 staff_attendance의 출근/퇴근 시각·메모를 교정(write:false라 callable admin만 수정).
 // 별도 저장소 impact7HR UI가 호출. region(asia-northeast3) 전역 상속.
 export const editStaffAttendance = onCall({ enforceAppCheck: false }, handleEditStaffAttendance);
+
+// 직원 삭제 cascade — 원장이 직원을 삭제할 때 staff_attendance(write:false) 레코드를 정리.
+// 별도 저장소 impact7HR UI가 호출. region(asia-northeast3) 전역 상속.
+export const deleteStaffAttendance = onCall({ enforceAppCheck: false }, handleDeleteStaffAttendance);
 
 // 홍보(브랜드 메시지) 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo) 배치 enqueue.
 // 야간(광고 제한)이면 익일 08:00 자동 예약. 발송은 워커(onMessageQueued)가 수행.
