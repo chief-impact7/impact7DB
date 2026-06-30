@@ -33,7 +33,7 @@ async function lookupStaff(firestore, phoneKey, dateKST) {
 }
 
 export async function handleStaffCheckin(request, deps = {}) {
-  assertAuthorizedStaff(request.auth);
+  assertAuthorizedStaff(request.auth, { allowKiosk: true });
   const firestore = deps.firestore || getFirestore();
   const data = request.data ?? {};
 
