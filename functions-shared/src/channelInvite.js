@@ -10,9 +10,10 @@ export function resolveChannelAddUrl(overrides = {}) {
   return overrides.channelAddUrl ?? process.env.KAKAO_CHANNEL_ADD_URL ?? DEFAULT_CHANNEL_ADD_URL;
 }
 
-// BMS 미도달(비친구)로 문자 전환된 안내 뒤에 덧붙이는 채널 가입 유도(원문은 유지).
+// BMS 미도달(비친구)로 문자 전환된 안내 뒤에 덧붙이는 채널 가입 안내.
+// 정보성 톤 — 문자로 온 이유(채널 미가입)를 고지하고 카톡 수신 방법을 안내한다(혜택 소구·권유 아님).
 // 링크가 비어 있으면(운영값 미설정) "채널 추가 → " 깨진 문구가 나가지 않도록 부착을 생략한다.
 export function channelInviteSuffix(channelUrl) {
   if (!channelUrl) return '';
-  return `▶ 카카오톡 채널을 추가하시면 이 안내를 카톡으로 받아보실 수 있어요.\n채널 추가 → ${channelUrl}`;
+  return `※ 카카오톡 채널 미가입으로 문자로 안내드립니다. 카카오톡 수신을 원하시면 채널을 추가해 주세요 → ${channelUrl}`;
 }

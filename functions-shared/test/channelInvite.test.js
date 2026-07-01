@@ -8,10 +8,11 @@ describe('channelInvite', () => {
     expect(resolveChannelAddUrl({ channelAddUrl: '' })).toBe(''); // 링크 미설정 발송 차단이 가능하도록 '' 유지
   });
 
-  it('channelInviteSuffix: 채널 링크 + 가입 유도 안내를 포함', () => {
+  it('channelInviteSuffix: 채널 링크 + 정보성 안내(미가입 고지·수신 방법)를 포함', () => {
     const s = channelInviteSuffix('https://kakao.impact7.kr');
     expect(s).toContain('https://kakao.impact7.kr');
-    expect(s).toContain('채널 추가');
+    expect(s).toContain('채널을 추가');
+    expect(s).toContain('미가입');
   });
 
   it('channelInviteSuffix: 링크가 비면 빈 문자열(깨진 문구 방지)', () => {
