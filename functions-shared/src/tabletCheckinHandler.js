@@ -8,6 +8,8 @@ import {
   nextDayState, canDepart, ACTION_TEMPLATE_KEY, formatKstClock12h,
 } from './attendanceState.js';
 import { normalizeAttendanceLabel } from '@impact7/shared/attendance-action';
+import { isLate } from '@impact7/shared/expected-arrival';
+import { loadExpectedArrival } from './expectedArrivalLoader.js';
 import { PARENT_NOTICE_TEMPLATES, buildParentNoticeVariables } from './parentNoticeHandler.js';
 import { applyTemplate } from './templates.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
@@ -46,10 +48,11 @@ function arrivalTimeKST(date) {
 }
 
 // 액션별 알림톡 message_queue payload. 템플릿 코드 미설정이어도 fallback_text로 적재.
-function buildEventQueuePayload({ studentId, studentName, recipientPhone, action, occurredAt, eventId }) {
+function buildEventQueuePayload({ studentId, studentName, recipientPhone, action, occurredAt, eventId, late = false }) {
   const templateKey = ACTION_TEMPLATE_KEY[action];
   const def = PARENT_NOTICE_TEMPLATES[templateKey];
-  const variables = buildParentNoticeVariables({ name: studentName }, templateKey, { 시각: formatKstClock12h(occurredAt) });
+  const clock = formatKstClock12h(occurredAt);
+  const variables = buildParentNoticeVariables({ name: studentName }, templateKey, { 시각: late ? `${clock} (지각)` : clock });
   const templateCode = process.env[def.envKey] || `${def.envKey}_PENDING`;
   return {
     // 워커 계약(queueWorker ALLOWED_KINDS): 정보성 알림은 'attendance'. 이벤트 종류는 event_id/attendance_events.type가 식별.
@@ -129,6 +132,13 @@ export async function handleTabletCheckin(request, deps = {}) {
   const studentRef = firestore.collection('students').doc(studentId);
   const dailyRef = firestore.collection('daily_records').doc(`${studentId}_${dateKST}`);
 
+  // 등원이면 예정시각을 미리 구한다(where 쿼리는 트랜잭션 밖). 실패는 지각 판정을 막지 않는다.
+  let expectedArrival = '';
+  if (action === ACTIONS.ARRIVE) {
+    expectedArrival = await (deps.loadExpectedArrival || loadExpectedArrival)(firestore, studentId, dateKST)
+      .catch((e) => { console.warn('[tablet] loadExpectedArrival 실패', studentId, e?.message); return ''; });
+  }
+
   return firestore.runTransaction(async (tx) => {
     const [studentSnap, dailySnap] = await Promise.all([tx.get(studentRef), tx.get(dailyRef)]);
     if (!studentSnap.exists) throw new HttpsError('not-found', '학생을 찾을 수 없습니다.');
@@ -162,6 +172,7 @@ export async function handleTabletCheckin(request, deps = {}) {
     }
 
     const occurredAt = new Date();
+    const late = (action === ACTIONS.ARRIVE) && isLate(arrivalTimeKST(occurredAt), expectedArrival);
     const email = request.auth.token?.email || '';
     const deviceId = textOf(data.deviceId);
 
@@ -174,7 +185,7 @@ export async function handleTabletCheckin(request, deps = {}) {
       queueId = queueRef.id;
       tx.set(queueRef, buildEventQueuePayload({
         studentId, studentName: textOf(student.name), recipientPhone,
-        action, occurredAt, eventId: eventRef.id,
+        action, occurredAt, eventId: eventRef.id, late,
       }));
     }
     tx.set(eventRef, {
@@ -201,7 +212,7 @@ export async function handleTabletCheckin(request, deps = {}) {
       updated_at: FieldValue.serverTimestamp(),
     };
     if (action === ACTIONS.ARRIVE) {
-      dailyUpdate.attendance = { status: '출석' };
+      dailyUpdate.attendance = { status: late ? '지각' : '출석' };
       if (!daily?.arrival_time) dailyUpdate.arrival_time = arrivalTimeKST(occurredAt);
     }
     if (action === ACTIONS.DEPART) {

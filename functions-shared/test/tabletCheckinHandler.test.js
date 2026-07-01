@@ -151,6 +151,37 @@ describe('handleTabletCheckin 확정', () => {
     expect(queued[0].fallback_text).toContain('등원');
   });
 
+  test('등원 지각 — 예정+5분 초과면 status 지각 + 알림톡 시각에 (지각)', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const d = todayKST();
+    const fs = makeTxFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status: '재원', parent_phone_1: '010-1111-2222' } },
+      daily: {}, devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+    const res = await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '등원', deviceId: 'tablet-1f' } },
+      { firestore: fs, loadExpectedArrival: async () => '00:00' }, // 예정 00:00 → 지금 등원은 반드시 지각
+    );
+    expect(res.result).toBe('created');
+    expect(fs._stores.daily_records[`s1_${d}`].attendance.status).toBe('지각');
+    expect(Object.values(fs._stores.message_queue)[0].template_variables['#{시각}']).toContain('(지각)');
+  });
+
+  test('등원 — 예정 없으면 출석, 알림톡에 (지각) 없음', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const d = todayKST();
+    const fs = makeTxFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status: '재원', parent_phone_1: '010-1111-2222' } },
+      daily: {}, devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+    await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '등원', deviceId: 'tablet-1f' } },
+      { firestore: fs, loadExpectedArrival: async () => '' },
+    );
+    expect(fs._stores.daily_records[`s1_${d}`].attendance.status).toBe('출석');
+    expect(Object.values(fs._stores.message_queue)[0].template_variables['#{시각}']).not.toContain('(지각)');
+  });
+
   test('외출중 학생의 하원 시도 — 전이 거부', async () => {
     const { todayKST } = await import('@impact7/shared/datetime');
     const d = todayKST();

@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
-    "@impact7/shared": "github:chief-impact7/impact7-shared#v1.30.0",
+    "@impact7/shared": "github:chief-impact7/impact7-shared#v1.34.0",
     "firebase-admin": "^13.0.0",
     "firebase-functions": "^7.0.0",
     "google-auth-library": "^10.0.0",
