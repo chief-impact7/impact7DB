@@ -563,12 +563,20 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(smsDoc.attempt_count).toBe(0);
   });
 
-  it('야간(3108) → 문자 전환', async () => {
-    const db = makeDb({ pb_nb: awaitingDoc() });
+  it('비친구(3120) + sms_suffix → 문자 본문에 채널 가입 유도 문구 덧붙임', async () => {
+    const db = makeDb({ pb_sfx: awaitingDoc({ sms_suffix: '채널 추가: https://pf.kakao.com/_x' }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'not_friend', statusCode: '3120' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    expect(db._queue.get('pb_sfx_sms').content).toBe('[진단평가] 6/25(수) 오후 2시\n\n채널 추가: https://pf.kakao.com/_x');
+  });
+
+  it('야간(3108) → 문자 전환 (sms_suffix 있어도 비친구 확정 아니라 원문만)', async () => {
+    const db = makeDb({ pb_nb: awaitingDoc({ sms_suffix: '채널 추가: https://pf.kakao.com/_x' }) });
     const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'night_blocked', statusCode: '3108' });
     await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
     expect(db._queue.get('pb_nb').status).toBe('converted_to_sms');
     expect(db._queue.get('pb_nb_sms').kind).toBe('direct');
+    expect(db._queue.get('pb_nb_sms').content).toBe('[진단평가] 6/25(수) 오후 2시');
   });
 
   it('SMS 전환 batch 실패 → 원본 converted_to_sms 아님 + SMS doc 미생성(유실 방지, H-08)', async () => {

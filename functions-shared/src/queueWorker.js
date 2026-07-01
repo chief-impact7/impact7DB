@@ -359,6 +359,19 @@ async function markSmsRetry(db, ref, attemptCount, statusCode) {
   });
 }
 
+const BMS_NOT_FRIEND_CODE = '3120'; // solapiProvider.BMS_NOT_FRIEND_CODE — 정적 import 금지(F7)로 인라인.
+
+// 비친구(3120) 확정으로 문자 전환할 때만, 큐 doc이 제공한 채널 가입 유도 문구(sms_suffix)를 문자 본문에
+// 덧붙인다. 친구톡 본문(content)은 그대로 두므로 채널 가입자(친구톡 도달)에겐 노출되지 않는다.
+// 야간차단(3108)·미확정 타임아웃은 비친구 확정이 아니라 부가문구 없이 원문만 전환한다.
+function smsFallbackContent(data, statusCode) {
+  const base = data.content ?? '';
+  if (statusCode === BMS_NOT_FRIEND_CODE && data.sms_suffix) {
+    return base + '\n\n' + data.sms_suffix;
+  }
+  return base;
+}
+
 // 카톡 미도달(비친구 3120 / 야간 3108 / 장시간 미확정) → 친구명단 제거 + 문자(direct) 전환 doc 생성
 // + 원 doc 종결. fallback doc 생성과 원본 종결을 batch로 원자화한다(H-08): batch 실패 시 원본은
 // 이전 상태로 남아 sweeper가 재처리(유실·split-brain 방지). 콜백은 문자 doc 처리 시 1회(channel=sms).
@@ -375,7 +388,7 @@ async function convertBmsToSms(db, ref, data, statusCode, attemptCount) {
     kind: 'direct',
     status: 'pending',
     recipient_phone: data.recipient_phone,
-    content: data.content,
+    content: smsFallbackContent(data, statusCode),
     scheduled_date: data.scheduled_date ?? null,
     attempt_count: 0,
     created_by: 'bms_fallback',
