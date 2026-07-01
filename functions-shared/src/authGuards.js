@@ -1,25 +1,17 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 
-// 키오스크 전용 허용 계정 — 학원 도메인 계정이 없는 태블릿 단말 로그인용.
-// 출결/직원출퇴근 callable에만 허용한다(알림톡·LLM 등 민감 기능은 학원 도메인 전용).
-const KIOSK_EMAILS = new Set(['impact7eng@gmail.com']);
-
 // 직원 계정(학원 도메인) 판정 — 보안 경계는 항상 callable 서버측이다.
-// allowKiosk=true면 키오스크 전용 계정도 허용한다.
-export function isAuthorizedStaffEmail(email, { allowKiosk = false } = {}) {
-  const e = (email || '').toLowerCase();
-  if (/@(gw\.)?impact7\.kr$/i.test(e)) return true;
-  return allowKiosk && KIOSK_EMAILS.has(e);
+export function isAuthorizedStaffEmail(email) {
+  return /@(gw\.)?impact7\.kr$/i.test(email || '');
 }
 
 // callable 공통 가드: 로그인 + 학원 도메인 + (명시적 미인증 차단).
 // email_verified는 Workspace 토큰엔 항상 존재하나, 명시적으로 false일 때만 거부한다.
-// allowKiosk=true면 키오스크 전용 계정도 통과한다(태블릿 출결 callable 한정).
-export function assertAuthorizedStaff(auth, { allowKiosk = false } = {}) {
+export function assertAuthorizedStaff(auth) {
   if (!auth) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
   const token = auth.token || {};
-  if (token.email_verified === false || !isAuthorizedStaffEmail(token.email, { allowKiosk })) {
+  if (token.email_verified === false || !isAuthorizedStaffEmail(token.email)) {
     throw new HttpsError('permission-denied', '허용되지 않은 계정입니다.');
   }
 }

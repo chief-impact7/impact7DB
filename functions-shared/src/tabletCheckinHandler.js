@@ -104,7 +104,7 @@ async function lookupCandidates(firestore, studentNumber, departurePolicy) {
 }
 
 export async function handleTabletCheckin(request, deps = {}) {
-  assertAuthorizedStaff(request.auth, { allowKiosk: true });
+  assertAuthorizedStaff(request.auth);
   const firestore = deps.firestore || getFirestore();
   const data = request.data ?? {};
 

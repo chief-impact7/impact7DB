@@ -5,7 +5,7 @@ vi.mock('firebase-admin/firestore', () => ({ getFirestore: vi.fn() }));
 import { isAuthorizedStaffEmail, assertAuthorizedStaff } from '../src/authGuards.js';
 
 describe('isAuthorizedStaffEmail', () => {
-  test('학원 도메인은 항상 허용', () => {
+  test('학원 도메인은 허용', () => {
     expect(isAuthorizedStaffEmail('a@impact7.kr')).toBe(true);
     expect(isAuthorizedStaffEmail('b@gw.impact7.kr')).toBe(true);
   });
@@ -14,13 +14,6 @@ describe('isAuthorizedStaffEmail', () => {
     expect(isAuthorizedStaffEmail('x@gmail.com')).toBe(false);
     expect(isAuthorizedStaffEmail('')).toBe(false);
     expect(isAuthorizedStaffEmail(undefined)).toBe(false);
-  });
-
-  test('키오스크 계정은 allowKiosk에서만 허용', () => {
-    expect(isAuthorizedStaffEmail('impact7eng@gmail.com')).toBe(false);
-    expect(isAuthorizedStaffEmail('impact7eng@gmail.com', { allowKiosk: true })).toBe(true);
-    // 화이트리스트 밖 gmail은 allowKiosk여도 거부
-    expect(isAuthorizedStaffEmail('other@gmail.com', { allowKiosk: true })).toBe(false);
   });
 });
 
@@ -35,12 +28,7 @@ describe('assertAuthorizedStaff', () => {
     expect(() => assertAuthorizedStaff(tok('a@impact7.kr'))).not.toThrow();
   });
 
-  test('키오스크 계정은 allowKiosk 한정 통과(기본은 거부)', () => {
-    expect(() => assertAuthorizedStaff(tok('impact7eng@gmail.com'))).toThrow();
-    expect(() => assertAuthorizedStaff(tok('impact7eng@gmail.com'), { allowKiosk: true })).not.toThrow();
-  });
-
-  test('화이트리스트 밖 외부 계정은 allowKiosk여도 거부', () => {
-    expect(() => assertAuthorizedStaff(tok('other@gmail.com'), { allowKiosk: true })).toThrow();
+  test('외부 계정 거부', () => {
+    expect(() => assertAuthorizedStaff(tok('other@gmail.com'))).toThrow();
   });
 });
