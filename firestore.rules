@@ -1312,9 +1312,10 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // 태블릿 출결 이벤트 로그 — 서버(Admin SDK)·tabletCheckin callable 전용
+    // 태블릿 출결 이벤트 로그 — 쓰기는 서버(Admin SDK)·tabletCheckin callable 전용; 읽기는 직원 인증 허용.
     match /attendance_events/{docId} {
-      allow read, write: if false;
+      allow read: if isAuthorized();
+      allow write: if false;
     }
 
     // 키오스크 단말 정책(departure_policy) — 정책은 서버가 deviceId로 조회·적용

@@ -13,6 +13,7 @@ import {
 } from './src/studentReportAutomationHandler.js';
 import { handleAttendanceCheckin } from './src/checkinHandler.js';
 import { handleTabletCheckin } from './src/tabletCheckinHandler.js';
+import { handleTabletAttendanceLog } from './src/attendanceLogHandler.js';
 import { handleStaffCheckin } from './src/staffCheckinHandler.js';
 import { handleEditStaffAttendance } from './src/staffAttendanceEditHandler.js';
 import { handleDeleteStaffAttendance } from './src/staffAttendanceDeleteHandler.js';
@@ -134,6 +135,9 @@ export const attendanceCheckin = onCall({ enforceAppCheck: false }, handleAttend
 // 태블릿 키오스크 출결·외출 — 조회(후보+허용액션)와 확정(이벤트·daily 동기화·알림톡·하원게이트) 단일 callable.
 // minInstances:1 — 키오스크 첫 스캔 콜드스타트(~1.4s) 제거. 상시 1인스턴스 웜 유지.
 export const tabletCheckin = onCall({ enforceAppCheck: false, minInstances: 1 }, handleTabletCheckin);
+
+// 태블릿 출결 조회 — 당일 attendance_events·daily_records·학생 명단을 한 번에 반환(정렬은 클라).
+export const tabletAttendanceLog = onCall({ enforceAppCheck: false }, handleTabletAttendanceLog);
 
 // 직원 출퇴근 — 휴대폰 번호(phoneKey)로 조회(후보+허용액션)와 확정(staff_attendance 적재). 알림 없음.
 // minInstances:1 — 키오스크와 동시 호출되므로 함께 웜 유지(콜드스타트 ~1.6s 제거).
