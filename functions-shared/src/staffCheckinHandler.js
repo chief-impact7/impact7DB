@@ -6,11 +6,54 @@ import { assertAuthorizedStaff } from './authGuards.js';
 import {
   STAFF_ACTIONS, STAFF_DAY_STATES, nextStaffDayState, staffAllowedActions,
 } from './staffAttendanceState.js';
+import { applyTemplate, BRAND_PREFIX } from './templates.js';
+import { formatKstClock12h } from './attendanceState.js';
 
 function textOf(v) { return String(v ?? '').trim(); }
 
 const REENTRY_WINDOW_MS = 20_000;
 const ACTIVE_STATUS = 'active';
+
+const STAFF_NOTICE_TEMPLATES = {
+  [STAFF_ACTIONS.CLOCK_IN]: {
+    envKey: 'STAFF_CLOCK_IN_TEMPLATE_CODE',
+    fallback: `${BRAND_PREFIX} 출근 안내\n#{성함} 선생님, 출근 처리되었습니다. (#{시각})`,
+  },
+  [STAFF_ACTIONS.CLOCK_OUT]: {
+    envKey: 'STAFF_CLOCK_OUT_TEMPLATE_CODE',
+    fallback: `${BRAND_PREFIX} 퇴근 안내\n#{성함} 선생님, 퇴근 처리되었습니다. (#{시각})`,
+  },
+  [STAFF_ACTIONS.OUT]: {
+    envKey: 'STAFF_OUT_TEMPLATE_CODE',
+    fallback: `${BRAND_PREFIX} 외출 안내\n#{성함} 선생님, 외출 처리되었습니다. (#{시각})`,
+  },
+  [STAFF_ACTIONS.RETURN]: {
+    envKey: 'STAFF_RETURN_TEMPLATE_CODE',
+    fallback: `${BRAND_PREFIX} 귀원 안내\n#{성함} 선생님, 귀원 처리되었습니다. (#{시각})`,
+  },
+};
+
+function buildStaffEventQueuePayload({ staffId, staffName, recipientPhone, action, occurredAt }) {
+  const def = STAFF_NOTICE_TEMPLATES[action];
+  const clock = formatKstClock12h(occurredAt);
+  const variables = { '#{성함}': staffName, '#{시각}': clock };
+  const templateCode = process.env[def.envKey] || `${def.envKey}_PENDING`;
+  return {
+    kind: 'attendance',
+    staff_id: staffId,
+    recipient_phone: recipientPhone,
+    template_code: templateCode,
+    template_variables: variables,
+    fallback_text: applyTemplate(def.fallback, variables),
+    status: 'pending',
+    attempt_count: 0,
+    next_attempt_at: null,
+    last_error_code: null,
+    source: 'tablet',
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+  };
+}
 
 async function lookupStaff(firestore, phoneKey, dateKST) {
   const snap = await firestore.collection('staff').where('phoneKey', '==', phoneKey).get();
@@ -108,6 +151,20 @@ export async function handleStaffCheckin(request, deps = {}) {
     if (action === STAFF_ACTIONS.CLOCK_OUT) update.departAt = occurredAt.toISOString();
 
     tx.set(attRef, update, { merge: true });
+
+    try {
+      const notifyPhone = textOf(staff.attendanceNotifyPhone);
+      if (notifyPhone) {
+        const queueRef = firestore.collection('message_queue').doc();
+        tx.set(queueRef, buildStaffEventQueuePayload({
+          staffId, staffName: textOf(staff.name), recipientPhone: notifyPhone,
+          action, occurredAt,
+        }));
+      }
+    } catch (notifyErr) {
+      console.warn('[staffCheckin] 알림 큐 준비 실패(출퇴근 기록은 계속):', notifyErr?.message ?? notifyErr);
+    }
+
     return { result: 'created', dayState: newState, action };
   });
 }

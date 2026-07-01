@@ -1,7 +1,7 @@
 import { formatDateTimeKST } from '@impact7/shared/datetime';
 
 // 브랜드 prefix는 여기 한 곳에서만 정의한다(checkinHandler 등 호출부 인라인 금지).
-const BRAND_PREFIX = '[임팩트세븐학원]';
+export const BRAND_PREFIX = '[임팩트세븐학원]';
 
 // 알림톡 템플릿 변수 키. 승인 대기 템플릿 문안 기준(학생명/일시/출결상태).
 // 호출자가 keys로 덮어써서 실제 승인 템플릿의 변수명에 맞춘다.

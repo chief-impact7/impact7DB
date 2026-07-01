@@ -9,11 +9,13 @@ import { handleStaffCheckin } from '../src/staffCheckinHandler.js';
 
 const AUTH = { token: { email: 'staff@impact7.kr', email_verified: true } };
 
-// staff / staff_attendance 를 메모리로 흉내내는 mock. 확정 단계는 runTransaction 사용.
-function makeFirestore({ staff = {}, attendance = {} } = {}) {
-  const stores = { staff, staff_attendance: attendance };
+// staff / staff_attendance / message_queue 를 메모리로 흉내내는 mock. 확정 단계는 runTransaction 사용.
+function makeFirestore({ staff = {}, attendance = {}, queue = {} } = {}) {
+  const stores = { staff, staff_attendance: attendance, message_queue: queue };
+  let _autoId = 0;
   function col(name) {
-    const store = stores[name] || {};
+    if (!stores[name]) stores[name] = {};
+    const store = stores[name];
     return {
       where(field, op, val) {
         return { async get() {
@@ -24,9 +26,11 @@ function makeFirestore({ staff = {}, attendance = {} } = {}) {
         } };
       },
       doc(id) {
+        const docId = id ?? `auto_${++_autoId}`;
         return {
-          id,
-          async get() { return { exists: !!store[id], id, data: () => store[id] }; },
+          _col: name,
+          id: docId,
+          async get() { return { exists: !!store[docId], id: docId, data: () => store[docId] }; },
         };
       },
     };
@@ -37,15 +41,17 @@ function makeFirestore({ staff = {}, attendance = {} } = {}) {
       const tx = {
         async get(ref) { return ref.get(); },
         set(ref, data, opts) {
+          if (!stores[ref._col]) stores[ref._col] = {};
           const store = stores[ref._col];
           store[ref.id] = opts?.merge ? { ...(store[ref.id] || {}), ...data } : data;
         },
       };
       // doc() 가 _col 을 모르므로, 확정 경로용 ref 빌더를 별도로 제공.
-      tx.get = async (ref) => ({ exists: !!stores[ref._col][ref.id], id: ref.id, data: () => stores[ref._col][ref.id] });
+      tx.get = async (ref) => ({ exists: !!(stores[ref._col] || {})[ref.id], id: ref.id, data: () => (stores[ref._col] || {})[ref.id] });
       return fn(tx);
     },
     _ref(colName, id) { return { _col: colName, id, get: async () => ({ exists: !!stores[colName][id], id, data: () => stores[colName][id] }) }; },
+    _queue() { return stores.message_queue; },
   };
 }
 
@@ -137,5 +143,70 @@ describe('handleStaffCheckin 확정', () => {
     expect(res.result).toBe('created');
     expect(res.dayState).toBe('근무중');
     expect(res.action).toBe('귀원');
+  });
+});
+
+describe('handleStaffCheckin 알림 큐', () => {
+  test('attendanceNotifyPhone 있으면 message_queue 1건 적재', async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active', attendanceNotifyPhone: '01012345678' } },
+      attendance: {},
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    );
+    expect(res.result).toBe('created');
+    const queue = firestore._queue();
+    expect(Object.keys(queue)).toHaveLength(1);
+    const doc = Object.values(queue)[0];
+    expect(doc.kind).toBe('attendance');
+    expect(doc.recipient_phone).toBe('01012345678');
+    expect(doc.status).toBe('pending');
+    expect(doc.source).toBe('tablet');
+    expect(doc.staff_id).toBe('st1');
+  });
+
+  test('attendanceNotifyPhone 없으면 message_queue 0건', async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active' } },
+      attendance: {},
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    );
+    expect(res.result).toBe('created');
+    expect(Object.keys(firestore._queue())).toHaveLength(0);
+  });
+
+  test('duplicate이면 message_queue 0건', async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active', attendanceNotifyPhone: '01012345678' } },
+      attendance: { [`${dateStr}_st1`]: { state: '근무중', last_event: { action: '출근', at_ms: Date.now() - 5000 } } },
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    );
+    expect(res.result).toBe('duplicate');
+    expect(Object.keys(firestore._queue())).toHaveLength(0);
+  });
+
+  test('attendanceNotifyPhone 있어도 처리(created) 성공 유지', async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active', attendanceNotifyPhone: '01099998888' } },
+      attendance: {},
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    );
+    expect(res.result).toBe('created');
+    expect(res.dayState).toBe('근무중');
   });
 });

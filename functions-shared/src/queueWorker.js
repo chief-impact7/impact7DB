@@ -157,6 +157,7 @@ async function writeMessageLog(db, data, queueId, fields) {
     queue_id: queueId,
     checkin_id: data.checkin_id ?? null,
     student_id: data.student_id ?? null,
+    staff_id: data.staff_id ?? null, // 직원 출퇴근 알림은 staff_id로 발송 로그 추적(학생 payload엔 없어 null)
     kind: data.kind ?? null,
     provider: 'solapi',
     channel: fields.channel ?? null,

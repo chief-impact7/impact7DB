@@ -1,14 +1,12 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
-import { applyTemplate } from './templates.js';
+import { applyTemplate, BRAND_PREFIX } from './templates.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
 
 // 개별 학부모 정보성 안내(알림톡) 발송 callable. 학생 상세 패널 '메시지' 탭에서 1건 발송.
 // 정보성이므로 동의·야간 제한 없음. 승인된 알림톡 템플릿 코드는 .env로 주입(검수 승인 후 확정).
 // 홍보(광고)는 별도 경로(createPromoCampaign) — 여기서 다루지 않는다.
-
-const BRAND_PREFIX = '[임팩트세븐학원]';
 
 // kind→템플릿 레지스트리. templateCode는 env(승인 후), vars는 승인 템플릿의 변수명과 일치.
 // fallback은 알림톡 실패 시 솔라피 내장 대체발송 SMS 본문.
