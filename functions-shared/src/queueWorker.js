@@ -1,5 +1,6 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { maskPhone } from './phoneMask.js';
+import { resolveChannelAddUrl, channelInviteSuffix } from './channelInvite.js';
 
 // 메시지 큐 워커 — 계약 정본(message-architect_api-contract §2.4, §4.1) 기준.
 // status 전이: pending → processing → sent | failed_retryable | failed_permanent.
@@ -361,13 +362,15 @@ async function markSmsRetry(db, ref, attemptCount, statusCode) {
 
 const BMS_NOT_FRIEND_CODE = '3120'; // solapiProvider.BMS_NOT_FRIEND_CODE — 정적 import 금지(F7)로 인라인.
 
-// 비친구(3120) 확정으로 문자 전환할 때만, 큐 doc이 제공한 채널 가입 유도 문구(sms_suffix)를 문자 본문에
-// 덧붙인다. 친구톡 본문(content)은 그대로 두므로 채널 가입자(친구톡 도달)에겐 노출되지 않는다.
-// 야간차단(3108)·미확정 타임아웃은 비친구 확정이 아니라 부가문구 없이 원문만 전환한다.
+// 비친구(3120) 확정으로 문자 전환할 때, 원문 뒤에 채널 가입 유도를 덧붙인다 — 큐 doc이 커스텀
+// 문구(sms_suffix)를 주면 그것을, 없으면 기본 유도를 자동으로 붙인다. 친구톡 본문(content)은 그대로
+// 두므로 채널 가입자(친구톡 도달)에겐 노출되지 않는다. 야간차단(3108)·미확정 타임아웃은 비친구 확정이
+// 아니라(친구여도 못 받았을 수 있음) 부가문구 없이 원문만 전환한다.
 function smsFallbackContent(data, statusCode) {
   const base = data.content ?? '';
-  if (statusCode === BMS_NOT_FRIEND_CODE && data.sms_suffix) {
-    return base + '\n\n' + data.sms_suffix;
+  if (statusCode === BMS_NOT_FRIEND_CODE) {
+    const suffix = data.sms_suffix ?? channelInviteSuffix(resolveChannelAddUrl());
+    if (suffix) return base + '\n\n' + suffix;
   }
   return base;
 }

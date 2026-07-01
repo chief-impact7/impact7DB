@@ -540,7 +540,9 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(smsDoc).toBeDefined();
     expect(smsDoc.kind).toBe('direct');
     expect(smsDoc.status).toBe('pending');
-    expect(smsDoc.content).toBe('[진단평가] 6/25(수) 오후 2시');
+    // sms_suffix 미지정 → 기본 채널 가입 유도가 자동으로 덧붙는다(원문 유지).
+    expect(smsDoc.content).toContain('[진단평가] 6/25(수) 오후 2시');
+    expect(smsDoc.content).toContain('kakao.impact7.kr');
     expect(smsDoc.result_callback).toMatchObject({ url: 'https://example.com/cb', applicationId: 'app_bms' });
     expect(db._queue.get('pb_nf').status).toBe('converted_to_sms');
     expect(db._queue.get('pb_nf').last_error_code).toBe('3120');
@@ -556,7 +558,7 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
 
     const smsDoc = db._queue.get('pb_copy_sms');
-    expect(smsDoc.content).toBe('[진단평가] 6/25(수) 오후 2시');
+    expect(smsDoc.content).toContain('[진단평가] 6/25(수) 오후 2시');
     expect(smsDoc.scheduled_date).toBe('2026-06-25 14:00:00');
     expect(smsDoc.result_callback).toMatchObject({ url: 'https://cb.example', applicationId: 'app2' });
     expect(smsDoc.created_by).toBe('bms_fallback');
