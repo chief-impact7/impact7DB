@@ -129,6 +129,14 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "teacher_approved_at", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "staff_attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "date", "order": "ASCENDING" },
+        { "fieldPath": "state", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

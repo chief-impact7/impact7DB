@@ -41,6 +41,7 @@ import {
 } from './src/hrUploadHandler.js';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './src/solapiSecrets.js';
 import { computeLabelUpdate } from './src/studentLabelSync.js';
+import { handleStaffAutoClockout } from './src/staffAutoClockoutHandler.js';
 
 initializeApp();
 
@@ -215,6 +216,13 @@ export const retrySweeper = onSchedule(
 export const deliveryResultSweeper = onSchedule(
   { schedule: 'every 1 minutes', timeZone: 'Asia/Seoul', secrets: SOLAPI_SECRETS },
   () => runDeliveryResultSweep(),
+);
+
+// 직원 미퇴근 자동 처리 — 매일 KST 06:00에 전날 근무중 직원을 전날 22:30 KST 퇴근으로 기록.
+// 익일 06:00까지 퇴근을 찍지 않은 직원을 자동 정리. 알림 미발송.
+export const staffAutoClockout = onSchedule(
+  { schedule: '0 6 * * *', timeZone: 'Asia/Seoul' },
+  () => handleStaffAutoClockout(),
 );
 
 // 어떤 경로로 쓰이든 school/level/grade → school_level_grade 자동 동기화(stale 차단).
