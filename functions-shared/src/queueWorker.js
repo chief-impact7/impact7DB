@@ -238,8 +238,9 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
     return;
   }
 
-  // parent_bms도 야간(20:50~08:00)엔 카카오가 BMS 발송을 차단(실측 3108)하므로, 예약시각이 없으면
-  // 다음 08:00로 보정해 솔라피 예약 발송에 맡긴다(즉시 발송은 미도달). report는 별도 흐름이라 제외.
+  // parent_bms는 야간(20:50~08:00)엔 카카오가 BMS 발송을 차단(실측 3108)하므로, 예약시각이 없으면
+  // 다음 08:00로 보정해 솔라피 예약 발송에 맡긴다(즉시 발송은 미도달). report(교사 수동 발송)는 즉시성이
+  // 중요해 보정 없이 바로 시도하고, 야간차단(3108)이 나오면 발송결과 폴링이 문자로 전환한다.
   let scheduledSendAt = null;
   if (data.kind === PARENT_BMS_KIND) {
     const { isAdNightKST, resolveAdScheduledAt, parseKstToDate } = await import('./promoSchedule.js');
@@ -256,10 +257,11 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
   }
 
   if (result?.ok) {
-    // parent_bms 접수 성공(2000)은 카톡 도달을 보장하지 않는다 — 비친구(3120)·야간(3108)은
-    // 비동기 발송결과에만 나타난다. 따라서 종결하지 않고 발송결과 폴링이 도달/비친구를 확정한다
-    // (친구 학습·문자 전환·콜백은 모두 폴링 단계로 미룬다).
-    if (data.kind === PARENT_BMS_KIND) {
+    // 정보형 BMS(parent_bms/report) 접수 성공(2000)은 카톡 도달을 보장하지 않는다 — 비친구(3120)·
+    // 야간(3108)은 비동기 발송결과에만 나타난다. 따라서 종결하지 않고 발송결과 폴링이 도달/비친구를
+    // 확정한다(친구 학습·문자 전환·콜백은 모두 폴링 단계로 미룬다). report도 친구명단이 실제 카톡
+    // 상태와 어긋날 수 있어(명단엔 있으나 미도달) 동일하게 폴링해 미도달 시 문자로 전환한다.
+    if (data.kind === PARENT_BMS_KIND || data.kind === REPORT_KIND) {
       // 예약 발송이면 발송 시각 이후부터 결과를 조회한다(즉시 발송이면 접수 시각 기준). 예약 전
       // 조기 폴링이 미발송을 'pending'으로 누적해 상한 타임아웃으로 오전환되는 것을 막는다.
       const base = scheduledSendAt && scheduledSendAt > now ? scheduledSendAt : now;

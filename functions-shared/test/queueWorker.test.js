@@ -216,14 +216,17 @@ describe('processQueueDoc', () => {
     expect(db._logs[0]).toMatchObject({ status: 'failed', status_code: 'kind_not_allowed' });
   });
 
-  it('report kind → 정보형 BMS payload(targeting I, adFlag false, disableSms)로 발송', async () => {
+  it('report kind → 정보형 BMS payload(targeting I, adFlag false, disableSms) + 접수 후 발송결과 대기', async () => {
     const db = makeDb({ q1: baseQueueDoc({ kind: 'report', content: '[6/16] 수업 결과...', targeting: 'I', ad_flag: false }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', statusCode: '2000' });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', groupId: 'grp1', statusCode: '2000' });
     await processQueueDoc(eventFor(db, 'q1'), { db, sender });
     expect(sender).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'report', to: '01012345678', content: '[6/16] 수업 결과...', targeting: 'I', adFlag: false, disableSms: true,
     }));
-    expect(db._queue.get('q1').status).toBe('sent');
+    // 접수 2000 ≠ 카톡 도달 — parent_bms처럼 폴링으로 도달/비친구를 확정한다(친구명단 오차 self-correct).
+    const d = db._queue.get('q1');
+    expect(d.status).toBe('awaiting_delivery_result');
+    expect(d.solapi_group_id).toBe('grp1');
   });
 
   it('성공 시 종결 doc에 purge_after(보존기간) 설정', async () => {
