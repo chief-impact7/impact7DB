@@ -2,9 +2,9 @@ import { describe, test, expect } from 'vitest';
 import { resolveAutoTime, DEFAULT_STAFF_ATTENDANCE_SETTINGS } from '../src/staffAttendanceSettings.js';
 
 describe('DEFAULT_STAFF_ATTENDANCE_SETTINGS', () => {
-  test('기본값: dayStartHour=6, autoClockOut.global=22:30, autoClockIn.global=null', () => {
+  test('기본값: dayStartHour=6, autoClockOut.global=null(자동 안 함), autoClockIn.global=null', () => {
     expect(DEFAULT_STAFF_ATTENDANCE_SETTINGS.dayStartHour).toBe(6);
-    expect(DEFAULT_STAFF_ATTENDANCE_SETTINGS.autoClockOut.global).toBe('22:30');
+    expect(DEFAULT_STAFF_ATTENDANCE_SETTINGS.autoClockOut.global).toBeNull();
     expect(DEFAULT_STAFF_ATTENDANCE_SETTINGS.autoClockIn.global).toBeNull();
   });
 });

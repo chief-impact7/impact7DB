@@ -1,6 +1,8 @@
+// 자동 출/퇴근 기본은 null(=자동 안 함) — 관리자가 설정에서 시각을 입력해야만 작동한다.
+// (사용자 요구: 입력 없으면 자동 반영하지 않음)
 export const DEFAULT_STAFF_ATTENDANCE_SETTINGS = {
   dayStartHour: 6,
-  autoClockOut: { global: '22:30', byDept: {}, byStaff: {} },
+  autoClockOut: { global: null, byDept: {}, byStaff: {} },
   autoClockIn: { global: null, byDept: {}, byStaff: {} },
 };
 

@@ -16,8 +16,9 @@ import { businessDayKST } from '@impact7/shared/datetime';
 const PREV_DATE = '2026-07-01';
 const CLOCKOUT_ISO = new Date(`${PREV_DATE}T22:30:00+09:00`).toISOString(); // 2026-07-01T13:30:00.000Z
 const CLOCKOUT_MS = new Date(CLOCKOUT_ISO).getTime();
+const SETTINGS_22_30 = { dayStartHour: 6, autoClockOut: { global: '22:30', byDept: {}, byStaff: {} }, autoClockIn: { global: null, byDept: {}, byStaff: {} } };
 
-function makeFirestore(docs = []) {
+function makeFirestore(docs = [], { settings = null } = {}) {
   const updates = [];
   let committed = false;
 
@@ -40,7 +41,23 @@ function makeFirestore(docs = []) {
   };
 
   return {
-    collection: () => q,
+    collection(name) {
+      if (name === 'settings') {
+        return {
+          doc() {
+            return {
+              async get() {
+                return settings ? { exists: true, data: () => settings } : { exists: false };
+              },
+            };
+          },
+        };
+      }
+      if (name === 'staff') {
+        return { doc() { return { async get() { return { exists: false }; } }; } };
+      }
+      return q;
+    },
     batch: () => batch,
     _updates: updates,
     _committed: () => committed,
@@ -51,7 +68,7 @@ describe('handleStaffAutoClockout — 근무중 직원 자동 퇴근', () => {
   it('근무중 직원을 전날 22:30 KST 퇴근으로 기록한다', async () => {
     const fs = makeFirestore([
       { _id: 'att1', state: '근무중', events: [{ action: '출근', at: `${PREV_DATE}T01:00:00.000Z`, at_ms: 1 }] },
-    ]);
+    ], { settings: SETTINGS_22_30 });
 
     const res = await handleStaffAutoClockout({ firestore: fs, prevDate: PREV_DATE });
 
@@ -73,7 +90,7 @@ describe('handleStaffAutoClockout — 근무중 직원 자동 퇴근', () => {
         { action: '출근', at: `${PREV_DATE}T01:00:00.000Z`, at_ms: 1 },
         { action: '외출', at: `${PREV_DATE}T08:00:00.000Z`, at_ms: 2 },
       ] },
-    ]);
+    ], { settings: SETTINGS_22_30 });
 
     const res = await handleStaffAutoClockout({ firestore: fs, prevDate: PREV_DATE });
 
@@ -87,13 +104,25 @@ describe('handleStaffAutoClockout — 근무중 직원 자동 퇴근', () => {
   it('기존 events 가 없어도 events 배열을 새로 만든다', async () => {
     const fs = makeFirestore([
       { _id: 'att2', state: '근무중' },
-    ]);
+    ], { settings: SETTINGS_22_30 });
 
     const res = await handleStaffAutoClockout({ firestore: fs, prevDate: PREV_DATE });
 
     expect(res.processed).toBe(1);
     expect(fs._updates[0].data.events).toHaveLength(1);
     expect(fs._updates[0].data.events[0].action).toBe('퇴근');
+  });
+
+  it('settings 없으면(시각 null) 자동 퇴근 안 함 — processed 0, commit 안 함', async () => {
+    const fs = makeFirestore([
+      { _id: 'att3', state: '근무중', events: [] },
+    ]);
+
+    const res = await handleStaffAutoClockout({ firestore: fs, prevDate: PREV_DATE });
+
+    expect(res).toMatchObject({ processed: 0, skipped: 1 });
+    expect(fs._updates).toHaveLength(0);
+    expect(fs._committed()).toBe(false);
   });
 });
 
@@ -132,7 +161,7 @@ describe('handleStaffAutoClockout — businessDate 경계(KST 06:00)', () => {
   const CURRENT_BUSINESS_DAY = '2026-07-01';
   const EXPECTED_PREV_DATE = '2026-06-30';
 
-  function makeFirestoreWithDateCapture(docs = []) {
+  function makeFirestoreWithDateCapture(docs = [], { settings = null } = {}) {
     const updates = [];
     let queriedDate = null;
 
@@ -158,7 +187,23 @@ describe('handleStaffAutoClockout — businessDate 경계(KST 06:00)', () => {
     };
 
     return {
-      collection: () => q,
+      collection(name) {
+        if (name === 'settings') {
+          return {
+            doc() {
+              return {
+                async get() {
+                  return settings ? { exists: true, data: () => settings } : { exists: false };
+                },
+              };
+            },
+          };
+        }
+        if (name === 'staff') {
+          return { doc() { return { async get() { return { exists: false }; } }; } };
+        }
+        return q;
+      },
       batch: () => batch,
       _queriedDate: () => queriedDate,
       _updates: updates,
@@ -183,7 +228,7 @@ describe('handleStaffAutoClockout — businessDate 경계(KST 06:00)', () => {
     const expectedClockoutISO = new Date(`${EXPECTED_PREV_DATE}T22:30:00+09:00`).toISOString();
     const fs = makeFirestoreWithDateCapture([
       { _id: 'att-prev', state: '근무중', events: [{ action: '출근', at: `${EXPECTED_PREV_DATE}T01:00:00.000Z`, at_ms: 1 }] },
-    ]);
+    ], { settings: SETTINGS_22_30 });
     const res = await handleStaffAutoClockout({ firestore: fs });
     expect(res).toMatchObject({ date: EXPECTED_PREV_DATE, processed: 1 });
     expect(fs._updates[0].data.departAt).toBe(expectedClockoutISO);
