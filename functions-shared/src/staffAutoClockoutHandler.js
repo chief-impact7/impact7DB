@@ -17,9 +17,11 @@ export async function handleStaffAutoClockout(deps = {}) {
   const clockoutISO = clockoutDate.toISOString();
   const clockoutMs = clockoutDate.getTime();
 
+  // 퇴근 기록이 없는(=미퇴근) 모든 상태: 근무중(IN)·외출중(OUT). 퇴근(DONE)만 제외.
+  const OPEN_STATES = [STAFF_DAY_STATES.IN, STAFF_DAY_STATES.OUT];
   const snap = await firestore.collection('staff_attendance')
     .where('date', '==', prevDate)
-    .where('state', '==', STAFF_DAY_STATES.IN)
+    .where('state', 'in', OPEN_STATES)
     .get();
 
   const batch = firestore.batch();
@@ -27,7 +29,7 @@ export async function handleStaffAutoClockout(deps = {}) {
 
   for (const doc of snap.docs) {
     const att = doc.data();
-    if (att.state !== STAFF_DAY_STATES.IN) continue;
+    if (!OPEN_STATES.includes(att.state)) continue;
 
     const events = Array.isArray(att.events) ? [...att.events] : [];
     events.push({ action: STAFF_ACTIONS.CLOCK_OUT, at: clockoutISO, at_ms: clockoutMs });

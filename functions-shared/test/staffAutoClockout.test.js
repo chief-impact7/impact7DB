@@ -61,6 +61,23 @@ describe('handleStaffAutoClockout — 근무중 직원 자동 퇴근', () => {
     expect(fs._committed()).toBe(true);
   });
 
+  it('외출중(귀원·퇴근 미기록) 직원도 전날 22:30 퇴근으로 기록한다', async () => {
+    const fs = makeFirestore([
+      { _id: 'att-out', state: '외출중', events: [
+        { action: '출근', at: `${PREV_DATE}T01:00:00.000Z`, at_ms: 1 },
+        { action: '외출', at: `${PREV_DATE}T08:00:00.000Z`, at_ms: 2 },
+      ] },
+    ]);
+
+    const res = await handleStaffAutoClockout({ firestore: fs, prevDate: PREV_DATE });
+
+    expect(res.processed).toBe(1);
+    expect(fs._updates[0].data.state).toBe('퇴근');
+    expect(fs._updates[0].data.departAt).toBe(CLOCKOUT_ISO);
+    expect(fs._updates[0].data.events).toHaveLength(3);
+    expect(fs._updates[0].data.events[2].action).toBe('퇴근');
+  });
+
   it('기존 events 가 없어도 events 배열을 새로 만든다', async () => {
     const fs = makeFirestore([
       { _id: 'att2', state: '근무중' },
