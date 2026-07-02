@@ -1,5 +1,5 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { todayKST } from '@impact7/shared/datetime';
+import { businessDayKST } from '@impact7/shared/datetime';
 import { STAFF_ACTIONS, STAFF_DAY_STATES } from './staffAttendanceState.js';
 
 function prevDateOfKST(dateKST) {
@@ -10,7 +10,7 @@ function prevDateOfKST(dateKST) {
 
 export async function handleStaffAutoClockout(deps = {}) {
   const firestore = deps.firestore || getFirestore();
-  const prevDate = deps.prevDate ?? prevDateOfKST(todayKST());
+  const prevDate = deps.prevDate ?? prevDateOfKST(businessDayKST());
 
   // 22:30 KST = 13:30 UTC (KST=UTC+9, DST 없음)
   const clockoutDate = new Date(`${prevDate}T22:30:00+09:00`);

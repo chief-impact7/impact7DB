@@ -1,11 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('firebase-admin/firestore', () => ({
   getFirestore: vi.fn(),
   FieldValue: { serverTimestamp: () => '__ts__' },
 }));
 
+vi.mock('@impact7/shared/datetime', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, businessDayKST: vi.fn().mockImplementation(real.businessDayKST) };
+});
+
 const { handleStaffAutoClockout } = await import('../src/staffAutoClockoutHandler.js');
+import { businessDayKST } from '@impact7/shared/datetime';
 
 const PREV_DATE = '2026-07-01';
 const CLOCKOUT_ISO = new Date(`${PREV_DATE}T22:30:00+09:00`).toISOString(); // 2026-07-01T13:30:00.000Z
@@ -118,5 +124,69 @@ describe('handleStaffAutoClockout — 멱등', () => {
 describe('handleStaffAutoClockout — 22:30 KST 시각 계산', () => {
   it('22:30 KST는 13:30 UTC (UTC+9, DST 없음)', () => {
     expect(CLOCKOUT_ISO).toBe(`${PREV_DATE}T13:30:00.000Z`);
+  });
+});
+
+describe('handleStaffAutoClockout — businessDate 경계(KST 06:00)', () => {
+  // KST 06:00에 스케줄러 실행: businessDayKST() = 당일(07-01) → 전날 근무일 = 06-30
+  const CURRENT_BUSINESS_DAY = '2026-07-01';
+  const EXPECTED_PREV_DATE = '2026-06-30';
+
+  function makeFirestoreWithDateCapture(docs = []) {
+    const updates = [];
+    let queriedDate = null;
+
+    const q = {
+      where(field, _op, val) {
+        if (field === 'date') queriedDate = val;
+        return q;
+      },
+      async get() {
+        return {
+          docs: docs.map((d, i) => ({
+            id: d._id || `doc${i}`,
+            ref: { id: d._id || `doc${i}` },
+            data: () => d,
+          })),
+        };
+      },
+    };
+
+    const batch = {
+      update(ref, data) { updates.push({ id: ref.id, data }); },
+      async commit() {},
+    };
+
+    return {
+      collection: () => q,
+      batch: () => batch,
+      _queriedDate: () => queriedDate,
+      _updates: updates,
+    };
+  }
+
+  beforeEach(() => {
+    vi.mocked(businessDayKST).mockReturnValue(CURRENT_BUSINESS_DAY);
+  });
+
+  afterEach(() => {
+    vi.mocked(businessDayKST).mockRestore();
+  });
+
+  it('KST 06:00 시점: businessDayKST=당일이므로 전날 근무일 문서를 조회한다', async () => {
+    const fs = makeFirestoreWithDateCapture([]);
+    await handleStaffAutoClockout({ firestore: fs });
+    expect(fs._queriedDate()).toBe(EXPECTED_PREV_DATE);
+  });
+
+  it('전날 근무일 미퇴근 직원을 22:30 KST로 자동 퇴근 처리한다', async () => {
+    const expectedClockoutISO = new Date(`${EXPECTED_PREV_DATE}T22:30:00+09:00`).toISOString();
+    const fs = makeFirestoreWithDateCapture([
+      { _id: 'att-prev', state: '근무중', events: [{ action: '출근', at: `${EXPECTED_PREV_DATE}T01:00:00.000Z`, at_ms: 1 }] },
+    ]);
+    const res = await handleStaffAutoClockout({ firestore: fs });
+    expect(res).toEqual({ date: EXPECTED_PREV_DATE, processed: 1 });
+    expect(fs._updates[0].data.departAt).toBe(expectedClockoutISO);
+    expect(fs._updates[0].data.state).toBe('퇴근');
   });
 });

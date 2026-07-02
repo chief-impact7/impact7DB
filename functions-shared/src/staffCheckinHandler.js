@@ -1,6 +1,6 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { todayKST } from '@impact7/shared/datetime';
+import { businessDayKST } from '@impact7/shared/datetime';
 import { normalizeAttendanceLabel } from '@impact7/shared/attendance-action';
 import { assertAuthorizedStaff } from './authGuards.js';
 import {
@@ -86,7 +86,7 @@ export async function handleStaffCheckin(request, deps = {}) {
   const staffId = textOf(data.staffId);
   // 구 클라이언트가 보내는 '복귀'도 표준 '귀원'으로 정규화해 수용(학생 핸들러와 동일).
   const action = normalizeAttendanceLabel(textOf(data.action));
-  const dateKST = todayKST();
+  const dateKST = businessDayKST();
 
   // 조회: staffId/action 없으면 후보 목록 반환.
   if (!staffId && !action) {

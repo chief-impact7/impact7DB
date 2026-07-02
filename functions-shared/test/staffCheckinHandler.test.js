@@ -1,11 +1,17 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('firebase-admin/firestore', () => ({
   getFirestore: vi.fn(),
   FieldValue: { serverTimestamp: () => '__ts__' },
 }));
 
+vi.mock('@impact7/shared/datetime', async (importOriginal) => {
+  const real = await importOriginal();
+  return { ...real, businessDayKST: vi.fn().mockImplementation(real.businessDayKST) };
+});
+
 import { handleStaffCheckin } from '../src/staffCheckinHandler.js';
+import { businessDayKST } from '@impact7/shared/datetime';
 
 const AUTH = { token: { email: 'staff@impact7.kr', email_verified: true } };
 
@@ -208,5 +214,65 @@ describe('handleStaffCheckin 알림 큐', () => {
     );
     expect(res.result).toBe('created');
     expect(res.dayState).toBe('근무중');
+  });
+});
+
+describe('handleStaffCheckin 근무일(businessDate) 경계', () => {
+  const BUSINESS_DATE = '2026-06-30'; // 익일 01:00 KST → 전날 근무일
+
+  beforeEach(() => {
+    vi.mocked(businessDayKST).mockReturnValue(BUSINESS_DATE);
+  });
+
+  afterEach(() => {
+    vi.mocked(businessDayKST).mockRestore();
+  });
+
+  test('익일 새벽(01:00 KST) 출근 → 전날 근무일 date 문서에 기록', async () => {
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active' } },
+      attendance: {},
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${BUSINESS_DATE}_st1`) },
+    );
+    expect(res.result).toBe('created');
+    expect(res.dayState).toBe('근무중');
+    const written = firestore._ref('staff_attendance', `${BUSINESS_DATE}_st1`);
+    const snap = await written.get();
+    expect(snap.data().date).toBe(BUSINESS_DATE);
+    expect(snap.data().yearMonth).toBe('2026-06');
+  });
+
+  test('자정 넘긴 퇴근(01:30 KST) → 동일 근무일(전날) 문서에 귀속', async () => {
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active' } },
+      attendance: {
+        [`${BUSINESS_DATE}_st1`]: { state: '근무중', last_event: { action: '출근', at_ms: Date.now() - 60_000 } },
+      },
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '퇴근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${BUSINESS_DATE}_st1`) },
+    );
+    expect(res.result).toBe('created');
+    expect(res.dayState).toBe('퇴근');
+    const snap = await firestore._ref('staff_attendance', `${BUSINESS_DATE}_st1`).get();
+    expect(snap.data().date).toBe(BUSINESS_DATE);
+  });
+
+  test('lookup 단계: 전날 근무일 기준 출결 문서 조회', async () => {
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김선생', phoneKey: '123456', status: 'active' } },
+      attendance: {
+        [`${BUSINESS_DATE}_st1`]: { state: '근무중', last_event: { action: '출근', at_ms: Date.now() - 3600_000 } },
+      },
+    });
+    const res = await handleStaffCheckin({ auth: AUTH, data: { phoneKey: '123456' } }, { firestore });
+    expect(res.result).toBe('candidates');
+    expect(res.candidates[0].dayState).toBe('근무중');
+    expect(res.candidates[0].allowedActions).toContain('외출');
+    expect(res.candidates[0].allowedActions).toContain('퇴근');
   });
 });
