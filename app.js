@@ -29,6 +29,7 @@ import { promptModal, confirmModal } from './prompt-modal.js';
 import './form-enter.js';
 import './theme.js';
 import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
+import { maybeSuggestUpgrade } from './student-number-reissue.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
     { db, writeBatch, doc, collection, serverTimestamp }
@@ -2539,7 +2540,8 @@ window.submitNewStudent = async () => {
             const docId = currentStudentId;
             const oldStudent = allStudents.find(s => s.id === docId) || {};
 
-            // studentNumber가 없으면 이번 저장에서 함께 발급
+            // studentNumber가 없으면 이번 저장에서 함께 발급.
+            // 이미 있으면 상위소스(예: 본인 폰) 등장 시 교체 제안(하이브리드) — 무음 변경 아님.
             if (!oldStudent.studentNumber) {
                 const { studentNumber, source } = deriveStudentNumber(studentData);
                 if (studentNumber) {
@@ -2547,6 +2549,9 @@ window.submitNewStudent = async () => {
                     studentData.studentNumberSource = source;
                     studentData.studentNumberIssuedAt = serverTimestamp();
                 }
+            } else {
+                const upgradePatch = await maybeSuggestUpgrade(studentData, oldStudent);
+                if (upgradePatch) Object.assign(studentData, upgradePatch);
             }
             {
                 const finalStudentNumber = studentData.studentNumber || oldStudent.studentNumber;
