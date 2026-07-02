@@ -24,7 +24,9 @@ function maskName(name) {
   return `${chars[0]}${'*'.repeat(chars.length - 2)}${chars[chars.length - 1]}`;
 }
 
-const DEFAULT_POLICY = 'block';
+// device 미등록/미설정 시 기본 정책. 'warn' = 하원 버튼은 나오되 체크리스트 미완료면 안내 표시
+// (학생이 하원은 가능, 선생님이 미완료를 인지). kiosk_devices에 'allow'/'warn'을 지정하면 덮어쓴다.
+const DEFAULT_POLICY = 'warn';
 
 async function readDevicePolicy(firestore, deviceId) {
   const id = textOf(deviceId);
