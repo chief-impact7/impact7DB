@@ -1324,6 +1324,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 직원 근태 설정 — 매니저 이상 read/write. 서버 callable도 Admin SDK로 우회.
+    match /settings/{docId} {
+      allow read: if isDirector() || isManager();
+      allow write: if isDirector() || isManager();
+    }
+
     // 직원 출퇴근 기록 — 서버(Admin SDK)만 기록, 조회는 원장급(HR 월별 조회).
     match /staff_attendance/{docId} {
       allow read: if isDirector() || isManager();

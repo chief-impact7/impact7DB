@@ -55,7 +55,7 @@ describe('handleStaffAutoClockout — 근무중 직원 자동 퇴근', () => {
 
     const res = await handleStaffAutoClockout({ firestore: fs, prevDate: PREV_DATE });
 
-    expect(res).toEqual({ date: PREV_DATE, processed: 1 });
+    expect(res).toMatchObject({ date: PREV_DATE, processed: 1 });
     expect(fs._updates).toHaveLength(1);
     const { data } = fs._updates[0];
     expect(data.state).toBe('퇴근');
@@ -115,7 +115,7 @@ describe('handleStaffAutoClockout — 멱등', () => {
 
     const res = await handleStaffAutoClockout({ firestore: fs, prevDate: PREV_DATE });
 
-    expect(res).toEqual({ date: PREV_DATE, processed: 0 });
+    expect(res).toMatchObject({ date: PREV_DATE, processed: 0 });
     expect(fs._updates).toHaveLength(0);
     expect(fs._committed()).toBe(false);
   });
@@ -185,7 +185,7 @@ describe('handleStaffAutoClockout — businessDate 경계(KST 06:00)', () => {
       { _id: 'att-prev', state: '근무중', events: [{ action: '출근', at: `${EXPECTED_PREV_DATE}T01:00:00.000Z`, at_ms: 1 }] },
     ]);
     const res = await handleStaffAutoClockout({ firestore: fs });
-    expect(res).toEqual({ date: EXPECTED_PREV_DATE, processed: 1 });
+    expect(res).toMatchObject({ date: EXPECTED_PREV_DATE, processed: 1 });
     expect(fs._updates[0].data.departAt).toBe(expectedClockoutISO);
     expect(fs._updates[0].data.state).toBe('퇴근');
   });

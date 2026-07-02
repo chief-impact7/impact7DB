@@ -86,7 +86,17 @@ export async function handleStaffCheckin(request, deps = {}) {
   const staffId = textOf(data.staffId);
   // 구 클라이언트가 보내는 '복귀'도 표준 '귀원'으로 정규화해 수용(학생 핸들러와 동일).
   const action = normalizeAttendanceLabel(textOf(data.action));
-  const dateKST = businessDayKST();
+
+  let settings = 'settings' in deps ? deps.settings : null;
+  if (!('settings' in deps)) {
+    try {
+      const sSnap = await firestore.collection('settings').doc('staff_attendance').get();
+      if (sSnap.exists) settings = sSnap.data();
+    } catch (e) {
+      console.warn('[staffCheckin] settings 조회 실패, 기본값 사용:', e?.message);
+    }
+  }
+  const dateKST = businessDayKST(new Date(), settings?.dayStartHour ?? 6);
 
   // 조회: staffId/action 없으면 후보 목록 반환.
   if (!staffId && !action) {
