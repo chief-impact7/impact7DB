@@ -60,6 +60,34 @@ export const PARENT_NOTICE_TEMPLATES = {
     vars: ['시각'],
     fallback: `${BRAND_PREFIX} 귀원 안내\n#{학생명} 학생이 #{시각}에 귀원하였습니다.\n문의: 02-2649-0509`,
   },
+  // 지각 등원 — 등원 안내와 분리(태블릿 체크인이 late면 arrival 대신 이 템플릿으로 라우팅).
+  late: {
+    envKey: 'LATE_TEMPLATE_CODE',
+    label: '지각 안내',
+    vars: ['시각'],
+    fallback: `${BRAND_PREFIX} 지각 안내\n#{학생명} 학생이 #{시각}에 지각 등원하였습니다.\n문의: 02-2649-0509`,
+  },
+  // 미등원(결석) 안내 — 등원예정 경과 + 미체크인 자동판정 스윕이 발송.
+  absence: {
+    envKey: 'ABSENCE_TEMPLATE_CODE',
+    label: '미등원 안내',
+    vars: ['일시'],
+    fallback: `${BRAND_PREFIX} 미등원 안내\n#{학생명} 학생이 #{일시} 수업에 등원하지 않았습니다. 등원 예정이 아니라면 확인 부탁드립니다.\n문의: 02-2649-0509`,
+  },
+  // 과제·준비물·공지 범용 — 메시지 탭 수동 발송.
+  study: {
+    envKey: 'STUDY_TEMPLATE_CODE',
+    label: '학습 안내',
+    vars: ['안내내용'],
+    fallback: `${BRAND_PREFIX} 학습 안내\n#{학생명} 학생 학부모님: #{안내내용}\n문의: 02-2649-0509`,
+  },
+  // 개별 보강 일정 — 메시지 탭 수동 발송.
+  makeup: {
+    envKey: 'MAKEUP_TEMPLATE_CODE',
+    label: '보강 안내',
+    vars: ['보강일시', '보강내용'],
+    fallback: `${BRAND_PREFIX} 보강 안내\n#{학생명} 학생 보강 일정 — 일시: #{보강일시} / 내용: #{보강내용}\n문의: 02-2649-0509`,
+  },
 };
 
 // 템플릿 변수맵 생성: #{학생명}은 학생 마스터에서, 나머지는 입력값에서. 누락 변수는 빈 문자열.

@@ -151,7 +151,7 @@ describe('handleTabletCheckin 확정', () => {
     expect(queued[0].fallback_text).toContain('등원');
   });
 
-  test('등원 지각 — 예정+5분 초과면 status 지각 + 알림톡 시각에 (지각)', async () => {
+  test('등원 지각 — 예정+5분 초과면 status 지각 + 지각(late) 템플릿으로 발송', async () => {
     const { todayKST } = await import('@impact7/shared/datetime');
     const d = todayKST();
     const fs = makeTxFirestore({
@@ -164,7 +164,11 @@ describe('handleTabletCheckin 확정', () => {
     );
     expect(res.result).toBe('created');
     expect(fs._stores.daily_records[`s1_${d}`].attendance.status).toBe('지각');
-    expect(Object.values(fs._stores.message_queue)[0].template_variables['#{시각}']).toContain('(지각)');
+    const q = Object.values(fs._stores.message_queue)[0];
+    // 지각은 별도 late 템플릿으로 라우팅 — 시각엔 "(지각)" 문자열을 붙이지 않고 제목으로 드러낸다.
+    expect(q.template_variables['#{시각}']).not.toContain('(지각)');
+    expect(q.template_code).toContain('LATE');
+    expect(q.fallback_text).toContain('지각 등원');
   });
 
   test('등원 — 예정 없으면 출석, 알림톡에 (지각) 없음', async () => {

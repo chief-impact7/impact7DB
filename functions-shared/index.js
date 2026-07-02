@@ -29,6 +29,7 @@ import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii } from './src/queueWorker.js';
+import { runAbsenceNoticeSweep } from './src/absenceNoticeSweep.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
 import { handleSubmitEmployeeContractSignature } from './src/employeeContractSignatureHandler.js';
 import {
@@ -217,6 +218,14 @@ export const retrySweeper = onSchedule(
 export const deliveryResultSweeper = onSchedule(
   { schedule: 'every 1 minutes', timeZone: 'Asia/Seoul', secrets: SOLAPI_SECRETS },
   () => runDeliveryResultSweep(),
+);
+
+// 미등원(결석) 자동 안내 — 15분 주기. 등원예정+유예(40분) 경과했는데 미체크인(day_state=미등원)인
+// tablet-eligible 학생 학부모에게 1회 발송(큐 등록만, 발송은 워커). ABSENCE_SWEEP_ENABLED='true'일
+// 때만 실제 동작 — 기본 비활성이라 예정시각 정확도(오탐 0)를 검증한 뒤 env로 켠다.
+export const absenceNoticeSweeper = onSchedule(
+  { schedule: 'every 15 minutes', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '512MiB' },
+  () => runAbsenceNoticeSweep(),
 );
 
 // 직원 미퇴근 자동 처리 — 매일 KST dayStartHour(기본 06:00)에 전날 근무중 직원을 설정 시각으로 자동 퇴근.

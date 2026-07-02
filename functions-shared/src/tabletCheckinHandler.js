@@ -52,10 +52,12 @@ function arrivalTimeKST(date) {
 
 // 액션별 알림톡 message_queue payload. 템플릿 코드 미설정이어도 fallback_text로 적재.
 function buildEventQueuePayload({ studentId, studentName, recipientPhone, action, occurredAt, eventId, late = false }) {
-  const templateKey = ACTION_TEMPLATE_KEY[action];
+  // 지각 등원은 별도 템플릿(late)으로 라우팅 — 등원 안내와 분리한다. 지각은 템플릿 제목으로
+  // 드러나므로 시각에 "(지각)" 문자열을 덧붙이지 않는다(부착 시 LATE 템플릿과 이중 표기).
+  const templateKey = (action === ACTIONS.ARRIVE && late) ? 'late' : ACTION_TEMPLATE_KEY[action];
   const def = PARENT_NOTICE_TEMPLATES[templateKey];
   const clock = formatKstClock12h(occurredAt);
-  const variables = buildParentNoticeVariables({ name: studentName }, templateKey, { 시각: late ? `${clock} (지각)` : clock });
+  const variables = buildParentNoticeVariables({ name: studentName }, templateKey, { 시각: clock });
   const templateCode = process.env[def.envKey] || `${def.envKey}_PENDING`;
   return {
     // 워커 계약(queueWorker ALLOWED_KINDS): 정보성 알림은 'attendance'. 이벤트 종류는 event_id/attendance_events.type가 식별.
