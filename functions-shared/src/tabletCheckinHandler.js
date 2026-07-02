@@ -34,7 +34,8 @@ async function readDevicePolicy(firestore, deviceId) {
   const snap = await firestore.collection('kiosk_devices').doc(id).get();
   if (!snap.exists) return DEFAULT_POLICY;
   const p = snap.data()?.departure_policy;
-  return p === 'warn' || p === 'allow' ? p : DEFAULT_POLICY;
+  // block/warn/allow 모두 유효 — device에 명시한 값을 그대로 쓴다(그 외/미설정만 기본값).
+  return p === 'block' || p === 'warn' || p === 'allow' ? p : DEFAULT_POLICY;
 }
 
 function dayStateOf(dailyData) {

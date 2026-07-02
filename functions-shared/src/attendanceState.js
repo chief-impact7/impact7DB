@@ -32,13 +32,14 @@ export function nextDayState(current, action) {
 // 하원 게이트: 체크리스트 완료면 항상 가능, 미완료면 allow 정책에서만 가능.
 export function canDepart(checklistComplete, departurePolicy) {
   if (checklistComplete) return true;
-  return departurePolicy === 'allow';
+  // warn·allow는 미완료여도 하원 허용(warn은 클라가 '미완료: OO' 안내만 표시). block만 거부.
+  return departurePolicy === 'allow' || departurePolicy === 'warn';
 }
 
 // 현재 상태에서 노출할 액션 목록.
 // 원내의 하원 버튼은 정책에 따라 노출 여부가 갈린다:
-//  - block: 미완료면 하원 숨김(완료여야 노출)
-//  - warn/allow: 하원 노출(warn은 클라가 경고로 막고, 서버도 미완료는 거부)
+//  - block: 미완료면 하원 숨김(완료여야 노출), 서버도 거부
+//  - warn/allow: 하원 노출 + 처리 허용(warn은 클라가 '미완료: OO' 안내만 표시)
 export function allowedActions(dayState, { checklistComplete, departurePolicy } = {}) {
   const cur = dayState || DAY_STATES.NONE;
   if (cur === DAY_STATES.NONE) return [ACTIONS.ARRIVE];

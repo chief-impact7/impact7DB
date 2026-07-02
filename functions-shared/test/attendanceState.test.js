@@ -30,7 +30,7 @@ test('nextDayState — 잘못된 전이는 null', () => {
 test('canDepart — 정책별', () => {
   assert.equal(canDepart(true, 'block'), true);
   assert.equal(canDepart(false, 'block'), false);
-  assert.equal(canDepart(false, 'warn'), false);   // warn도 미완료는 서버 거부
+  assert.equal(canDepart(false, 'warn'), true);    // warn은 미완료여도 허용(클라가 '미완료' 안내만)
   assert.equal(canDepart(false, 'allow'), true);
   assert.equal(canDepart(true, 'allow'), true);
 });
