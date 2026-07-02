@@ -238,13 +238,16 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
     return;
   }
 
-  // parent_bms는 야간(20:50~08:00)엔 카카오가 BMS 발송을 차단(실측 3108)하므로, 예약시각이 없으면
-  // 다음 08:00로 보정해 솔라피 예약 발송에 맡긴다(즉시 발송은 미도달). report(교사 수동 발송)는 즉시성이
-  // 중요해 보정 없이 바로 시도하고, 야간차단(3108)이 나오면 발송결과 폴링이 문자로 전환한다.
+  // 정보형 BMS는 야간(20:50~08:00)엔 카카오가 발송을 차단(실측 3108)한다. parent_bms는 예약시각이
+  // 없으면 자동으로 다음 08:00로 보정해 솔라피 예약 발송에 맡긴다. report(교사 수동)는 자동 보정 대신
+  // 발송자가 명시 예약(scheduled_date, 야간 안내 시 UI에서 선택)한 경우에만 그 시각으로 예약하고,
+  // 예약이 없으면 즉시 시도해 야간차단(3108)이 나오면 발송결과 폴링이 문자로 전환한다.
   let scheduledSendAt = null;
-  if (data.kind === PARENT_BMS_KIND) {
+  if (data.kind === PARENT_BMS_KIND || data.kind === REPORT_KIND) {
     const { isAdNightKST, resolveAdScheduledAt, parseKstToDate } = await import('./promoSchedule.js');
-    if (!data.scheduled_date && isAdNightKST(now)) data.scheduled_date = resolveAdScheduledAt(now);
+    if (data.kind === PARENT_BMS_KIND && !data.scheduled_date && isAdNightKST(now)) {
+      data.scheduled_date = resolveAdScheduledAt(now);
+    }
     if (data.scheduled_date) scheduledSendAt = parseKstToDate(data.scheduled_date);
   }
 

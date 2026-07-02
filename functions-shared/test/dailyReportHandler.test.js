@@ -93,4 +93,38 @@ describe('handleSendDailyReport', () => {
     await expect(handleSendDailyReport({ auth, data: { studentId: 's1', content: '' } }, { db }))
       .rejects.toMatchObject({ code: 'invalid-argument' });
   });
+
+  it('친구+야간+reserveIfNight → 다음 08:00 KST로 예약(scheduled_date)', async () => {
+    const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: { '01011112222': {} } });
+    const nightUtc = new Date('2026-07-02T13:00:00Z'); // KST 22:00 — 야간
+    const res = await handleSendDailyReport(
+      { auth, data: { studentId: 's1', content: '안내', reserveIfNight: true } },
+      { db, now: nightUtc },
+    );
+    expect(res).toMatchObject({ channel: 'report', joined: true });
+    expect(res.scheduledDate).toMatch(/ 08:00:00$/);
+    expect(Object.values(db._store.message_queue)[0].scheduled_date).toMatch(/ 08:00:00$/);
+  });
+
+  it('친구+주간+reserveIfNight → 예약 없이 즉시(scheduled_date 없음)', async () => {
+    const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: { '01011112222': {} } });
+    const dayUtc = new Date('2026-07-02T03:00:00Z'); // KST 12:00 — 주간
+    const res = await handleSendDailyReport(
+      { auth, data: { studentId: 's1', content: '안내', reserveIfNight: true } },
+      { db, now: dayUtc },
+    );
+    expect(res.scheduledDate).toBeNull();
+    expect(Object.values(db._store.message_queue)[0].scheduled_date).toBeUndefined();
+  });
+
+  it('비친구는 reserveIfNight여도 예약 없이 문자 즉시(direct)', async () => {
+    const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: {} });
+    const nightUtc = new Date('2026-07-02T13:00:00Z');
+    const res = await handleSendDailyReport(
+      { auth, data: { studentId: 's1', content: '안내', reserveIfNight: true } },
+      { db, now: nightUtc, channelAddUrl: '' },
+    );
+    expect(res).toMatchObject({ channel: 'invite_sms', joined: false, scheduledDate: null });
+    expect(Object.values(db._store.message_queue)[0].kind).toBe('direct');
+  });
 });

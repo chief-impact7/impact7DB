@@ -4,6 +4,7 @@ import { assertAuthorizedStaff } from './authGuards.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
 import { isChannelFriend } from './channelFriendsHandler.js';
 import { resolveChannelAddUrl, channelInviteSuffix } from './channelInvite.js';
+import { resolveAdScheduledAt } from './promoSchedule.js';
 
 // 일일 학습 리포트 발송. 학생별 수동 발송(직원 권한).
 // 친구(채널 가입) → 정보형 BMS(kind='report'), 비친구 → 가입 안내 SMS(kind='direct').
@@ -39,6 +40,10 @@ export async function handleSendDailyReport(request, deps = {}) {
   if (joined) {
     // 정보형 BMS: 광고 아님(ad_flag=false), 친구만 수신하므로 SMS 대체는 워커에서 끔.
     payload = { ...base, kind: 'report', content, targeting: 'I', ad_flag: false };
+    // 야간(카톡 발송 제한 20:50~08:00)에 예약 요청이 오면 다음 08:00 KST로 예약 발송.
+    // 주간이면 resolveAdScheduledAt이 null을 반환해 즉시 발송(예약 없음).
+    const scheduledDate = data.reserveIfNight ? resolveAdScheduledAt(deps.now ?? new Date()) : null;
+    if (scheduledDate) payload.scheduled_date = scheduledDate;
     channel = 'report';
   } else {
     // 비친구(채널 미가입)에겐 원본 내용을 문자로 보내되, 채널 가입 유도를 함께 붙인다
@@ -62,5 +67,5 @@ export async function handleSendDailyReport(request, deps = {}) {
   } else {
     await db.collection('message_queue').doc().set(payload);
   }
-  return { queued: true, channel, joined };
+  return { queued: true, channel, joined, scheduledDate: payload.scheduled_date ?? null };
 }
