@@ -46,7 +46,7 @@ describe('handleSendDailyReport', () => {
     expect(q).toMatchObject({ kind: 'report', recipient_phone: '01011112222', targeting: 'I', ad_flag: false, content: '[6/16] 수업 결과...' });
   });
 
-  it('비친구면 가입안내 SMS(kind=direct)로 enqueue — 채널링크 치환', async () => {
+  it('비친구면 원본 내용 + 채널 가입 유도 SMS(kind=direct)로 enqueue', async () => {
     const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: {} });
     const res = await handleSendDailyReport(
       { auth, data: { studentId: 's1', content: '리포트' } },
@@ -55,22 +55,25 @@ describe('handleSendDailyReport', () => {
     expect(res).toMatchObject({ queued: true, channel: 'invite_sms', joined: false });
     const q = Object.values(db._store.message_queue)[0];
     expect(q.kind).toBe('direct');
-    expect(q.content).toContain('http://pf.kakao.com/_test');
+    expect(q.content).toContain('리포트'); // 원본 내용 발송
+    expect(q.content).toContain('http://pf.kakao.com/_test'); // + 채널 가입 유도
     expect(q.content).not.toContain('{채널링크}');
-    expect(q.content).not.toContain('리포트'); // 비친구에겐 리포트 본문 미발송
   });
 
-  it('비친구인데 채널링크가 빈 값이면 발송 거부', async () => {
+  it('비친구인데 채널링크가 빈 값이면 유도 생략하고 원본만 발송', async () => {
     const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: {} });
-    await expect(handleSendDailyReport({ auth, data: { studentId: 's1', content: '리포트' } }, { db, channelAddUrl: '' }))
-      .rejects.toMatchObject({ code: 'failed-precondition' });
+    const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: '리포트' } }, { db, channelAddUrl: '' });
+    expect(res).toMatchObject({ channel: 'invite_sms', joined: false });
+    expect(Object.values(db._store.message_queue)[0].content).toBe('리포트');
   });
 
-  it('채널링크 기본값(deps/env 없음)으로도 비친구 가입안내 발송', async () => {
+  it('채널링크 기본값(deps/env 없음)으로도 비친구 원본+유도 발송', async () => {
     const db = makeDb({ students: { s1: STUDENT }, kakao_channel_friends: {} });
     const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: '리포트' } }, { db });
     expect(res).toMatchObject({ channel: 'invite_sms', joined: false });
-    expect(Object.values(db._store.message_queue)[0].content).toContain('kakao.impact7.kr');
+    const c = Object.values(db._store.message_queue)[0].content;
+    expect(c).toContain('리포트'); // 원본
+    expect(c).toContain('kakao.impact7.kr'); // + 기본 채널 링크 유도
   });
 
   it('requestId 중복은 멱등 처리', async () => {

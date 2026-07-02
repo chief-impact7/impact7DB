@@ -3,12 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
 import { isChannelFriend } from './channelFriendsHandler.js';
-import { resolveChannelAddUrl } from './channelInvite.js';
-
-// 채널 미가입 학부모에게 보내는 가입 안내 SMS.
-function inviteSms(channelUrl) {
-  return `[임팩트세븐학원] 자녀의 일일 학습현황을 카카오톡으로 보내드립니다.\n아래 채널을 추가해 주세요 → ${channelUrl}`;
-}
+import { resolveChannelAddUrl, channelInviteSuffix } from './channelInvite.js';
 
 // 일일 학습 리포트 발송. 학생별 수동 발송(직원 권한).
 // 친구(채널 가입) → 정보형 BMS(kind='report'), 비친구 → 가입 안내 SMS(kind='direct').
@@ -46,9 +41,10 @@ export async function handleSendDailyReport(request, deps = {}) {
     payload = { ...base, kind: 'report', content, targeting: 'I', ad_flag: false };
     channel = 'report';
   } else {
-    // 가입 링크 미설정 시 깨진 안내문 발송을 막는다(운영값 KAKAO_CHANNEL_ADD_URL 필요).
-    if (!channelUrl) throw new HttpsError('failed-precondition', '채널 가입 링크가 설정되지 않아 가입 안내를 보낼 수 없습니다.');
-    payload = { ...base, kind: 'direct', content: inviteSms(channelUrl) };
+    // 비친구(채널 미가입)에겐 원본 내용을 문자로 보내되, 채널 가입 유도를 함께 붙인다
+    // (링크 미설정 시 유도는 생략하고 원본만 발송).
+    const suffix = channelInviteSuffix(channelUrl);
+    payload = { ...base, kind: 'direct', content: suffix ? `${content}\n\n${suffix}` : content };
     channel = 'invite_sms';
   }
 
