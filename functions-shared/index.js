@@ -29,7 +29,7 @@ import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii } from './src/queueWorker.js';
-import { runAbsenceNoticeSweep } from './src/absenceNoticeSweep.js';
+import { runAbsenceNoticeSweep, handleSendAbsenceNotice } from './src/absenceNoticeSweep.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
 import { handleSubmitEmployeeContractSignature } from './src/employeeContractSignatureHandler.js';
 import {
@@ -163,6 +163,9 @@ export const setPromoConsent = onCall({ enforceAppCheck: false }, handleSetPromo
 
 // 개별 학부모 정보성 안내(알림톡) 발송 — 학생 상세 '메시지' 탭. 직원 권한. 동의·야간 제한 없음.
 export const sendParentNotice = onCall({ enforceAppCheck: false }, handleSendParentNotice);
+
+// 수동 미등원 안내 발송 — 로그북 '미도착(연락)'에서 직원이 확인 후 클릭. 자동 스윕과 멱등 컬렉션 공유.
+export const sendAbsenceNotice = onCall({ enforceAppCheck: false }, handleSendAbsenceNotice);
 
 // 학생별 발송 내역(message_logs) 조회 — 메시지 탭 하단. 직원 권한.
 export const getStudentMessages = onCall({ enforceAppCheck: false }, handleGetStudentMessages);

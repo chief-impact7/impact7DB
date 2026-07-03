@@ -4,8 +4,9 @@ vi.mock('firebase-admin/firestore', () => ({
   getFirestore: vi.fn(),
   FieldValue: { serverTimestamp: () => '<ts>' },
 }));
+vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
 
-const { runAbsenceNoticeSweep } = await import('../src/absenceNoticeSweep.js');
+const { runAbsenceNoticeSweep, handleSendAbsenceNotice } = await import('../src/absenceNoticeSweep.js');
 
 function makeDb({ students = {}, daily = {}, notices = {}, absences = {} } = {}) {
   const stores = {
@@ -108,5 +109,50 @@ describe('runAbsenceNoticeSweep', () => {
   it('학부모 번호 없음 → 제외', async () => {
     const db = makeDb({ students: { s1: student({ parent_phone_1: '', parent_phone_2: '' }) } });
     expect((await run(db)).sent).toBe(0);
+  });
+});
+
+describe('handleSendAbsenceNotice (수동 발송)', () => {
+  const auth = { token: { email: 'staff@impact7.kr' } };
+  const call = (db, data) => handleSendAbsenceNotice({ auth, data }, { db, dateKST: D });
+
+  it('학생+연락처 → parent_notice 발송 + absence_notices 멱등 기록(source=manual)', async () => {
+    const db = makeDb({ students: { s1: student() } });
+    const res = await call(db, { studentId: 's1', expectedTime: '17:00' });
+    expect(res).toMatchObject({ sent: true, alreadySent: false });
+    const q = Object.values(db._stores.message_queue)[0];
+    expect(q).toMatchObject({ kind: 'parent_notice', source: 'absence_manual' });
+    expect(q.template_variables['#{학생명}']).toBe('김민수');
+    expect(q.template_variables['#{일시}']).toBe('오늘 17:00');
+    expect(db._stores.absence_notices[`s1_${D}`]).toMatchObject({ source: 'manual' });
+  });
+
+  it('예정시각 없으면 일시=오늘', async () => {
+    const db = makeDb({ students: { s1: student() } });
+    await call(db, { studentId: 's1' });
+    expect(Object.values(db._stores.message_queue)[0].template_variables['#{일시}']).toBe('오늘');
+  });
+
+  it('이미 발송(absence_notices 존재) → alreadySent, 큐 미생성(스윕과 멱등 공유)', async () => {
+    const db = makeDb({ students: { s1: student() }, notices: { [`s1_${D}`]: { student_id: 's1' } } });
+    const res = await call(db, { studentId: 's1' });
+    expect(res).toMatchObject({ sent: false, alreadySent: true });
+    expect(Object.keys(db._stores.message_queue)).toHaveLength(0);
+  });
+
+  it('학생 없음 → not-found', async () => {
+    const db = makeDb({ students: {} });
+    await expect(call(db, { studentId: 'x' })).rejects.toMatchObject({ code: 'not-found' });
+  });
+
+  it('연락처 없음 → failed-precondition(멱등 기록도 남기지 않음)', async () => {
+    const db = makeDb({ students: { s1: student({ parent_phone_1: '', parent_phone_2: '' }) } });
+    await expect(call(db, { studentId: 's1' })).rejects.toMatchObject({ code: 'failed-precondition' });
+    expect(db._stores.absence_notices[`s1_${D}`]).toBeUndefined();
+  });
+
+  it('studentId 없음 → invalid-argument', async () => {
+    const db = makeDb({ students: { s1: student() } });
+    await expect(call(db, {})).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 });

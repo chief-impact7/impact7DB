@@ -1,5 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { todayKST } from '@impact7/shared/datetime';
+import { assertAuthorizedStaff } from './authGuards.js';
 import { DAY_STATES } from './attendanceState.js';
 import { loadExpectedArrival } from './expectedArrivalLoader.js';
 import { PARENT_NOTICE_TEMPLATES, buildParentNoticeVariables } from './parentNoticeHandler.js';
@@ -34,6 +36,66 @@ function toMinutes(hhmm) {
 function nowClockKST(now) {
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   return `${String(kst.getUTCHours()).padStart(2, '0')}:${String(kst.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+// 미등원 안내 큐 doc — 자동 스윕/수동 발송 공통. 미승인 시 template_code는 _PENDING(fallback 문자).
+function buildAbsenceQueueDoc({ studentId, name, phone, 일시, source, createdBy = null }) {
+  const def = PARENT_NOTICE_TEMPLATES.absence;
+  const variables = buildParentNoticeVariables({ name }, 'absence', { 일시 });
+  return {
+    kind: 'parent_notice',
+    student_id: studentId,
+    recipient_phone: phone,
+    template_code: process.env[def.envKey] || `${def.envKey}_PENDING`,
+    template_variables: variables,
+    fallback_text: applyTemplate(def.fallback, variables),
+    status: 'pending',
+    attempt_count: 0,
+    next_attempt_at: null,
+    source,
+    created_by: createdBy,
+    created_at: FieldValue.serverTimestamp(),
+  };
+}
+
+// 수동 미등원 안내 발송 — 로그북 '미도착(연락)'에서 직원이 확인 후 클릭. 스윕과 같은 멱등 컬렉션
+// (absence_notices/{id}_{date})을 써서 자동 스윕을 켜도 중복되지 않는다. 게이트는 멱등만(사람이 판단).
+export async function handleSendAbsenceNotice(request, deps = {}) {
+  const db = deps.db ?? getFirestore();
+  assertAuthorizedStaff(request.auth);
+  const data = request.data ?? {};
+  const studentId = String(data.studentId ?? '').trim();
+  if (!studentId) throw new HttpsError('invalid-argument', 'studentId가 필요합니다.');
+  const dateKST = deps.dateKST ?? todayKST();
+
+  const snap = await db.collection('students').doc(studentId).get();
+  if (!snap.exists) throw new HttpsError('not-found', '학생을 찾을 수 없습니다.');
+  const student = snap.data();
+  const phone = resolveRecipientPhone(student, 'parent_1');
+  if (!phone) throw new HttpsError('failed-precondition', '수신 연락처가 없습니다.');
+
+  // 멱등: 하루 1회 — absence_notices create 선점(스윕과 동일 컬렉션). 이미 있으면 발송 생략.
+  const noticeRef = db.collection('absence_notices').doc(`${studentId}_${dateKST}`);
+  const createdBy = request.auth?.token?.email ?? null;
+  try {
+    await noticeRef.create({ student_id: studentId, date: dateKST, source: 'manual', created_by: createdBy, created_at: FieldValue.serverTimestamp() });
+  } catch (e) {
+    if (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message))) {
+      return { sent: false, alreadySent: true };
+    }
+    throw e;
+  }
+
+  const expected = String(data.expectedTime ?? '').trim();
+  try {
+    await db.collection('message_queue').doc().set(buildAbsenceQueueDoc({
+      studentId, name: student.name, phone, 일시: expected ? `오늘 ${expected}` : '오늘', source: 'absence_manual', createdBy,
+    }));
+  } catch (e) {
+    await noticeRef.delete().catch(() => {}); // enqueue 실패 시 멱등 롤백(재시도 가능).
+    throw new HttpsError('internal', '발송 큐 등록 실패: ' + (e?.message ?? e));
+  }
+  return { sent: true, alreadySent: false };
 }
 
 export async function runAbsenceNoticeSweep(deps = {}) {
@@ -94,21 +156,9 @@ export async function runAbsenceNoticeSweep(deps = {}) {
     // enqueue 실패는 이 학생만 건너뛰고(멱등 doc 롤백) 나머지 스윕을 계속한다 — set 실패로 인한
     // 미발송 고착과 루프 중단을 둘 다 막는다.
     try {
-      const def = PARENT_NOTICE_TEMPLATES.absence;
-      const variables = buildParentNoticeVariables({ name: student.name }, 'absence', { 일시: `오늘 ${expected}` });
-      await db.collection('message_queue').doc().set({
-        kind: 'parent_notice',
-        student_id: doc.id,
-        recipient_phone: phone,
-        template_code: process.env[def.envKey] || `${def.envKey}_PENDING`,
-        template_variables: variables,
-        fallback_text: applyTemplate(def.fallback, variables),
-        status: 'pending',
-        attempt_count: 0,
-        next_attempt_at: null,
-        source: 'absence_sweep',
-        created_at: FieldValue.serverTimestamp(),
-      });
+      await db.collection('message_queue').doc().set(buildAbsenceQueueDoc({
+        studentId: doc.id, name: student.name, phone, 일시: `오늘 ${expected}`, source: 'absence_sweep',
+      }));
       sent += 1;
     } catch (e) {
       console.error('[absence] enqueue 실패, 멱등 롤백', doc.id, e?.message ?? e);
