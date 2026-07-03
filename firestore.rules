@@ -1332,6 +1332,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 키오스크 전역 설정(조회 PIN·잠금 상태) — 서버 전용. PIN이 클라에 노출되지 않게 한다.
+    match /kiosk_settings/{docId} {
+      allow read, write: if false;
+    }
+
     // 직원 근태 설정 — 매니저 이상 read/write. 서버 callable도 Admin SDK로 우회.
     match /settings/{docId} {
       allow read: if isDirector() || isManager();
