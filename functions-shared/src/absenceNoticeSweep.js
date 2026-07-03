@@ -39,12 +39,15 @@ function nowClockKST(now) {
 }
 
 // 미등원 안내 큐 doc — 자동 스윕/수동 발송 공통. 미승인 시 template_code는 _PENDING(fallback 문자).
-function buildAbsenceQueueDoc({ studentId, name, phone, 일시, source, createdBy = null }) {
+// absence_notice_id로 absence_notices doc을 역참조 — syncAbsenceNoticeDeliveryStatus가 이 값으로
+// 큐 상태(sent/failed 등)를 되돌려 쓴다.
+function buildAbsenceQueueDoc({ studentId, name, phone, 일시, source, createdBy = null, absenceNoticeId }) {
   const def = PARENT_NOTICE_TEMPLATES.absence;
   const variables = buildParentNoticeVariables({ name }, 'absence', { 일시 });
   return {
     kind: 'parent_notice',
     student_id: studentId,
+    absence_notice_id: absenceNoticeId,
     recipient_phone: phone,
     template_code: process.env[def.envKey] || `${def.envKey}_PENDING`,
     template_variables: variables,
@@ -90,6 +93,7 @@ export async function handleSendAbsenceNotice(request, deps = {}) {
   try {
     await db.collection('message_queue').doc().set(buildAbsenceQueueDoc({
       studentId, name: student.name, phone, 일시: expected ? `오늘 ${expected}` : '오늘', source: 'absence_manual', createdBy,
+      absenceNoticeId: noticeRef.id,
     }));
   } catch (e) {
     await noticeRef.delete().catch(() => {}); // enqueue 실패 시 멱등 롤백(재시도 가능).
@@ -158,6 +162,7 @@ export async function runAbsenceNoticeSweep(deps = {}) {
     try {
       await db.collection('message_queue').doc().set(buildAbsenceQueueDoc({
         studentId: doc.id, name: student.name, phone, 일시: `오늘 ${expected}`, source: 'absence_sweep',
+        absenceNoticeId: noticeRef.id,
       }));
       sent += 1;
     } catch (e) {
@@ -166,4 +171,45 @@ export async function runAbsenceNoticeSweep(deps = {}) {
     }
   }
   return { sent, checked, disabled: false };
+}
+
+// message_queue(absence_notice_id 보유 doc)의 상태 변화(pending/processing/재시도/종결 전부)를
+// absence_notices에 안전 필드만 반영 — 로그북 '미도착' 배지가 발송 요청뿐 아니라 처리 경과·최종
+// 결과(성공/실패)까지 보여주도록. message_queue는 평문 번호를 담아 클라 read가 차단돼 있으므로
+// (rules) 이 미러링이 필요하다. queueWorker.js는 발송 종류에 무관해야 해서 absence 특화 로직을
+// 여기 전용 트리거로 분리한다(공용 워커에 특수 케이스 얹지 않음).
+// message_queue/{id} 전체 쓰기마다 호출되지만(onStudentLabelSync와 동일 패턴), absence_notice_id가
+// 없는 문서는 첫 줄에서 즉시 반환 — 다른 발송 종류엔 실질 비용이 거의 없다.
+export async function syncAbsenceNoticeDeliveryStatus(event, deps = {}) {
+  const db = deps.db ?? getFirestore();
+  const afterSnap = event.data?.after;
+  const after = afterSnap?.data();
+  if (!after) return null; // 삭제는 무시
+  if (!after.absence_notice_id) return null; // 미등원 알림톡 큐 doc이 아님
+  const before = event.data?.before?.data();
+  if (before?.status === after.status) return null; // 상태 변화 없으면 스킵(중복 write 방지)
+
+  // Firestore 트리거는 at-least-once이며 도착 순서를 보장하지 않는다 — 콜드스타트 등으로 이전
+  // 이벤트(예: processing) 처리가 이후 이벤트(예: sent)보다 늦게 커밋되면 배지가 과거 상태로 되돌아가
+  // 고착될 수 있다. 이 write의 Firestore 커밋 시각(afterSnap.updateTime)을 단조 가드로 써서,
+  // absence_notices에 이미 더 최신 이벤트가 반영돼 있으면 트랜잭션 안에서 건너뛴다.
+  const sourceUpdatedAt = afterSnap.updateTime ?? null;
+  const noticeRef = db.collection('absence_notices').doc(after.absence_notice_id);
+  await db.runTransaction(async (tx) => {
+    if (sourceUpdatedAt) {
+      const prev = (await tx.get(noticeRef)).data()?.delivery_source_updated_at;
+      if (prev && prev.toMillis() >= sourceUpdatedAt.toMillis()) return; // 이미 더 최신 상태 반영됨
+    }
+    tx.set(noticeRef, {
+      // 멱등 doc 생성 직후 큐 등록이 모호하게 실패(예: DEADLINE_EXCEEDED인데 실제론 성공)해 호출측이
+      // absence_notices를 롤백 삭제했더라도, student_id를 여기서도 채워둬야 재생성된 문서가 배지
+      // 조건(firestore-helpers.js의 student_id 존재 체크)을 만족한다.
+      student_id: after.student_id ?? null,
+      delivery_status: after.status,
+      delivery_error_code: after.last_error_code ? String(after.last_error_code).slice(0, 100) : null,
+      delivery_source_updated_at: sourceUpdatedAt,
+      delivery_updated_at: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+  return null;
 }

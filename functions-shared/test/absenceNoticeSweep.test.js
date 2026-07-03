@@ -6,7 +6,7 @@ vi.mock('firebase-admin/firestore', () => ({
 }));
 vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
 
-const { runAbsenceNoticeSweep, handleSendAbsenceNotice } = await import('../src/absenceNoticeSweep.js');
+const { runAbsenceNoticeSweep, handleSendAbsenceNotice, syncAbsenceNoticeDeliveryStatus } = await import('../src/absenceNoticeSweep.js');
 
 function makeDb({ students = {}, daily = {}, notices = {}, absences = {} } = {}) {
   const stores = {
@@ -154,5 +154,123 @@ describe('handleSendAbsenceNotice (수동 발송)', () => {
   it('studentId 없음 → invalid-argument', async () => {
     const db = makeDb({ students: { s1: student() } });
     await expect(call(db, {})).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+});
+
+describe('syncAbsenceNoticeDeliveryStatus (발송 결과 반영)', () => {
+  const ts = (ms) => ({ toMillis: () => ms });
+
+  // seed: absence_notices 사전 상태(path → data). tx.get/tx.set으로 라우팅해 트랜잭션 가드를 검증한다.
+  function makeSyncDb(seed = {}) {
+    const store = { ...seed };
+    const sets = [];
+    const db = {
+      collection: (name) => ({ doc: (id) => ({ id, path: `${name}/${id}` }) }),
+      runTransaction: async (fn) => fn({
+        get: async (ref) => ({ data: () => store[ref.path] }),
+        set: (ref, data, opts) => {
+          sets.push({ path: ref.path, data, opts });
+          store[ref.path] = opts?.merge ? { ...(store[ref.path] ?? {}), ...data } : data;
+        },
+      }),
+    };
+    return { db, sets, store };
+  }
+  // beforeMs/afterMs: 모의 Firestore updateTime(ms). undefined면 updateTime 없음(before 미존재 등).
+  const snap = (data, ms) => (data ? { data: () => data, updateTime: ms != null ? ts(ms) : null } : undefined);
+  const event = (before, after, { beforeMs, afterMs } = {}) => ({
+    data: { before: snap(before, beforeMs), after: snap(after, afterMs) },
+  });
+
+  it('absence_notice_id 없는 큐 doc(다른 발송 종류) → 반영 없음', async () => {
+    const { db, sets } = makeSyncDb();
+    await syncAbsenceNoticeDeliveryStatus(event({ status: 'pending' }, { status: 'sent' }), { db });
+    expect(sets).toHaveLength(0);
+  });
+
+  it('생성 이벤트(before 없음, 최초 pending) → 반영됨', async () => {
+    const { db, sets } = makeSyncDb();
+    await syncAbsenceNoticeDeliveryStatus(
+      event(undefined, { status: 'pending', absence_notice_id: `s1_${D}`, student_id: 's1' }, { afterMs: 1000 }),
+      { db },
+    );
+    expect(sets).toHaveLength(1);
+    expect(sets[0].data).toMatchObject({ delivery_status: 'pending', student_id: 's1' });
+  });
+
+  it('상태 변화 없음(같은 status 재기록) → 반영 없음(중복 write 방지)', async () => {
+    const { db, sets } = makeSyncDb();
+    await syncAbsenceNoticeDeliveryStatus(
+      event({ status: 'failed_retryable', absence_notice_id: `s1_${D}` }, { status: 'failed_retryable', absence_notice_id: `s1_${D}` }),
+      { db },
+    );
+    expect(sets).toHaveLength(0);
+  });
+
+  it('발송 성공(sent) → absence_notices에 student_id·delivery_status 반영(collection 경로 확인)', async () => {
+    const { db, sets } = makeSyncDb();
+    await syncAbsenceNoticeDeliveryStatus(
+      event(
+        { status: 'processing', absence_notice_id: `s1_${D}` },
+        { status: 'sent', absence_notice_id: `s1_${D}`, student_id: 's1' },
+        { beforeMs: 1000, afterMs: 2000 },
+      ),
+      { db },
+    );
+    expect(sets).toHaveLength(1);
+    expect(sets[0].path).toBe(`absence_notices/s1_${D}`);
+    expect(sets[0].data).toMatchObject({ delivery_status: 'sent', delivery_error_code: null, student_id: 's1' });
+    expect(sets[0].opts).toMatchObject({ merge: true });
+  });
+
+  it('영구 실패(failed_permanent) → last_error_code 포함 반영(100자 상한)', async () => {
+    const { db, sets } = makeSyncDb();
+    const longCode = 'x'.repeat(150);
+    await syncAbsenceNoticeDeliveryStatus(
+      event(
+        { status: 'processing', absence_notice_id: `s1_${D}` },
+        { status: 'failed_permanent', absence_notice_id: `s1_${D}`, last_error_code: longCode },
+        { beforeMs: 1000, afterMs: 2000 },
+      ),
+      { db },
+    );
+    expect(sets[0].data.delivery_status).toBe('failed_permanent');
+    expect(sets[0].data.delivery_error_code).toHaveLength(100);
+  });
+
+  it('삭제(after 없음) → 반영 없음', async () => {
+    const { db, sets } = makeSyncDb();
+    await syncAbsenceNoticeDeliveryStatus(event({ status: 'sent', absence_notice_id: `s1_${D}` }, undefined), { db });
+    expect(sets).toHaveLength(0);
+  });
+
+  it('레이스: 더 최신 이벤트(sent)가 이미 반영된 뒤 지연 도착한 과거 이벤트(processing) → 무시', async () => {
+    const noticeId = `s1_${D}`;
+    // sent(afterMs=5000)가 먼저 커밋·반영된 상태를 시드 — 뒤늦게 온 processing(afterMs=2000)이 덮으면 안 됨.
+    const { db, sets } = makeSyncDb({ [`absence_notices/${noticeId}`]: { delivery_status: 'sent', delivery_source_updated_at: ts(5000) } });
+    await syncAbsenceNoticeDeliveryStatus(
+      event(
+        { status: 'pending', absence_notice_id: noticeId },
+        { status: 'processing', absence_notice_id: noticeId },
+        { beforeMs: 1000, afterMs: 2000 },
+      ),
+      { db },
+    );
+    expect(sets).toHaveLength(0);
+  });
+
+  it('정상 순서: 더 오래된 상태가 저장돼 있을 때 최신 이벤트는 반영됨', async () => {
+    const noticeId = `s1_${D}`;
+    const { db, sets, store } = makeSyncDb({ [`absence_notices/${noticeId}`]: { delivery_status: 'processing', delivery_source_updated_at: ts(2000) } });
+    await syncAbsenceNoticeDeliveryStatus(
+      event(
+        { status: 'processing', absence_notice_id: noticeId },
+        { status: 'sent', absence_notice_id: noticeId },
+        { beforeMs: 2000, afterMs: 5000 },
+      ),
+      { db },
+    );
+    expect(sets).toHaveLength(1);
+    expect(store[`absence_notices/${noticeId}`].delivery_status).toBe('sent');
   });
 });

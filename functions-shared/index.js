@@ -29,7 +29,7 @@ import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii } from './src/queueWorker.js';
-import { runAbsenceNoticeSweep, handleSendAbsenceNotice } from './src/absenceNoticeSweep.js';
+import { runAbsenceNoticeSweep, handleSendAbsenceNotice, syncAbsenceNoticeDeliveryStatus } from './src/absenceNoticeSweep.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
 import { handleSubmitEmployeeContractSignature } from './src/employeeContractSignatureHandler.js';
 import {
@@ -206,6 +206,9 @@ export const onMessageQueued = onDocumentCreated(
   (event) => processQueueDoc(event),
 );
 
+// message_queue 전체 쓰기에 걸리는 4번째 리스너(아래 onAbsenceNoticeQueueUpdated) 참고 — status·
+// last_error_code 필드명을 여기서 바꾸면 그쪽 미러링도 함께 깨진다.
+
 // 전송 실패(failed_retryable) 재시도 sweeper — 5분 주기, KST 기준.
 // 같은 주기에 종결 doc의 평문 PII purge(보존기간 경과분)도 수행(T8 항목1).
 export const retrySweeper = onSchedule(
@@ -229,6 +232,13 @@ export const deliveryResultSweeper = onSchedule(
 export const absenceNoticeSweeper = onSchedule(
   { schedule: 'every 15 minutes', timeZone: 'Asia/Seoul', timeoutSeconds: 540, memory: '512MiB' },
   () => runAbsenceNoticeSweep(),
+);
+
+// 미등원 알림톡 큐 doc의 상태 변화(처리중/재시도/성공/실패 전부)를 absence_notices에 반영 —
+// 로그북 '미도착' 배지가 발송 요청 여부뿐 아니라 처리 경과·최종 결과까지 보여주도록.
+export const onAbsenceNoticeQueueUpdated = onDocumentWritten(
+  { document: 'message_queue/{id}' },
+  (event) => syncAbsenceNoticeDeliveryStatus(event),
 );
 
 // 직원 미퇴근 자동 처리 — 매일 KST dayStartHour(기본 06:00)에 전날 근무중 직원을 설정 시각으로 자동 퇴근.
