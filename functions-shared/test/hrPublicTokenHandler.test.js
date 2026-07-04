@@ -174,6 +174,10 @@ describe('handleGetHrPublicToken — contract signing', () => {
 
     expect(res.tokenType).toBe('contractSigning');
     expect(res.targetName).toBe('김강사');
+    // 서명 write ref(staff/{staffId}/contracts/{contractId}) 구성용 ID 반환
+    expect(res.staffId).toBe('s1');
+    expect(res.contractId).toBe('c1');
+    expect(res).not.toHaveProperty('employeeId');
     expect(res.party).toEqual({
       name: '김강사',
       phone: '010-1234-5678',
@@ -276,6 +280,9 @@ describe('handleGetHrPublicToken — employee contract signing', () => {
     });
     const res = await handleGetHrPublicToken({ data: { tokenType: 'employeeContractSigning', tokenId: 't1' } }, { db });
 
+    expect(res.employeeId).toBe('em1');
+    expect(res.contractId).toBe('c9');
+    expect(res).not.toHaveProperty('staffId');
     expect(res.party.residentNumberMasked).toBe('950505-2******');
     expect(res.party.bankInfo.accountNumberMasked).toBe('*******6554');
     expect(res.contract).toMatchObject({ id: 'c9', contractType: '정식(4대보험)', workContent: '학원 행정' });
@@ -304,6 +311,8 @@ describe('handleGetHrPublicToken — salary agreement', () => {
     const res = await handleGetHrPublicToken({ data: { tokenType: 'salaryAgreement', tokenId: 't1' } }, { db });
 
     expect(res.targetName).toBe('김강사');
+    expect(res.staffId).toBe('s1');
+    expect(res.contractId).toBe('c1');
     expect(res.party.residentNumberMasked).toBe('900101-1******');
     expect(res.agreement).toEqual({
       contractType: '4대보험',
@@ -314,6 +323,16 @@ describe('handleGetHrPublicToken — salary agreement', () => {
     expect(res.entityId).toBe('e1');
     expect(res.entitySnapshot).toEqual({ name: '임팩트세븐학원' });
     assertNoSensitive(res);
+  });
+
+  it('rejects a salaryAgreement token missing staffId/contractId (failed-precondition)', async () => {
+    // 서명 write ref 필수 세그먼트 누락 → 계약 서명 브랜치와 대칭으로 fail-closed.
+    const db = makeDb({
+      'salaryAgreementTokens/t1': { staffName: '김강사', amount: 1500000, status: 'pending', expiresAt: FUTURE },
+    });
+    await expect(
+      handleGetHrPublicToken({ data: { tokenType: 'salaryAgreement', tokenId: 't1' } }, { db }),
+    ).rejects.toMatchObject({ code: 'failed-precondition' });
   });
 
   it('tolerates a missing staff master (party null) but still returns agreement', async () => {

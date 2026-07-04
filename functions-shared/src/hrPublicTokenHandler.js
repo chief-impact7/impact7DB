@@ -4,7 +4,7 @@ import { tsToMillis } from './timestampUtil.js';
 
 // HR 공개 페이지(비로그인 신규입사자·계약자)가 토큰만으로 읽던 Firestore 공개 read를
 // 대체하는 토큰 게이트 callable. Admin SDK는 rules를 우회하므로, 토큰 검증 후
-// 각 페이지가 화면에 실제로 표시하는 최소 필드만 마스킹해 반환한다.
+// 각 페이지가 화면에 표시하는 최소 필드(+ 서명 write ref용 staffId/contractId)만 마스킹해 반환한다.
 // 민감정보(주민번호 평문·계좌번호 평문·taxInfo·문서스캔)는 절대 반환하지 않는다.
 
 // tokenType → { collection, usedStatus } 매핑. usedStatus는 "이미 사용됨" 거절 기준.
@@ -148,6 +148,9 @@ export async function handleGetHrPublicToken(request, deps = {}) {
     return {
       tokenType,
       targetName: textOf(token[meta.nameField]) || null,
+      // 서명 write ref 구성용 ID — rules G10이 토큰 doc 비인증 read를 막아 이 callable이 유일 경로. PII 아님.
+      ...(isEmployee ? { employeeId: partyId } : { staffId: partyId }),
+      contractId,
       party: maskParty(party?.data),
       contract: pickContract(contract.id, contract.data),
     };
@@ -157,21 +160,22 @@ export async function handleGetHrPublicToken(request, deps = {}) {
   if (tokenType === 'salaryAgreement') {
     const partyId = textOf(token.staffId);
     const contractId = textOf(token.contractId);
-    const party = partyId ? await readDoc(db.collection('staff').doc(partyId)) : null;
-
-    let entitySnapshot = null;
-    let entityId = null;
-    if (partyId && contractId) {
-      const contract = await readDoc(db.collection('staff').doc(partyId).collection('contracts').doc(contractId));
-      if (contract) {
-        entitySnapshot = contract.data.entitySnapshot ?? null;
-        entityId = contract.data.entityId ?? null;
-      }
+    // 계약 서명 브랜치와 대칭 — staffId/contractId는 서명 write ref 필수 경로라 누락 시 fail-closed(서명 시점 뒤늦은 실패 방지).
+    if (!partyId || !contractId) {
+      throw new HttpsError('failed-precondition', '급여 약정 정보가 올바르지 않습니다.');
     }
+
+    // 계약 subdoc은 entitySnapshot/entityId(선택 표시)만 쓰므로 없어도 허용 — 약정 본문은 토큰에서 렌더.
+    const [party, contract] = await Promise.all([
+      readDoc(db.collection('staff').doc(partyId)),
+      readDoc(db.collection('staff').doc(partyId).collection('contracts').doc(contractId)),
+    ]);
 
     return {
       tokenType,
       targetName: textOf(token.staffName) || null,
+      staffId: partyId,
+      contractId,
       party: maskParty(party?.data),
       agreement: {
         contractType: token.contractType ?? null,
@@ -179,8 +183,8 @@ export async function handleGetHrPublicToken(request, deps = {}) {
         probation: token.probation ?? null,
         retirementFund: token.retirementFund ?? null,
       },
-      entityId,
-      entitySnapshot,
+      entityId: contract?.data.entityId ?? null,
+      entitySnapshot: contract?.data.entitySnapshot ?? null,
     };
   }
 
