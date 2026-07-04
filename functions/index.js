@@ -8,6 +8,7 @@ import { runClassCleanup } from './src/cleanup.js';
 import { syncNaesinPeriod } from './src/syncNaesinPeriod.js';
 import { runScheduledWithdrawals } from './src/scheduledWithdrawals.js';
 import { generateDailyStats } from './src/dailyStats.js';
+import { activeTeacherLocals, isEligibleEmail, syncTeacherEligibility } from './src/teacherDirectory.js';
 
 initializeApp();
 getFirestore();
@@ -161,6 +162,44 @@ export const onClassSettingsNaesinPeriodChanged = onDocumentUpdated(
       console.error('[onClassSettingsNaesinPeriodChanged] failed (will retry):', csKey, err);
       throw err; // retry: true → 자동 재시도. 멱등이라 중복 history 없음.
     }
+    return null;
+  }
+);
+
+// HR 퇴직·복직·부서변경 연동: staff 쓰기 시 담임 자격(teachers.homeroom_eligible)을 재계산한다.
+// 관련 필드(department·status·englishName) 변화가 없으면 스킵. 스윕은 멱등이라 retry 안전.
+export const onStaffTeacherEligibility = onDocumentWritten(
+  { document: 'staff/{staffId}', retry: false },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    const involvesTeacher = before?.department === '교수' || after?.department === '교수';
+    if (!involvesTeacher) return null;
+    const changed = !before || !after
+      || before.status !== after.status
+      || before.department !== after.department
+      || before.englishName !== after.englishName;
+    if (!changed) return null;
+    const result = await syncTeacherEligibility(getFirestore());
+    console.log('[teacher-eligibility] staff 변경 스윕:', JSON.stringify(result));
+    return null;
+  }
+);
+
+// 로그인 추적이 teachers 문서를 새로 만들 때 자격 필드를 보정한다 (퇴직자 재로그인 재생성 대응).
+// homeroom_eligible이 이미 boolean이면 계산된 문서 — 스킵해 자기 트리거 루프를 끊는다.
+export const onTeacherDocEligibility = onDocumentWritten(
+  { document: 'teachers/{email}', retry: false },
+  async (event) => {
+    const after = event.data?.after?.data();
+    if (!after) return null; // 삭제 이벤트
+    if (typeof after.homeroom_eligible === 'boolean') return null;
+    const db = getFirestore();
+    const staffSnap = await db.collection('staff').where('department', '==', '교수').get();
+    const locals = activeTeacherLocals(staffSnap.docs.map((d) => d.data()));
+    const eligible = isEligibleEmail(event.params.email, locals);
+    await event.data.after.ref.update({ homeroom_eligible: eligible });
+    console.log(`[teacher-eligibility] teachers/${event.params.email} → ${eligible}`);
     return null;
   }
 );
