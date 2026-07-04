@@ -1,3 +1,5 @@
+// app.js(module)가 노출한 전역 — 이 파일은 classic script라 ESM import 불가, 지연 바인딩으로 호출 시점 참조
+function msIcon(...args) { return window.msIcon(...args); }
 /* ── Help Guide Modal ─────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -15,7 +17,7 @@
     return `
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">login</span>
+          ${msIcon('login')}
           로그인
         </h3>
         <ol class="help-guide-steps">
@@ -27,7 +29,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">search</span>
+          ${msIcon('search')}
           학생 검색
         </h3>
         <p class="help-guide-desc">상단 검색창에서 다양한 방식으로 학생을 찾을 수 있습니다.</p>
@@ -40,7 +42,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">person</span>
+          ${msIcon('person')}
           학생 상세보기
         </h3>
         <ol class="help-guide-steps">
@@ -52,7 +54,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">view_module</span>
+          ${msIcon('view_module')}
           뷰 전환
         </h3>
         <p class="help-guide-desc">
@@ -67,7 +69,7 @@
     return `
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">person_add</span>
+          ${msIcon('person_add')}
           신규 학생 등록
         </h3>
         <ol class="help-guide-steps">
@@ -80,11 +82,11 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">edit</span>
+          ${msIcon('edit')}
           학생 정보 수정
         </h3>
         <ol class="help-guide-steps">
-          <li>학생 상세 패널에서 <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;">edit</span> 아이콘을 클릭합니다.</li>
+          <li>학생 상세 패널에서 ${msIcon('edit', '', 'style="font-size:18px;vertical-align:middle;"')} 아이콘을 클릭합니다.</li>
           <li>수정 폼이 열리며 기존 데이터가 자동으로 채워집니다.</li>
           <li>원하는 항목을 수정한 뒤 <strong>저장</strong>을 클릭합니다.</li>
           <li>모든 변경 이력은 자동으로 기록됩니다.</li>
@@ -93,7 +95,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">add_circle</span>
+          ${msIcon('add_circle')}
           수업 추가 / 종강 처리
         </h3>
         <ul class="help-guide-list">
@@ -104,18 +106,18 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">sticky_note_2</span>
+          ${msIcon('sticky_note_2')}
           메모 관리
         </h3>
         <ul class="help-guide-list">
-          <li><strong>메모 추가</strong> &mdash; 메모 카드 제목 옆의 <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;">add</span> 버튼을 클릭하면 메모 작성 모달이 열립니다.</li>
-          <li><strong>메모 삭제</strong> &mdash; 각 메모의 <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;">close</span> 버튼으로 삭제합니다.</li>
+          <li><strong>메모 추가</strong> &mdash; 메모 카드 제목 옆의 ${msIcon('add', '', 'style="font-size:18px;vertical-align:middle;"')} 버튼을 클릭하면 메모 작성 모달이 열립니다.</li>
+          <li><strong>메모 삭제</strong> &mdash; 각 메모의 ${msIcon('close', '', 'style="font-size:18px;vertical-align:middle;"')} 버튼으로 삭제합니다.</li>
         </ul>
       </section>
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">checklist</span>
+          ${msIcon('checklist')}
           일괄 선택 모드
         </h3>
         <ol class="help-guide-steps">
@@ -128,7 +130,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">upload_file</span>
+          ${msIcon('upload_file')}
           데이터 업로드
         </h3>
         <p class="help-guide-desc">다양한 방식으로 학생 데이터를 일괄 업로드할 수 있습니다.</p>
@@ -142,7 +144,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">download</span>
+          ${msIcon('download')}
           구글시트 다운로드
         </h3>
         <p class="help-guide-desc">
@@ -157,7 +159,7 @@
     return `
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">calendar_month</span>
+          ${msIcon('calendar_month')}
           학기 선택
         </h3>
         <p class="help-guide-desc">
@@ -168,7 +170,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">toggle_on</span>
+          ${msIcon('toggle_on')}
           상태 필터
         </h3>
         <p class="help-guide-desc">All Students 아래의 <strong>상태</strong> 메뉴를 펼쳐 학생 상태별로 필터링합니다.</p>
@@ -183,7 +185,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">menu_book</span>
+          ${msIcon('menu_book')}
           수업종류 필터
         </h3>
         <ul class="help-guide-list">
@@ -195,7 +197,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">school</span>
+          ${msIcon('school')}
           학부 필터
         </h3>
         <ul class="help-guide-list">
@@ -207,7 +209,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">location_city</span>
+          ${msIcon('location_city')}
           지점 필터
         </h3>
         <ul class="help-guide-list">
@@ -221,7 +223,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">class</span>
+          ${msIcon('class')}
           반별 필터
         </h3>
         <p class="help-guide-desc">
@@ -232,7 +234,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">calendar_month</span>
+          ${msIcon('calendar_month')}
           등원요일 필터
         </h3>
         <p class="help-guide-desc">
@@ -242,7 +244,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">hotel</span>
+          ${msIcon('hotel')}
           휴원 관리
         </h3>
         <p class="help-guide-desc">On Leave 메뉴에서 휴원 학생을 세분화하여 관리할 수 있습니다.</p>
@@ -257,7 +259,7 @@
 
       <section class="help-guide-section">
         <h3 class="help-guide-section-title">
-          <span class="material-symbols-outlined">bar_chart</span>
+          ${msIcon('bar_chart')}
           일별 통계
         </h3>
         <p class="help-guide-desc">
@@ -279,7 +281,7 @@
       },
       {
         q: '학생 정보를 잘못 입력했어요',
-        a: '해당 학생 카드를 클릭하여 상세 패널을 연 뒤, 상단의 <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;">edit</span> (수정) 아이콘을 클릭하세요. 수정 폼에서 정보를 고친 후 저장하면 됩니다. 모든 수정 이력은 자동으로 기록됩니다.',
+        a: '해당 학생 카드를 클릭하여 상세 패널을 연 뒤, 상단의 ' + msIcon('edit', '', 'style="font-size:18px;vertical-align:middle;"') + ' (수정) 아이콘을 클릭하세요. 수정 폼에서 정보를 고친 후 저장하면 됩니다. 모든 수정 이력은 자동으로 기록됩니다.',
       },
       {
         q: '여러 학생을 한번에 바꾸고 싶어요',
@@ -300,9 +302,9 @@
         (f) => `
       <details class="help-guide-faq-item">
         <summary class="help-guide-faq-q">
-          <span class="material-symbols-outlined">help</span>
+          ${msIcon('help')}
           ${f.q}
-          <span class="material-symbols-outlined help-guide-faq-chevron">expand_more</span>
+          ${msIcon('expand_more', 'help-guide-faq-chevron')}
         </summary>
         <div class="help-guide-faq-a">${f.a}</div>
       </details>
@@ -331,7 +333,7 @@
       (t, i) => `
       <button class="help-guide-tab${i === 0 ? ' help-guide-tab--active' : ''}"
               id="help-tab-${t.id}" data-tab="${t.id}" role="tab" aria-selected="${i === 0}">
-        <span class="material-symbols-outlined">${t.icon}</span>
+        ${msIcon(t.icon)}
         <span>${t.label}</span>
       </button>`
     ).join('');
@@ -340,11 +342,11 @@
       <div class="help-guide-modal">
         <header class="help-guide-header">
           <h2 class="help-guide-title">
-            <span class="material-symbols-outlined">menu_book</span>
+            ${msIcon('menu_book')}
             사용 가이드
           </h2>
           <button class="help-guide-close" aria-label="닫기">
-            <span class="material-symbols-outlined">close</span>
+            ${msIcon('close')}
           </button>
         </header>
         <nav class="help-guide-tabs" role="tablist">${tabsHTML}</nav>

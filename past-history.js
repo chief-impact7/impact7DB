@@ -17,6 +17,7 @@
  *     fetchStudentLeaveRequests)
  */
 
+import { msIcon } from './ms-icon.js';
 import { state } from './store.js';
 import { db } from './firebase-config.js';
 import { currentSchool } from '@impact7/shared/student-label';
@@ -195,11 +196,11 @@ function renderHeaderSection(student, lastActivityDate) {
                 </div>
                 <div class="past-history-meta-row">
                     <span class="past-history-meta-item">
-                        <span class="material-symbols-outlined" aria-hidden="true">event_available</span>
+                        ${msIcon('event_available', '', 'aria-hidden="true"')}
                         첫 등록: ${esc(firstReg)}
                     </span>
                     <span class="past-history-meta-item">
-                        <span class="material-symbols-outlined" aria-hidden="true">update</span>
+                        ${msIcon('update', '', 'aria-hidden="true"')}
                         마지막 활동: ${esc(last)}
                     </span>
                 </div>
@@ -227,11 +228,11 @@ function renderEnrollmentCard(item, teacherName) {
             </div>
             <div class="past-enrollment-card-body">
                 <div class="past-enrollment-period">
-                    <span class="material-symbols-outlined" aria-hidden="true">date_range</span>
+                    ${msIcon('date_range', '', 'aria-hidden="true"')}
                     ${esc(start)} ~ ${esc(end)}
                 </div>
                 <div class="past-enrollment-teacher">
-                    <span class="material-symbols-outlined" aria-hidden="true">person</span>
+                    ${msIcon('person', '', 'aria-hidden="true"')}
                     담당: ${teacherName ? esc(teacherName) : '<span class="past-history-muted">—</span>'}
                 </div>
             </div>
@@ -397,7 +398,7 @@ export async function renderPastHistory(student) {
 
             <section class="past-history-section">
                 <h3 class="past-history-section-title">
-                    <span class="material-symbols-outlined" aria-hidden="true">history_edu</span>
+                    ${msIcon('history_edu', '', 'aria-hidden="true"')}
                     과거 수업·반 이력
                 </h3>
                 <div class="past-enrollment-list">${enrollmentSection}</div>
@@ -405,7 +406,7 @@ export async function renderPastHistory(student) {
 
             <section class="past-history-section">
                 <h3 class="past-history-section-title">
-                    <span class="material-symbols-outlined" aria-hidden="true">event_busy</span>
+                    ${msIcon('event_busy', '', 'aria-hidden="true"')}
                     휴원·퇴원 사이클
                 </h3>
                 <div class="past-cycle-list">${cycleSection}</div>

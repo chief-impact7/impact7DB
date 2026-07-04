@@ -1,3 +1,6 @@
+import { msIcon } from './ms-icon.js';
+// help-guide.js는 public/ 정적 자산이라 vite 번들링 밖(classic script) — ESM import 대신 전역으로 공유
+window.msIcon = msIcon;
 import { onAuthStateChanged } from 'firebase/auth';
 import { installKeyboardActivation, installModalA11y } from './a11y-dom.js';
 import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, Timestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
@@ -1155,7 +1158,7 @@ function updateListItemIcons(studentId) {
         m.className = 'item-icon item-icon-memo';
         m.title = '메모 있음';
         m.setAttribute('aria-hidden', 'true');
-        m.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">sticky_note_2</span>';
+        m.innerHTML = msIcon('sticky_note_2');
         statusEl ? titleSpan.insertBefore(m, statusEl) : titleSpan.appendChild(m);
     }
     if (hasSibling) {
@@ -1163,7 +1166,7 @@ function updateListItemIcons(studentId) {
         si.className = 'item-icon item-icon-sibling';
         si.title = `형제: ${siblingNames}`;
         si.setAttribute('aria-hidden', 'true');
-        si.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">group</span>';
+        si.innerHTML = msIcon('group', '', 'aria-hidden="true"');
         statusEl ? titleSpan.insertBefore(si, statusEl) : titleSpan.appendChild(si);
     }
 }
@@ -1751,11 +1754,11 @@ function renderStudentItem(s, container) {
     // 형제 아이콘
     const hasSibling = siblingMap[s.id] && siblingMap[s.id].size > 0;
     const siblingNames = hasSibling ? [...siblingMap[s.id]].map(sid => allStudents.find(x => x.id === sid)?.name).filter(Boolean).join(', ') : '';
-    const siblingIcon = hasSibling ? `<span class="item-icon item-icon-sibling" title="형제: ${esc(siblingNames)}" aria-hidden="true"><span class="material-symbols-outlined" aria-hidden="true">group</span></span>` : '';
+    const siblingIcon = hasSibling ? `<span class="item-icon item-icon-sibling" title="형제: ${esc(siblingNames)}" aria-hidden="true">${msIcon('group', '', 'aria-hidden="true"')}</span>` : '';
 
     // 메모 아이콘
     const hasMemo = memoCache[s.id];
-    const memoIcon = hasMemo ? `<span class="item-icon item-icon-memo" title="메모 있음" aria-hidden="true"><span class="material-symbols-outlined" aria-hidden="true">sticky_note_2</span></span>` : '';
+    const memoIcon = hasMemo ? `<span class="item-icon item-icon-memo" title="메모 있음" aria-hidden="true">${msIcon('sticky_note_2')}</span>` : '';
 
     // 휴원종료일 표시 (실휴원/가휴원인 경우)
     let pauseDateHtml = '';
@@ -1770,7 +1773,7 @@ function renderStudentItem(s, container) {
 
     div.innerHTML = `
         <input type="checkbox" class="list-item-checkbox" ${selectedStudentIds.has(s.id) ? 'checked' : ''}>
-        <span class="material-symbols-outlined drag-icon">person</span>
+        ${msIcon('person', 'drag-icon')}
         <div class="item-main">
             <span class="item-title">${esc(s.name || '—')}${siblingIcon}${memoIcon}${statusBadge}</span>
             <span class="item-desc">${esc(subLine || '—')}</span>
@@ -1824,7 +1827,7 @@ function renderPastStudentResults(pastStudents, container) {
         const sub = [schoolShort !== '—' ? schoolShort : '', last4 ? `☎${last4}` : ''].filter(Boolean).join(' · ');
 
         div.innerHTML = `
-            <span class="material-symbols-outlined drag-icon" style="color:var(--text-sec)">person_off</span>
+            ${msIcon('person_off', 'drag-icon', 'style="color:var(--text-sec)"')}
             <div class="item-main">
                 <span class="item-title">${esc(s.name || '—')}${statusBadgeHtml(s.status || '')}</span>
                 <span class="item-desc">${esc(sub || '—')}</span>
@@ -2970,7 +2973,7 @@ function renderPendingEnrollments() {
             <span class="enrollment-tag">${esc(code)}</span>
             <span class="pending-enrollment-info">${esc(e.class_type)} · ${esc(days)}</span>
             <button type="button" class="btn-remove-pending" onclick="window.removePendingEnrollment(${idx})" title="삭제">
-                <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                ${msIcon('close', '', 'style="font-size:16px;"')}
             </button>
         </div>`;
     }).join('');
@@ -3018,7 +3021,7 @@ function _rebuildEditEnrollmentCards() {
                 <span class="enrollment-tag">${esc(code || '새 수업')}</span>
                 <span class="enrollment-type">${esc(ct)}</span>
                 <button type="button" class="btn-remove-pending" onclick="window.removeEditEnrollment(${idx})" title="수업 삭제">
-                    <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                    ${msIcon('close', '', 'style="font-size:16px;"')}
                 </button>
             </div>
             <div class="form-fields" style="gap:12px;">
@@ -3141,7 +3144,7 @@ function renderEnrollmentCards(studentData) {
     const startRegularBtn = canStartRegular
         ? `<button class="btn-save" style="width:100%;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px;"
               onclick="window.openReEnrollModal('${escAttr(studentData.id || currentStudentId)}')">
-              <span class="material-symbols-outlined" style="font-size:18px;">person_add</span>
+              ${msIcon('person_add', '', 'style="font-size:18px;"')}
               정규 등록
            </button>`
         : '';
@@ -4420,7 +4423,7 @@ function renderMemos(memos, studentId) {
                 <span class="memo-preview-text">${esc(preview)}</span>
                 <div class="memo-actions">
                     <button class="memo-delete-btn" title="삭제">
-                        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                        ${msIcon('close', '', 'style="font-size:16px;"')}
                     </button>
                 </div>
             </div>
@@ -4556,7 +4559,7 @@ async function loadFormMemos(studentId) {
                 <div class="memo-form-meta">
                     <span>${esc(dateStr)}${author ? ' · ' + esc(author) : ''}</span>
                     <button class="memo-delete-btn" title="삭제">
-                        <span class="material-symbols-outlined" style="font-size:15px;">close</span>
+                        ${msIcon('close', '', 'style="font-size:15px;"')}
                     </button>
                 </div>
                 <div class="memo-form-text">${esc(memo.text || '').replace(/\n/g, '<br>')}</div>
@@ -4840,7 +4843,7 @@ function updateBulkEditSummary() {
         return s?.name || id;
     });
     const more = count > 5 ? ` 외 ${count - 5}명` : '';
-    el.innerHTML = `<span class="material-symbols-outlined" style="font-size:18px;">group</span>${esc(names.join(', '))}${more}`;
+    el.innerHTML = `${msIcon('group', '', 'style="font-size:18px;"')}${esc(names.join(', '))}${more}`;
 }
 
 function enterBulkMode() {
@@ -5523,7 +5526,7 @@ async function loadStatsForDate(dateStr) {
 
         if (!snap.exists()) {
             container.innerHTML = `<p style="padding:24px;color:var(--text-sec);text-align:center;">
-                <span class="material-symbols-outlined" style="font-size:48px;display:block;margin-bottom:8px;color:#dadce0;">event_busy</span>
+                ${msIcon('event_busy', '', 'style="font-size:48px;display:block;margin-bottom:8px;color:#dadce0;"')}
                 ${esc(dateStr)}의 통계 데이터가 없습니다.<br>
                 <small>해당일에 로그인한 기록이 없거나 아직 생성되지 않았습니다.</small>
             </p>`;
@@ -5564,7 +5567,7 @@ function renderStatsView(data, container) {
 
         <div class="stats-section">
             <h4 class="stats-section-title">
-                <span class="material-symbols-outlined">groups</span>인원 현황
+                ${msIcon('groups')}인원 현황
             </h4>
             <table class="stats-table">
                 <thead>
@@ -5612,7 +5615,7 @@ function renderStatsView(data, container) {
     html += `
     <div class="stats-section">
         <h4 class="stats-section-title">
-            <span class="material-symbols-outlined">bar_chart</span>인원 현황 그래프
+            ${msIcon('bar_chart')}인원 현황 그래프
             <span class="stats-legend">
                 <span class="stats-legend-dot" style="background:#4285f4"></span>2단지
                 <span class="stats-legend-dot" style="background:#fbbc04"></span>10단지
@@ -5660,7 +5663,7 @@ function renderStatsView(data, container) {
         html += `
         <div class="stats-section">
             <h4 class="stats-section-title">
-                <span class="material-symbols-outlined">class</span>레벨기호별
+                ${msIcon('class')}레벨기호별
                 <span class="stats-legend">
                     <span class="stats-legend-dot" style="background:#4285f4"></span>2단지
                     <span class="stats-legend-dot" style="background:#fbbc04"></span>10단지
@@ -5880,7 +5883,7 @@ async function renderLeaveRequestCard(studentId) {
     if (leaveRecords.length > 0 || leaveBtn) {
         cards += `<div class="form-card">
             <h3 class="info-card-title" style="display:flex;align-items:center;gap:6px;">
-                <span class="material-symbols-outlined">description</span>
+                ${msIcon('description')}
                 휴원요청서 <span style="font-size:12px;color:var(--text-sec);">(${leaveRecords.length}건)</span>
                 ${leaveBtn}
             </h3>
@@ -5896,7 +5899,7 @@ async function renderLeaveRequestCard(studentId) {
     if (withdrawRecords.length > 0 || withdrawBtn) {
         cards += `<div class="form-card">
             <h3 class="info-card-title" style="display:flex;align-items:center;gap:6px;">
-                <span class="material-symbols-outlined">description</span>
+                ${msIcon('description')}
                 퇴원요청서 <span style="font-size:12px;color:var(--text-sec);">(${withdrawRecords.length}건)</span>
                 ${withdrawBtn}
             </h3>

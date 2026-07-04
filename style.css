@@ -78,8 +78,12 @@ body {
     overflow: hidden;
 }
 
+/* Google Fonts Material Symbols 링크 제거(SVG 아이콘 전환) 후 기본 크기 복원 —
+   원래 그 스택시트가 기본 제공하던 font-size:24px를 지역 규칙 없는 아이콘에도
+   유지한다. 더 구체적인 선택자가 있으면 그쪽이 이긴다. */
 .material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    font-size: 24px;
+    line-height: 1;
 }
 
 /* ── App Bar ─────────────────────────────────────────────────────────────── */
@@ -388,15 +392,23 @@ body {
 
 .menu-l1::-webkit-details-marker { display: none; }
 
+/* Material Symbols 폰트 리가처(expand_more) 제거 — mask-image로 SVG 아이콘화.
+   currentColor는 mask 알파에 영향 없어 stroke는 임의색(black)이고, 실제 색은
+   background-color(=var(--outline), 다크모드 대응)가 낸다. */
 .menu-l1::after {
-    content: 'expand_more';
-    font-family: 'Material Symbols Outlined';
-    font-size: 18px;
-    font-weight: 400;
+    content: '';
+    display: inline-block;
+    width: 18px;
+    height: 18px;
     margin-left: auto;
-    color: var(--outline);
+    background-color: var(--outline);
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m19.5%208.25-7.5%207.5-7.5-7.5%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m19.5%208.25-7.5%207.5-7.5-7.5%22/%3E%3C/svg%3E");
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
     transition: transform 0.2s;
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
 }
 
 .l1-group[open] > .menu-l1::after {
@@ -438,15 +450,21 @@ summary.menu-l1:focus-visible {
 
 summary.menu-l2::-webkit-details-marker { display: none; }
 
+/* Material Symbols 폰트 리가처(chevron_right) 제거 — mask-image로 SVG 아이콘화 (위 .menu-l1::after와 동일 기법) */
 summary.menu-l2::after {
-    content: 'chevron_right';
-    font-family: 'Material Symbols Outlined';
-    font-size: 15px;
-    font-weight: 400;
+    content: '';
+    display: inline-block;
+    width: 15px;
+    height: 15px;
     margin-left: auto;
-    color: var(--outline);
+    background-color: var(--outline);
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m8.25%204.5%207.5%207.5-7.5%207.5%22/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m8.25%204.5%207.5%207.5-7.5%207.5%22/%3E%3C/svg%3E");
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
     transition: transform 0.2s;
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
 }
 
 .l2-group[open] > summary.menu-l2::after {
@@ -2124,7 +2142,6 @@ summary.menu-l2 .material-symbols-outlined {
 
 .item-icon .material-symbols-outlined {
     font-size: 14px;
-    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20;
 }
 
 .item-icon-sibling .material-symbols-outlined {

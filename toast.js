@@ -1,3 +1,4 @@
+import { msIcon } from './ms-icon.js';
 const DURATION = { success: 3500, info: 3500, warn: 5000, error: 6000 };
 const ICON = { success: 'check_circle', info: 'info', warn: 'warning', error: 'error' };
 
@@ -20,22 +21,15 @@ export function showToast(message, type = 'info', { sticky = false } = {}) {
     el.className = `toast toast--${type}`;
     if (type === 'error') el.setAttribute('role', 'alert');
 
-    const icon = document.createElement('span');
-    icon.className = 'material-symbols-outlined toast-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = ICON[type];
+    el.insertAdjacentHTML('beforeend', msIcon(ICON[type], 'toast-icon'));
 
     const text = document.createElement('span');
     text.className = 'toast-message';
     text.textContent = message;
+    el.appendChild(text);
 
-    el.append(icon, text);
     if (sticky) {
-        const closeBtn = document.createElement('span');
-        closeBtn.className = 'material-symbols-outlined toast-close';
-        closeBtn.setAttribute('aria-hidden', 'true');
-        closeBtn.textContent = 'close';
-        el.appendChild(closeBtn);
+        el.insertAdjacentHTML('beforeend', msIcon('close', 'toast-close'));
         el.title = '클릭하여 닫기';
     }
     ensureContainer().appendChild(el);

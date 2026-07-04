@@ -1,3 +1,4 @@
+import { msIcon } from './ms-icon.js';
 import { state } from './store.js';
 import { showToast } from './toast.js';
 import { confirmModal } from './prompt-modal.js';
@@ -100,7 +101,7 @@ function renderNaesinGroups() {
             <div class="naesin-group-body">
                 ${g.subgroups.map((sg, si) => renderNaesinSubgroup(key, sg, si, g)).join('')}
                 <span class="naesin-add-subgroup" onclick="window.addNaesinSubgroup('${ek}')">
-                    <span class="material-symbols-outlined" style="font-size:14px;">add</span> 서브그룹 추가
+                    ${msIcon('add', '', 'style="font-size:14px;"')} 서브그룹 추가
                 </span>
             </div>
         </div>`;
@@ -128,7 +129,7 @@ function renderNaesinSubgroup(groupKey, sg, subIdx, group) {
     }).join('');
 
     const removeBtn = subIdx > 0
-        ? `<span class="naesin-remove-sub material-symbols-outlined" onclick="window.removeNaesinSubgroup('${ek}',${subIdx})" title="삭제">close</span>`
+        ? msIcon('close', 'naesin-remove-sub', `onclick="window.removeNaesinSubgroup('${ek}',${subIdx})" title="삭제"`)
         : '';
 
     return `<div class="naesin-subgroup" data-sub="${subIdx}">

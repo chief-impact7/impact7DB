@@ -28,6 +28,7 @@
   "type": "module",
   "dependencies": {
     "@impact7/shared": "github:chief-impact7/impact7-shared#v1.40.0",
+    "@impact7/ui": "github:chief-impact7/impact7-ui#v0.4.4",
     "firebase": "^12.9.0"
   },
   "devDependencies": {
