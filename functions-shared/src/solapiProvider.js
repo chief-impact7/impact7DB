@@ -1,5 +1,6 @@
 import { SolapiMessageService } from 'solapi';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './solapiSecrets.js';
+import { parseKstToDate } from './promoSchedule.js';
 
 // 솔라피 자격증명 Secret 정의는 src/solapiSecrets.js로 분리(콜드스타트에 solapi SDK 미로드).
 // index.js(T3 워커)가 함수 secrets에 바인딩한다.
@@ -214,9 +215,14 @@ function normalizeSmsGroupResult(res) {
 
 // 솔라피 send 옵션. scheduledDate가 있으면 예약 발송(솔라피가 보관 후 지정 시각 발송).
 // 광고 야간 제한 대응은 호출자가 resolveAdScheduledAt(promoSchedule.js)로 시각을 보정해 넘긴다.
+// scheduled_date 계약은 KST 벽시계 문자열 — 타임존 없는 문자열을 그대로 넘기면 솔라피가
+// UTC로 해석해 9시간 늦게 예약된다(2026-07-04 진단평가 야간보정 사고). UTC ISO로 변환해 넘긴다.
 function buildSendOptions(payload) {
   const options = { showMessageList: true };
-  if (payload?.scheduledDate) options.scheduledDate = payload.scheduledDate;
+  const at = payload?.scheduledDate instanceof Date
+    ? payload.scheduledDate
+    : parseKstToDate(payload?.scheduledDate);
+  if (at) options.scheduledDate = at.toISOString();
   return options;
 }
 

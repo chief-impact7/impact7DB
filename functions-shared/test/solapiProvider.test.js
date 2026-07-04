@@ -215,10 +215,16 @@ describe('sendSms', () => {
     expect(res).toMatchObject({ ok: true, channel: 'sms', messageId: 'm1', groupId: 'g1' });
   });
 
-  it('passes scheduledDate through send options', async () => {
+  it('converts KST scheduledDate to UTC ISO in send options (naive 문자열은 솔라피가 UTC로 오해석)', async () => {
     const send = vi.fn(async () => ({ groupInfo: { groupId: 'g', count: { registeredSuccess: 1 } }, messageList: [{ messageId: 'm' }] }));
     await sendSms({ to: '01011112222', text: 'x', scheduledDate: '2026-06-18 08:00:00' }, cfg, { serviceFactory: () => ({ send }) });
-    expect(send.mock.calls[0][1]).toEqual({ showMessageList: true, scheduledDate: '2026-06-18 08:00:00' });
+    expect(send.mock.calls[0][1]).toEqual({ showMessageList: true, scheduledDate: '2026-06-17T23:00:00.000Z' });
+  });
+
+  it('accepts a Date scheduledDate as-is (absolute time)', async () => {
+    const send = vi.fn(async () => ({ groupInfo: { groupId: 'g', count: { registeredSuccess: 1 } }, messageList: [{ messageId: 'm' }] }));
+    await sendSms({ to: '01011112222', text: 'x', scheduledDate: new Date('2026-06-17T23:00:00Z') }, cfg, { serviceFactory: () => ({ send }) });
+    expect(send.mock.calls[0][1]).toEqual({ showMessageList: true, scheduledDate: '2026-06-17T23:00:00.000Z' });
   });
 
   it('returns permanent failure when recipient or text is empty', async () => {

@@ -1,6 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { maskPhone } from './phoneMask.js';
 import { resolveChannelAddUrl, channelInviteSuffix } from './channelInvite.js';
+import { parseKstToDate } from './promoSchedule.js';
 
 // 메시지 큐 워커 — 계약 정본(message-architect_api-contract §2.4, §4.1) 기준.
 // status 전이: pending → processing → sent | failed_retryable | failed_permanent.
@@ -384,7 +385,7 @@ function smsFallbackContent(data, statusCode) {
 // 카톡 미도달(비친구 3120 / 야간 3108 / 장시간 미확정) → 친구명단 제거 + 문자(direct) 전환 doc 생성
 // + 원 doc 종결. fallback doc 생성과 원본 종결을 batch로 원자화한다(H-08): batch 실패 시 원본은
 // 이전 상태로 남아 sweeper가 재처리(유실·split-brain 방지). 콜백은 문자 doc 처리 시 1회(channel=sms).
-async function convertBmsToSms(db, ref, data, statusCode, attemptCount) {
+async function convertBmsToSms(db, ref, data, statusCode, attemptCount, now = new Date()) {
   try {
     const phoneKey = onlyDigitsLocal(data.recipient_phone);
     if (phoneKey) await db.collection('kakao_channel_friends').doc(phoneKey).delete();
@@ -392,13 +393,16 @@ async function convertBmsToSms(db, ref, data, statusCode, attemptCount) {
     console.error('[queueWorker] 친구명단 제거 실패(전환 계속):', err?.message ?? err);
   }
   const smsDocId = ref.id + '_sms';
+  // 전환 문자는 즉시 발송한다 — 폴링은 예약시각 이후에만 돌므로 원본 scheduled_date는 보통
+  // 지난 시각이고, 복사하면 솔라피가 재예약해 안내가 또 지연된다(2026-07-04 사고). 미래만 유지.
+  const scheduledAt = parseKstToDate(data.scheduled_date);
   const batch = db.batch();
   batch.set(db.collection('message_queue').doc(smsDocId), {
     kind: 'direct',
     status: 'pending',
     recipient_phone: data.recipient_phone,
     content: smsFallbackContent(data, statusCode),
-    scheduled_date: data.scheduled_date ?? null,
+    scheduled_date: scheduledAt && scheduledAt > now ? data.scheduled_date : null,
     attempt_count: 0,
     created_by: 'bms_fallback',
     created_at: FieldValue.serverTimestamp(),
@@ -453,7 +457,7 @@ async function processDeliveryResult(db, ref, data, resultFetcher, notifyResultC
     case 'not_friend':
     case 'night_blocked':
       // BMS 전용 결과 — SMS 발송결과에선 나오지 않는다.
-      await convertBmsToSms(db, ref, data, result.statusCode, attemptCount);
+      await convertBmsToSms(db, ref, data, result.statusCode, attemptCount, now);
       return;
     case 'failed':
       // SMS 통신사 미도달(예: 3058)은 일시적일 수 있어 상한까지 재발송, 이후 영구 실패로 종결.
@@ -467,7 +471,7 @@ async function processDeliveryResult(db, ref, data, resultFetcher, notifyResultC
     default: // 'pending' 또는 미상 — 재조회. 상한 초과 시 유실 방지 처리(BMS=문자전환, SMS=미확정 종결).
       if (count >= MAX_DELIVERY_CHECKS) {
         if (!isSms) {
-          await convertBmsToSms(db, ref, data, 'delivery_result_timeout', attemptCount);
+          await convertBmsToSms(db, ref, data, 'delivery_result_timeout', attemptCount, now);
         } else {
           // SMS 접수 성공분은 도달했을 공산이 크다(결과 미수신 ≠ 발송 실패). 재발송은 중복 위험이
           // 있으므로 재발송 없이 미확정으로 종결한다. (명시적 failed(예: 3058)만 재발송 대상.)

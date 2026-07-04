@@ -568,6 +568,14 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(smsDoc.attempt_count).toBe(0);
   });
 
+  it('비친구 → 지난 scheduled_date는 문자 doc에 복사하지 않는다(즉시 발송, 2026-07-04 사고)', async () => {
+    // NOW(00:05Z)=09:05 KST — 08:00 KST 예약은 이미 지난 시각.
+    const db = makeDb({ pb_past: awaitingDoc({ scheduled_date: '2026-06-25 08:00:00' }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'not_friend', statusCode: '3120' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+    expect(db._queue.get('pb_past_sms').scheduled_date).toBeNull();
+  });
+
   it('비친구(3120) + sms_suffix → 문자 본문에 채널 가입 유도 문구 덧붙임', async () => {
     const db = makeDb({ pb_sfx: awaitingDoc({ sms_suffix: '채널 추가: https://pf.kakao.com/_x' }) });
     const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'not_friend', statusCode: '3120' });
