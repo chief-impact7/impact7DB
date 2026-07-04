@@ -51,7 +51,7 @@ function arrivalTimeKST(date) {
 }
 
 // 액션별 알림톡 message_queue payload. 템플릿 코드 미설정이어도 fallback_text로 적재.
-function buildEventQueuePayload({ studentId, studentName, recipientPhone, action, occurredAt, eventId, late = false }) {
+function buildEventQueuePayload({ studentId, studentName, recipientPhone, action, occurredAt, eventId, late = false, source = 'tablet' }) {
   // 지각 등원은 별도 템플릿(late)으로 라우팅 — 등원 안내와 분리한다. 지각은 템플릿 제목으로
   // 드러나므로 시각에 "(지각)" 문자열을 덧붙이지 않는다(부착 시 LATE 템플릿과 이중 표기).
   const templateKey = (action === ACTIONS.ARRIVE && late) ? 'late' : ACTION_TEMPLATE_KEY[action];
@@ -72,7 +72,7 @@ function buildEventQueuePayload({ studentId, studentName, recipientPhone, action
     attempt_count: 0,
     next_attempt_at: null,
     last_error_code: null,
-    source: 'tablet',
+    source,
     created_at: FieldValue.serverTimestamp(),
     updated_at: FieldValue.serverTimestamp(),
   };
@@ -119,6 +119,8 @@ export async function handleTabletCheckin(request, deps = {}) {
   const studentId = textOf(data.studentId);
   // 구 클라이언트의 '복귀'/'귀가'도 표준('귀원'/'하원')으로 정규화해 수용.
   const action = normalizeAttendanceLabel(textOf(data.action));
+  // DSC 상세패널의 수동 처리(태블릿 미태그 학생)도 이 경로를 쓴다 — 감사용 출처 구분.
+  const source = textOf(data.source) === 'dsc' ? 'dsc' : 'tablet';
   const departurePolicy = await readDevicePolicy(firestore, data.deviceId);
 
   // 조회: studentId/action 없으면 후보 목록 반환.
@@ -190,7 +192,7 @@ export async function handleTabletCheckin(request, deps = {}) {
       queueId = queueRef.id;
       tx.set(queueRef, buildEventQueuePayload({
         studentId, studentName: textOf(student.name), recipientPhone,
-        action, occurredAt, eventId: eventRef.id, late,
+        action, occurredAt, eventId: eventRef.id, late, source,
       }));
     }
     tx.set(eventRef, {
@@ -200,7 +202,7 @@ export async function handleTabletCheckin(request, deps = {}) {
       date_kst: dateKST,
       type: action,
       occurred_at: FieldValue.serverTimestamp(),
-      source: 'tablet',
+      source,
       device_id: deviceId,
       created_by: email,
       queue_id: queueId,
