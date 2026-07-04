@@ -1,7 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
-import { promoEligibility, getPromoConsent } from './promoConsent.js';
+import { promoEligibility, getPromoConsent, consentTargetOf } from './promoConsent.js';
 import { resolveAdScheduledAt, isAdNightKST, parseKstToDate } from './promoSchedule.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
 
@@ -82,20 +82,23 @@ export function buildPromoRecipients(entries, opts) {
   };
   const docs = [];
 
+  // 동의는 번호 주인 단위 — 학생 본인에게 보내는 캠페인은 학생 동의, 그 외는 보호자 동의로 판정.
+  const consentTarget = consentTargetOf(opts.recipientField);
+
   for (const { id, student } of entries) {
     const phone = resolveRecipientPhone(student, opts.recipientField);
     if (!phone) { stats.skipped_no_phone += 1; continue; }
 
-    const elig = promoEligibility(student);
+    const elig = promoEligibility(student, consentTarget);
     if (elig.reason === 'revoked') { stats.skipped_revoked += 1; continue; }
 
     if (hasFriendSet) {
       if (opts.friendPhones.has(phone)) {
         if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
-        docs.push(buildPromoQueueDoc({ studentId: id, phone, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student), ...opts }));
+        docs.push(buildPromoQueueDoc({ studentId: id, phone, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student, consentTarget), ...opts }));
         stats.friend_bms += 1;
       } else if (elig.smsFallbackAllowed) {
-        docs.push(buildPromoSmsQueueDoc({ studentId: id, phone, consent: getPromoConsent(student), campaignId: opts.campaignId, content: opts.content, scheduledDate: opts.scheduledDate }));
+        docs.push(buildPromoSmsQueueDoc({ studentId: id, phone, consent: getPromoConsent(student, consentTarget), campaignId: opts.campaignId, content: opts.content, scheduledDate: opts.scheduledDate }));
         stats.ad_sms += 1;
       } else {
         stats.skipped_no_consent += 1;
@@ -104,7 +107,7 @@ export function buildPromoRecipients(entries, opts) {
     } else {
       // 하위호환: friendPhones 없으면 전원 BMS 경로
       if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
-      docs.push(buildPromoQueueDoc({ studentId: id, phone, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student), ...opts }));
+      docs.push(buildPromoQueueDoc({ studentId: id, phone, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student, consentTarget), ...opts }));
     }
     stats.queued += 1;
   }

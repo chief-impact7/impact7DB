@@ -44,6 +44,6 @@ describe('runPromoConsentReconfirm', () => {
     ]);
     const res = await runPromoConsentReconfirm({ db, now });
     expect(res.due).toBe(1);
-    expect(res.dueIds).toEqual(['s0']);
+    expect(res.dueIds).toEqual(['s0:promo']);
   });
 });

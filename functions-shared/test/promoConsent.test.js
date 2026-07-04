@@ -31,3 +31,16 @@ describe('promoConsent', () => {
     });
   });
 });
+
+describe('대상별 동의 분리 (parent=promo / student=promo_student)', () => {
+  it('학생 동의만 있으면 student 대상만 허용된다', async () => {
+    const { canReceivePromoSms, promoEligibility, consentTargetOf } = await import('../src/promoConsent.js');
+    const student = { message_consent: { promo_student: { optedIn: true, revokedAt: null } } };
+    expect(canReceivePromoSms(student, 'student')).toBe(true);
+    expect(canReceivePromoSms(student, 'parent')).toBe(false);
+    expect(promoEligibility(student, 'parent').reason).toBe('no_consent');
+    expect(consentTargetOf('student')).toBe('student');
+    expect(consentTargetOf('parent_1')).toBe('parent');
+    expect(consentTargetOf(undefined)).toBe('parent');
+  });
+});

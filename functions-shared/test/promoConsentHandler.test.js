@@ -38,12 +38,22 @@ describe('handleSetPromoConsent', () => {
   }
   const auth = { uid: 'u1', token: { email: 'teacher@impact7.kr', email_verified: true } };
 
-  it('writes merged consent for an authorized staff member', async () => {
+  it('writes merged consent for an authorized staff member (기본 target=parent → promo)', async () => {
     const db = makeDb();
     const res = await handleSetPromoConsent({ auth, data: { studentId: 's1', optedIn: true, source: 'diagnostic_form' } }, { db });
-    expect(res).toMatchObject({ studentId: 's1', optedIn: true, source: 'diagnostic_form' });
+    expect(res).toMatchObject({ studentId: 's1', target: 'parent', optedIn: true, source: 'diagnostic_form' });
     expect(db.writes[0].opts).toEqual({ merge: true });
     expect(db.writes[0].data.message_consent.promo.optedIn).toBe(true);
+  });
+
+  it('target=student → promo_student 필드에 기록(보호자 동의와 분리)', async () => {
+    const db = makeDb();
+    const res = await handleSetPromoConsent({ auth, data: { studentId: 's1', optedIn: false, target: 'student' } }, { db });
+    expect(res).toMatchObject({ studentId: 's1', target: 'student', optedIn: false });
+    const mc = db.writes[0].data.message_consent;
+    expect(mc.promo_student.optedIn).toBe(false);
+    expect(mc.promo_student.revokedAt).toBe('<ts>');
+    expect(mc.promo).toBeUndefined();
   });
 
   it('rejects missing studentId', async () => {

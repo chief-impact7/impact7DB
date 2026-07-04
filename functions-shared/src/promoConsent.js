@@ -5,24 +5,37 @@
 //    채널 추가 자체가 카카오 약관상 수신 자격이라, 우리 쪽 별도 게이트는 두지 않는다.
 //  - 광고 SMS 대체발송: 정보통신망법상 명시적 수신동의가 필요하다 → canReceivePromoSms 게이트로만 허용.
 //
-// students/{id}.message_consent.promo 구조:
-//  { optedIn: boolean, at: Timestamp, source: 'kakao_friend'|'diagnostic_form'|'admin',
-//    night: boolean, revokedAt: Timestamp|null }
+// 동의는 번호 주인(수신자) 단위다 — 학부모 번호와 학생 번호의 동의를 분리한다:
+//  students/{id}.message_consent.promo         = 보호자(학부모) 동의 (기존 필드, 진단평가 신청서 체크)
+//  students/{id}.message_consent.promo_student = 학생 본인 동의
+// 구조: { optedIn: boolean, at: Timestamp, source: 'kakao_friend'|'diagnostic_form'|'survey_form'|'admin',
+//         revokedAt: Timestamp|null }
 
-export function getPromoConsent(student) {
-  return student?.message_consent?.promo ?? null;
+const CONSENT_FIELD = { parent: 'promo', student: 'promo_student' };
+
+// 발송 수신 필드 → 동의 대상. 학생 본인 번호만 학생 동의, 나머지(학부모1/2·기타)는 보호자 동의.
+export function consentTargetOf(recipientField) {
+  return recipientField === 'student' ? 'student' : 'parent';
 }
 
-// 광고 SMS 대체발송 허용 여부: 동의했고 철회하지 않은 경우만.
+export function promoConsentField(target) {
+  return CONSENT_FIELD[target] ?? CONSENT_FIELD.parent;
+}
+
+export function getPromoConsent(student, target = 'parent') {
+  return student?.message_consent?.[promoConsentField(target)] ?? null;
+}
+
+// 광고 SMS 대체발송 허용 여부: 해당 대상이 동의했고 철회하지 않은 경우만.
 // (브랜드 메시지 자체는 채널 친구 근거로 발송하며 이 게이트를 거치지 않는다.)
-export function canReceivePromoSms(student) {
-  const c = getPromoConsent(student);
+export function canReceivePromoSms(student, target = 'parent') {
+  const c = getPromoConsent(student, target);
   return !!(c && c.optedIn === true && !c.revokedAt);
 }
 
 // 캠페인 대상 산출 시 분류 사유. 발송 스킵을 카운트/감사하기 위한 라벨.
-export function promoEligibility(student) {
-  const c = getPromoConsent(student);
+export function promoEligibility(student, target = 'parent') {
+  const c = getPromoConsent(student, target);
   if (!c || c.optedIn !== true) return { smsFallbackAllowed: false, reason: 'no_consent' };
   if (c.revokedAt) return { smsFallbackAllowed: false, reason: 'revoked' };
   return { smsFallbackAllowed: true, reason: null };
