@@ -26,8 +26,9 @@ import { handleCreateBulkMessage } from './src/bulkMessageHandler.js';
 import { handleSyncChannelFriends, handleGetChannelFriends } from './src/channelFriendsHandler.js';
 import { handleSendDailyReport } from './src/dailyReportHandler.js';
 import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
-import { handleRetryMessageDelivery } from './src/messageRetryHandler.js';
+import { handleRetryMessageDelivery, handleManageMessageFailure } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
+import { handleGetRecipientMessageHistory } from './src/messageHistoryHandler.js';
 import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii } from './src/queueWorker.js';
 import { runAbsenceNoticeSweep, handleSendAbsenceNotice, syncAbsenceNoticeDeliveryStatus } from './src/absenceNoticeSweep.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
@@ -192,6 +193,12 @@ export const promoConsentReconfirm = onSchedule(
 
 // 관리자 발송 현황 화면(T6)의 수동 재시도 — 실패 큐 doc을 failed_retryable로 되돌려 sweeper 재처리.
 export const retryMessageDelivery = onCall({ enforceAppCheck: false }, handleRetryMessageDelivery);
+
+// 실패 항목 보관(직원)/삭제(원장) — 발송 현황 실패 목록 정리.
+export const manageMessageFailure = onCall({ enforceAppCheck: false }, handleManageMessageFailure);
+
+// 수신자별 발송 이력 타임라인 — 카카오 관리자센터에서 안 보이는 알림톡/BMS 원문 복원용.
+export const getRecipientMessageHistory = onCall({ enforceAppCheck: false }, handleGetRecipientMessageHistory);
 
 // 발송 현황 집계 — 큐 read를 차단(T11)하므로 대시보드는 이 callable로 카운트+마스킹 실패목록만 받는다.
 export const getMessageDeliveryStatus = onCall({ enforceAppCheck: false }, handleGetMessageDeliveryStatus);

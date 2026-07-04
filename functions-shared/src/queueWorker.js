@@ -401,6 +401,7 @@ async function convertBmsToSms(db, ref, data, statusCode, attemptCount, now = ne
     kind: 'direct',
     status: 'pending',
     recipient_phone: data.recipient_phone,
+    student_id: data.student_id ?? null, // 수신자별 이력 타임라인이 전환 문자도 잡도록 승계
     content: smsFallbackContent(data, statusCode),
     scheduled_date: scheduledAt && scheduledAt > now ? data.scheduled_date : null,
     attempt_count: 0,
