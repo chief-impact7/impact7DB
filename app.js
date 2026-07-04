@@ -1,6 +1,6 @@
 import { onAuthStateChanged } from 'firebase/auth';
 import { installKeyboardActivation, installModalA11y } from './a11y-dom.js';
-import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, Timestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
 import { auth, db, dataAuthReady } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
 import { cleanSchoolName, collectKnownSchoolNames, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
@@ -559,18 +559,18 @@ document.getElementById('login-avatar-btn')?.removeAttribute('aria-disabled');
 // ---------------------------------------------------------------------------
 // Load all students from Firestore, sort by name (Korean-aware)
 // ---------------------------------------------------------------------------
+// 증분 동기화 — 매 로드마다 students 전량(~15k reads)을 재조회하던 것을 updated_at 델타로 대체.
+// 전제: 모든 students 쓰기(DB·DSC audit 헬퍼·서버)가 updated_at을 찍는다. updated_at 없는
+// 레거시/스크립트 쓰기 대비로 일일 1회 전량 보정을 유지한다.
+const STUDENTS_SYNC_KEY = 'students_last_sync_ms';
+const STUDENTS_FULL_SYNC_KEY = 'students_last_full_sync_ms';
+const STUDENTS_SYNC_BUFFER_MS = 10 * 60 * 1000;           // 시계 오차·트리거 후속 쓰기 흡수
+const STUDENTS_FULL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 async function loadStudentList() {
     const listContainer = document.querySelector('.list-items');
 
-    function renderStudents(snapshot) {
-        allStudents = [];
-        snapshot.forEach((docSnap) => {
-            const data = { id: docSnap.id, ...docSnap.data() };
-            data.enrollments = normalizeEnrollments(data);
-            allStudents.push(data);
-        });
-        allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
-        storeUpdate({ allStudents });
+    function postLoadRefresh() {
         invalidateSemesterPool();
         buildSiblingMap();
         buildClassFilterSidebar();
@@ -580,6 +580,36 @@ async function loadStudentList() {
         updateLeaveCountBadges();
         loadMemoCacheAndRender();
         loadLeaveRequests();
+    }
+
+    function toStudent(docSnap) {
+        const data = { id: docSnap.id, ...docSnap.data() };
+        data.enrollments = normalizeEnrollments(data);
+        return data;
+    }
+
+    function renderStudents(snapshot) {
+        allStudents = [];
+        snapshot.forEach((docSnap) => { allStudents.push(toStudent(docSnap)); });
+        allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+        storeUpdate({ allStudents });
+        postLoadRefresh();
+    }
+
+    // 델타 병합 — 공유 배열(state.allStudents 동일 참조)을 제자리 갱신 후 재정렬.
+    // 한계: 삭제는 전파 못 함(델타에 안 나타남) — students는 delete:false라 admin 스크립트 삭제만
+    // 해당하며, 일일 전량 보정·수동 새로고침이 안전망. 스크립트 삭제 후엔 새로고침을 안내할 것.
+    function applyDeltaDocs(deltaSnap) {
+        const indexById = new Map(allStudents.map((s, i) => [s.id, i]));
+        deltaSnap.forEach((docSnap) => {
+            const data = toStudent(docSnap);
+            const idx = indexById.get(data.id);
+            if (idx !== undefined) allStudents[idx] = data;
+            else allStudents.push(data);
+        });
+        allStudents.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+        storeUpdate({ allStudents });
+        postLoadRefresh();
     }
 
     async function runWriteSideEffects() {
@@ -599,17 +629,32 @@ async function loadStudentList() {
     }
 
     try {
-        try {
-            const cachedSnapshot = await getDocsFromCache(collection(db, 'students'));
-            if (!cachedSnapshot.empty) {
-                renderStudents(cachedSnapshot);
+        const lastSyncMs = Number(localStorage.getItem(STUDENTS_SYNC_KEY)) || 0;
+        const lastFullMs = Number(localStorage.getItem(STUDENTS_FULL_SYNC_KEY)) || 0;
+        let usedDelta = false;
+
+        if (lastSyncMs && Date.now() - lastFullMs < STUDENTS_FULL_SYNC_INTERVAL_MS) {
+            try {
+                const cachedSnapshot = await getDocsFromCache(collection(db, 'students'));
+                if (!cachedSnapshot.empty) {
+                    renderStudents(cachedSnapshot);
+                    const since = Timestamp.fromMillis(lastSyncMs - STUDENTS_SYNC_BUFFER_MS);
+                    const deltaSnap = await getDocs(query(collection(db, 'students'), where('updated_at', '>', since)));
+                    if (!deltaSnap.empty) applyDeltaDocs(deltaSnap);
+                    console.log(`[loadStudentList] 델타 동기화: 캐시 ${cachedSnapshot.size}건 + 변경 ${deltaSnap.size}건`);
+                    usedDelta = true;
+                }
+            } catch {
+                // 캐시 미스/IndexedDB 미지원 — 아래 전량 로드로 폴백
             }
-        } catch {
-            // 캐시 미스(첫 방문) 또는 IndexedDB 미지원 — 서버 로드로 이어진다
         }
 
-        const snapshot = await getDocs(collection(db, 'students'));
-        renderStudents(snapshot);
+        if (!usedDelta) {
+            const snapshot = await getDocs(collection(db, 'students'));
+            renderStudents(snapshot);
+            localStorage.setItem(STUDENTS_FULL_SYNC_KEY, String(Date.now()));
+        }
+        localStorage.setItem(STUDENTS_SYNC_KEY, String(Date.now()));
         await runWriteSideEffects();
     } catch (error) {
         console.error('[FIRESTORE ERROR] Failed to load students:', error);
@@ -617,7 +662,11 @@ async function loadStudentList() {
     }
 }
 
-window.refreshStudents = loadStudentList;
+// 수동 새로고침은 항상 전량 재조회 — 델타가 놓친 변경(레거시 쓰기 등)을 사용자가 즉시 복구할 수 있는 경로.
+window.refreshStudents = () => {
+    localStorage.removeItem(STUDENTS_FULL_SYNC_KEY);
+    return loadStudentList();
+};
 // 내신/문법특강 등 분리 모듈이 학생 데이터를 변경한 후 UI 갱신 요청하는 이벤트
 window.addEventListener('impact7:studentsChanged', () => applyFilterAndRender());
 
@@ -679,6 +728,7 @@ async function backfillStudentNumbers() {
                 studentNumber,
                 studentNumberSource: source,
                 studentNumberIssuedAt: serverTimestamp(),
+                updated_at: serverTimestamp(),
             },
             applyLocal: () => {
                 s.studentNumber = studentNumber;
@@ -861,6 +911,7 @@ async function handleScheduledSpecialClassEnds() {
 // 로컬 캐시 업데이트 후 UI 갱신 (전체 재조회 없이)
 // ---------------------------------------------------------------------------
 const _deleteFieldSentinel = deleteField(); // FieldValue sentinel for comparison
+const _serverTimestampSentinel = serverTimestamp();
 
 function _isDeleteSentinel(v) {
     // Firebase FieldValue.delete() sentinel 확인
@@ -870,14 +921,25 @@ function _isDeleteSentinel(v) {
     );
 }
 
+// serverTimestamp() sentinel을 로컬 캐시에 그대로 넣으면 updated_at?.toDate?.() 소비처
+// (학기 컷오프 필터·재원기간 표기)가 깨진다 — 로컬 병합 시 근사값(Timestamp.now())으로 치환.
+function _isServerTimestampSentinel(v) {
+    return v != null && typeof v === 'object' && (
+        v.constructor === _serverTimestampSentinel.constructor ||
+        (typeof v._methodName === 'string' && v._methodName === 'serverTimestamp')
+    );
+}
+
 function _upsertLocalStudent(docId, data) {
     const idx = allStudents.findIndex(s => s.id === docId);
     if (idx >= 0) {
-        // merge: deleteField sentinel은 제거, 나머지는 덮어쓰기
+        // merge: deleteField sentinel은 제거, serverTimestamp sentinel은 근사값, 나머지는 덮어쓰기
         const merged = { ...allStudents[idx] };
         for (const [k, v] of Object.entries(data)) {
             if (_isDeleteSentinel(v)) {
                 delete merged[k];
+            } else if (_isServerTimestampSentinel(v)) {
+                merged[k] = Timestamp.now();
             } else {
                 merged[k] = v;
             }
@@ -885,10 +947,11 @@ function _upsertLocalStudent(docId, data) {
         merged.enrollments = normalizeEnrollments(merged);
         allStudents[idx] = merged;
     } else {
-        // 신규 삽입 시 sentinel 제거
+        // 신규 삽입 시 sentinel 제거/치환
         const cleaned = {};
         for (const [k, v] of Object.entries(data)) {
-            if (!_isDeleteSentinel(v)) cleaned[k] = v;
+            if (_isDeleteSentinel(v)) continue;
+            cleaned[k] = _isServerTimestampSentinel(v) ? Timestamp.now() : v;
         }
         const newStudent = { id: docId, ...cleaned };
         newStudent.enrollments = normalizeEnrollments(newStudent);
@@ -2551,6 +2614,9 @@ window.submitNewStudent = async () => {
     }
     if (isEditMode) syncSpecialStatus2(studentData);
 
+    // 모든 students 쓰기는 updated_at을 찍는다 — 증분 동기화(델타 쿼리)가 변경을 놓치지 않는 전제.
+    studentData.updated_at = serverTimestamp();
+
     const saveBtn = document.getElementById('save-btn');
     saveBtn.disabled = true;
     saveBtn.textContent = '저장 중...';
@@ -3349,7 +3415,7 @@ window.saveEnrollment = async () => {
         // branch 업데이트 (첫 번째 enrollment 기준)
         const branch = branchFromClassNumber(updatedEnrollments[0].class_number);
 
-        await setDoc(doc(db, 'students', currentStudentId), { enrollments: updatedEnrollments, branch }, { merge: true });
+        await setDoc(doc(db, 'students', currentStudentId), { enrollments: updatedEnrollments, branch, updated_at: serverTimestamp() }, { merge: true });
         await addDoc(collection(db, 'history_logs'), {
             doc_id: currentStudentId,
             change_type: 'UPDATE',
@@ -3464,7 +3530,7 @@ window.confirmEndClassSingle = async () => {
         const hasRegular = (student.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
         const finalStatus = hasRegular ? '퇴원' : '종강';
 
-        const updateData = { enrollments: remaining, branch };
+        const updateData = { enrollments: remaining, branch, updated_at: serverTimestamp() };
         if (isWithdraw) {
             updateData.status = finalStatus;
         }
@@ -3530,7 +3596,7 @@ window.confirmEndClass = async () => {
                 const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
                 const finalStatus = hasRegular ? '퇴원' : '종강';
 
-                const updateData = { enrollments: remaining, branch };
+                const updateData = { enrollments: remaining, branch, updated_at: serverTimestamp() };
                 if (isWithdraw) {
                     updateData.status = finalStatus;
                 }
@@ -3562,7 +3628,7 @@ window.confirmEndClass = async () => {
             const isWithdraw = remaining.length === 0;
             const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (s.branch || '');
             const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
-            const updateData = { enrollments: remaining, branch };
+            const updateData = { enrollments: remaining, branch, updated_at: serverTimestamp() };
             if (isWithdraw) {
                 updateData.status = hasRegular ? '퇴원' : '종강';
             }
@@ -4109,7 +4175,7 @@ async function runUpsertFromRows(rows, sourceName) {
         if (!ex) {
             // INSERT
             results.inserted.push({ docId, name: incoming.name, enrollments: incoming.enrollments });
-            writes.push({ docId, data: toPersistFields(incoming), type: 'set' });
+            writes.push({ docId, data: { ...toPersistFields(incoming), updated_at: serverTimestamp() }, type: 'set' });
             logEntries.push({
                 doc_id: docId, change_type: 'ENROLL', before: '—',
                 after: `신규 등록: ${incoming.name} (${incoming.enrollments.map(enrollmentCode).join(', ') || '수업없음'})`
@@ -4183,7 +4249,7 @@ async function runUpsertFromRows(rows, sourceName) {
                 continue;
             }
 
-            const updateData = {};
+            const updateData = { updated_at: serverTimestamp() };
             for (const [f, v] of Object.entries(infoDiff)) updateData[f] = v.new;
             if (enrollChanged) updateData.enrollments = mergedEnrollments;
 
@@ -4397,7 +4463,7 @@ window.deleteMemo = async (studentId, memoId) => {
         const remainingCards = container?.querySelectorAll('.memo-card');
         if (!remainingCards || remainingCards.length === 0) {
             delete memoCache[studentId];
-            await setDoc(doc(db, 'students', studentId), { has_memo: false }, { merge: true });
+            await setDoc(doc(db, 'students', studentId), { has_memo: false, updated_at: serverTimestamp() }, { merge: true });
             const st = allStudents.find(s => s.id === studentId);
             if (st) st.has_memo = false;
             if (container) container.innerHTML = '<p style="color:var(--text-sec);font-size:0.85em;padding:4px 0;">메모가 없습니다. + 버튼으로 추가하세요.</p>';
@@ -4442,7 +4508,7 @@ window.saveMemoFromModal = async () => {
             author: currentUser?.email || 'system',
         });
         // 학생 문서에 has_memo 플래그 설정 (메모 생성과 원자적으로 처리)
-        batch.set(doc(db, 'students', currentStudentId), { has_memo: true }, { merge: true });
+        batch.set(doc(db, 'students', currentStudentId), { has_memo: true, updated_at: serverTimestamp() }, { merge: true });
         await batch.commit();
         memoCache[currentStudentId] = true;
         const st = allStudents.find(s => s.id === currentStudentId);
@@ -4518,7 +4584,7 @@ window.deleteFormMemo = async (studentId, memoId) => {
             _memoSubcollectionCache[studentId] = _memoSubcollectionCache[studentId].filter(m => m.id !== memoId);
             if (_memoSubcollectionCache[studentId].length === 0) {
                 delete memoCache[studentId];
-                await setDoc(doc(db, 'students', studentId), { has_memo: false }, { merge: true });
+                await setDoc(doc(db, 'students', studentId), { has_memo: false, updated_at: serverTimestamp() }, { merge: true });
                 const st = allStudents.find(s => s.id === studentId);
                 if (st) st.has_memo = false;
                 updateListItemIcons(studentId);
@@ -4528,7 +4594,7 @@ window.deleteFormMemo = async (studentId, memoId) => {
             const freshMemos = await _fetchMemoSubcollection(studentId, true);
             if (freshMemos.length === 0) {
                 delete memoCache[studentId];
-                await setDoc(doc(db, 'students', studentId), { has_memo: false }, { merge: true });
+                await setDoc(doc(db, 'students', studentId), { has_memo: false, updated_at: serverTimestamp() }, { merge: true });
                 const st = allStudents.find(s => s.id === studentId);
                 if (st) st.has_memo = false;
                 updateListItemIcons(studentId);
@@ -4884,6 +4950,7 @@ window.applyBulkStatus = async () => {
                     status_changed_at: serverTimestamp(),
                     status_changed_by: currentUser?.email || 'system',
                     status_previous: c.from === '—' ? null : c.from,
+                    updated_at: serverTimestamp(),
                 };
                 if (c.clearedEnroll) update.enrollments = c.reconciled;
                 batch.update(doc(db, 'students', c.id), update);
@@ -4982,7 +5049,7 @@ window.applyBulkClass = async () => {
                 if (mIdx >= 0) updatedEnrollments[mIdx] = { ...updatedEnrollments[mIdx], start_date: startDate };
             }
 
-            const updateData = { enrollments: updatedEnrollments };
+            const updateData = { enrollments: updatedEnrollments, updated_at: serverTimestamp() };
             if (newBranch) updateData.branch = newBranch;
             changes.push({ id, name: student.name, from: before, to: after, enrollments: updatedEnrollments, updateData });
         });
@@ -5074,7 +5141,7 @@ window.applyBulkDays = async () => {
             const oldDays = displayDays(student.enrollments[eIdx].day);
             const updated = [...student.enrollments];
             updated[eIdx] = { ...updated[eIdx], day: [...checked] };
-            updateMap[id] = { enrollments: updated };
+            updateMap[id] = { enrollments: updated, updated_at: serverTimestamp() };
             changes.push({ id, name: student.name, from: oldDays, to: checked.join(', '), eIdx });
         });
 
@@ -5160,7 +5227,7 @@ window.applyBulkPromotion = async () => {
         let afterLevel = oldLevel;
         let afterGrade = oldGrade + 1;
         let isTransition = false;
-        const updateData = {};
+        const updateData = { updated_at: serverTimestamp() };
 
         if (oldGrade >= maxG) {
             const next = NEXT_LEVEL[oldLevel];
@@ -5212,10 +5279,11 @@ window.applyBulkPromotion = async () => {
         }
 
         // 로컬 데이터 업데이트 — Firestore write와 동일 필드 + 트리거가 쓸 라벨까지 즉시 반영(stale 방지).
+        // _upsertLocalStudent 경유로 serverTimestamp sentinel을 근사값으로 치환해 병합.
         changes.forEach(c => {
+            _upsertLocalStudent(c.id, c.updateData);
             const s = allStudents.find(s => s.id === c.id);
             if (!s) return;
-            Object.assign(s, c.updateData);
             // 트리거 computeLabelUpdate와 동일 가드: 학부필드가 하나라도 있을 때만 라벨 갱신(미입력 학생 보존).
             if (s.school_elementary || s.school_middle || s.school_high) {
                 s.school_level_grade = studentFullLabel(s);
@@ -5269,7 +5337,7 @@ window.applyBulkSchool = async () => {
             const chunk = changes.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(c => {
-                batch.update(doc(db, 'students', c.id), { [field]: schoolName });
+                batch.update(doc(db, 'students', c.id), { [field]: schoolName, updated_at: serverTimestamp() });
                 const historyRef = doc(collection(db, 'history_logs'));
                 batch.set(historyRef, {
                     doc_id: c.id, change_type: 'UPDATE',
@@ -5360,6 +5428,7 @@ window.confirmBulkDelete = async () => {
                     status_changed_at: serverTimestamp(),
                     status_changed_by: currentUser?.email || 'system',
                     status_previous: info.from || null,
+                    updated_at: serverTimestamp(),
                 };
                 if (reconciled.length !== info.enrollments.length) update.enrollments = reconciled;
                 batch.set(doc(db, 'students', id), update, { merge: true });
@@ -6544,7 +6613,7 @@ window.saveGrammarSpecial = async () => {
                         enrollments.push(newEnrollment);
                     }
 
-                    batch.update(doc(db, 'students', entry.docId), { enrollments });
+                    batch.update(doc(db, 'students', entry.docId), { enrollments, updated_at: serverTimestamp() });
 
                     // 커밋 성공 후에만 로컬 반영(N-08 — commit 전 변경하면 실패 시 phantom 상태).
                     pendingLocalSync.push(() => { existingS.enrollments = enrollments; });
@@ -6565,12 +6634,13 @@ window.saveGrammarSpecial = async () => {
                         guardian_name_2: '',
                         first_registered: startDate,
                         enrollments: [newEnrollment],
+                        updated_at: serverTimestamp(),
                     };
 
                     batch.set(doc(db, 'students', entry.docId), studentData);
 
                     // 커밋 성공 후에만 로컬 추가(N-08).
-                    pendingLocalSync.push(() => { allStudents.push({ ...studentData, id: entry.docId }); });
+                    pendingLocalSync.push(() => { _upsertLocalStudent(entry.docId, studentData); });
                 }
 
                 // History log
@@ -6743,7 +6813,7 @@ window.runPromotion = async () => {
             const chunk = promotions.slice(i, i + BATCH_SIZE);
             const b = writeBatch(db);
             for (const { s, p } of chunk) {
-                const updates = { grade: p.grade, level: p.level };
+                const updates = { grade: p.grade, level: p.level, updated_at: serverTimestamp() };
                 if (p._levelChanged) Object.assign(updates, buildLevelChangeHistory(s, prevYear));
                 b.update(doc(db, 'students', s.id), updates);
                 b.set(doc(collection(db, 'history_logs')), {

@@ -74,7 +74,8 @@ export async function runOptOut080Sync(deps = {}) {
     }
     if (Object.keys(patch).length) {
       revoked += Object.keys(patch).length;
-      writes.push(doc.ref.set({ message_consent: patch }, { merge: true }));
+      // updated_at 갱신 — 클라 증분 동기화(updated_at 델타)가 철회를 놓치지 않게 한다.
+      writes.push(doc.ref.set({ message_consent: patch, updated_at: FieldValue.serverTimestamp() }, { merge: true }));
     }
   }
   await Promise.all(writes);

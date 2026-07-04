@@ -37,8 +37,12 @@ export async function handleSetPromoConsent(request, deps = {}) {
 
   const target = VALID_TARGETS.has(data.target) ? data.target : 'parent';
   const promo = buildPromoConsentPatch({ optedIn: data.optedIn, source: data.source });
+  // updated_at 갱신 — 클라 증분 동기화(updated_at 델타)가 동의 변경을 놓치지 않게 한다.
   await db.collection('students').doc(studentId).set(
-    { message_consent: { [promoConsentField(target)]: promo, updated_by: request.auth?.uid ?? null } },
+    {
+      message_consent: { [promoConsentField(target)]: promo, updated_by: request.auth?.uid ?? null },
+      updated_at: FieldValue.serverTimestamp(),
+    },
     { merge: true },
   );
   return { studentId, target, optedIn: promo.optedIn, source: promo.source };

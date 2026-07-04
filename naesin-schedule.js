@@ -372,7 +372,7 @@ window.saveNaesinSchedule = async () => {
                     enrollments.push(newEnrollment);
                 }
 
-                batch.update(doc(db, 'students', w.studentId), { enrollments });
+                batch.update(doc(db, 'students', w.studentId), { enrollments, updated_at: serverTimestamp() });
                 const historyRef = doc(collection(db, 'history_logs'));
                 batch.set(historyRef, {
                     doc_id: w.studentId,

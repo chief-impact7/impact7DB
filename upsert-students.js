@@ -458,12 +458,15 @@ async function upsertStudents() {
 
         for (const w of chunk) {
             const ref = db.collection('students').doc(w.docId);
+            // updated_at 스탬프 — 클라 증분 동기화(델타)가 스크립트發 변경을 놓치지 않게 한다.
+            // 삭제는 델타로 전파되지 않으므로 delete 실행 후 사용자에게 수동 새로고침 안내 필요.
+            const stamped = { ...w.data, updated_at: admin.firestore.FieldValue.serverTimestamp() };
             if (w.type === 'delete') {
                 batch.delete(ref);
             } else if (w.type === 'set') {
-                batch.set(ref, w.data);
+                batch.set(ref, stamped);
             } else {
-                batch.set(ref, w.data, { merge: true });
+                batch.set(ref, stamped, { merge: true });
             }
         }
 

@@ -11,6 +11,8 @@ students 문서에 **클라이언트가 write하는 새 필드**를 추가하면
 
 **실제 사고(2026-05-30):** 학부별 학교(`school_elementary/middle/high`)와 트리거의 `school_level_grade`를 도입(Phase 1)하면서 saveStudent가 이들을 client write했으나 rules allowed에 안 넣어, **학부별 학교 폼 저장이 reject되던 현존 버그**가 배포 상태로 방치됨. git 이력상 rules에 한 번도 없었음. 동종으로 `enrollments_cleared_at/by`(leave-request admin 작성, 264건)도 누락 발견. 수정: allowed에 6필드 추가 + `withinFieldLimit` 30→35(worst 30 + 여유 5). 커밋 DB 4d7d50b.
 
+**재발(2026-07-04, 변종 — 서버 기록 필드):** 클라가 아니라 **서버(admin SDK)가 students에 쓰는 필드도 동일 사고를 낸다.** `setPromoConsent`/`optOut080Sync`가 `message_consent`(map)를 admin으로 기록 → admin은 rules 우회라 기록은 성공하지만, update rules의 `request.resource.data`는 **merge 후 문서 전체 키**라 그 학생을 클라가 수정하는 순간 hasOnly 위반 + `withinFieldLimit(49)` 초과(50번째 키)로 **모든 클라 편집이 조용히 거부**. 수정: allowed에 message_consent 추가 + 한도 49→50, 회귀 테스트 2종(tests/firestore.rules.student-enrollment.test.js). 커밋 DB 4a501f3. **교훈: "학생 필드 추가"의 주체가 클라든 서버(callable/트리거)든 rules 갱신은 무조건 필수.** 근본 해소는 update를 `diff().affectedKeys().hasOnly(...)`(클라가 바꾼 키만 검증)로 전환하는 것 — 전 앱 회귀 검증 필요해 후속 과제로 보류.
+
 **How to apply:**
 - 학생 필드 추가 PR에는 항상 `firestore.rules` allowed 갱신을 포함.
 - allowed 추가 후 `withinFieldLimit(30)` 같은 한도가 빠듯한지 실측(admin으로 실제 문서 worst-case 키 수 확인). 빠듯하면 상향하되 과도하게 올리지 말 것.

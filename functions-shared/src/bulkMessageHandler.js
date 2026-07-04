@@ -3,6 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { buildPromoQueueDoc } from './promoCampaignHandler.js';
 import { resolveRecipientPhone, resolveRecipientPhones } from './recipientPhone.js';
+import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
 import { parseKstToDate } from './promoSchedule.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { enrollmentCode } from '@impact7/shared/enrollment-derivation';
@@ -125,23 +126,47 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   stats.skipped_missing = studentIds.length - entries.length;
 
   // create로 원자적 선점 — 같은 requestId 동시 요청에서 정확히 하나만 큐에 등록.
+  // 'enqueuing' 고착(이전 호출이 배치 도중 사망)이면 duplicate 단락 시 잔여 대상이 영영
+  // 미발송되므로, lease 만료 시에만 트랜잭션 CAS(claimCampaignResume)로 잔여 재개 —
+  // promoCampaignHandler와 동일 패턴. 지문에 recipientFields 포함 — 대상/수신필드가 바뀌면
+  // phone dedup 귀속이 바뀌어 공유번호 중복 발송이 가능하므로 재개 거부.
+  const fingerprint = recipientFingerprint(studentIds, {
+    recipientField: data.recipientField ?? null,
+    recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : null,
+  });
+  const now = deps.now ?? new Date();
+  let resuming = false;
   try {
     await campaignRef.create({
       title, content, targeting: 'I', kind: 'bulk_info',
       scheduled_date: scheduledDate ?? null, status: 'enqueuing', stats,
       created_by: request.auth?.uid ?? null, created_at: FieldValue.serverTimestamp(),
+      enqueue_started_at: now.getTime(),
+      request_fingerprint: fingerprint,
     });
   } catch (e) {
-    if (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message))) {
-      const ex = (await campaignRef.get()).data() ?? {};
+    if (!(e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message)))) throw e;
+    const claim = await claimCampaignResume(db, campaignRef, { now, content, fingerprint, stats });
+    if (!claim.resumed) {
+      const ex = claim.existing;
       return { campaignId: campaignRef.id, duplicate: true, stats: ex.stats ?? null, scheduledDate: ex.scheduled_date ?? null };
     }
-    throw e;
+    resuming = true;
+  }
+
+  // 재개 시 이미 enqueue된 학생은 제외. 학생당 여러 번호 doc이 있어 학생 단위 스킵은
+  // 배치 경계에 걸린 두 번째 번호를 놓칠 수 있으나(드묾), 번호 단위 대조는 PII purge로
+  // recipient_phone이 지워진 doc에서 중복 발송을 유발하므로 과소발송 쪽을 택한다.
+  let pendingDocs = docs;
+  if (resuming) {
+    const queuedSnap = await db.collection('message_queue').where('campaign_id', '==', campaignRef.id).get();
+    const already = new Set(queuedSnap.docs.map((d) => d.data().student_id));
+    pendingDocs = docs.filter((d) => !already.has(d.student_id));
   }
 
   let batch = db.batch();
   let inBatch = 0;
-  for (const doc of docs) {
+  for (const doc of pendingDocs) {
     const qref = db.collection('message_queue').doc();
     batch.set(qref, { ...doc, created_at: FieldValue.serverTimestamp() });
     if ((inBatch += 1) >= BATCH_LIMIT) {

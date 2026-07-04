@@ -267,7 +267,10 @@ export const onStudentLabelSync = onDocumentWritten(
     if (!after?.exists) return null; // 삭제는 무시
     const update = computeLabelUpdate(after.data());
     if (!update) return null; // 라벨 동일 → write 스킵(무한루프 방지)
-    await after.ref.update(update);
+    // updated_at 갱신 — 클라 증분 동기화가 라벨 후속 write를 놓치지 않게 한다.
+    // 재발화는 computeLabelUpdate null 가드가 종료시키므로 루프 없음.
+    const { FieldValue } = await import('firebase-admin/firestore');
+    await after.ref.update({ ...update, updated_at: FieldValue.serverTimestamp() });
     return null;
   }
 );

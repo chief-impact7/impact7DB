@@ -4,6 +4,7 @@ import { assertAuthorizedStaff } from './authGuards.js';
 import { promoEligibility, getPromoConsent, consentTargetOf } from './promoConsent.js';
 import { resolveAdScheduledAt, isAdNightKST, parseKstToDate } from './promoSchedule.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
+import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
 
 // 홍보(브랜드 메시지) 캠페인 생성 callable. 원장 권한으로 대상 학생을 동의/번호 게이트에 걸러
 // message_queue(kind=promo)에 배치 enqueue한다. 발송 자체는 워커(onMessageQueued)가 수행한다.
@@ -189,10 +190,10 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   // 요청(더블클릭)에서 정확히 하나만 enqueue한다. 캠페인 doc을 먼저 'enqueuing'으로 기록해
   // 배치 도중 실패해도 이력·부분상태가 남는다.
   // 이미 존재하는 캠페인: 완료(queued/scheduled)면 duplicate 단락. 'enqueuing' 고착이면 이전
-  // 호출이 배치 도중 죽었을 수 있으나 아직 진행 중일 수도 있으므로, enqueue_started_at이
-  // RESUME_LEASE_MS 이상 지난 경우에만 잔여 재개 — duplicate 단락으로 잔여 대상이 영영
-  // 미발송되는 것과, 진행 중 호출과의 경쟁으로 중복 발송되는 것을 동시에 차단한다.
-  const RESUME_LEASE_MS = 10 * 60 * 1000;
+  // 호출이 배치 도중 죽었을 수 있으나 아직 진행 중일 수도 있으므로, lease 만료 시에만
+  // 트랜잭션 CAS(claimCampaignResume)로 잔여 재개 — duplicate 단락으로 잔여 대상이 영영
+  // 미발송되는 것과, 진행 중/동시 재개 호출과의 경쟁으로 중복 발송되는 것을 동시에 차단한다.
+  const fingerprint = recipientFingerprint(studentIds, data.recipientField ?? null);
   let resuming = false;
   try {
     await campaignRef.create({
@@ -208,20 +209,16 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
       created_by: request.auth?.uid ?? null,
       created_at: FieldValue.serverTimestamp(),
       enqueue_started_at: now.getTime(),
+      request_fingerprint: fingerprint,
     });
   } catch (e) {
     if (!(e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message)))) throw e;
-    const ex = (await campaignRef.get()).data() ?? {};
-    const leaseExpired = now.getTime() - (ex.enqueue_started_at ?? 0) >= RESUME_LEASE_MS;
-    if (ex.status !== 'enqueuing' || !leaseExpired) {
+    const claim = await claimCampaignResume(db, campaignRef, { now, content, fingerprint, stats });
+    if (!claim.resumed) {
+      const ex = claim.existing;
       return { campaignId: campaignRef.id, duplicate: true, stats: ex.stats ?? null, scheduledDate: ex.scheduled_date ?? null };
     }
-    // 재개는 동일 본문 요청만 허용 — 한 캠페인 안에서 수신자별로 다른 문구가 섞이는 것 차단.
-    if (ex.content !== content) {
-      throw new HttpsError('failed-precondition', '재개 요청의 본문이 원 캠페인과 다릅니다. 새 requestId로 발송하세요.');
-    }
     resuming = true;
-    await campaignRef.update({ stats, status: 'enqueuing', enqueue_started_at: now.getTime() });
   }
 
   // 재개 시 이미 enqueue된 학생은 제외 — 같은 학생에게 2건 쌓이는 중복 발송 차단.

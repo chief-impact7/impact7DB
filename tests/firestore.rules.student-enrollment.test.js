@@ -67,16 +67,30 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
     await assertSucceeds(setDoc(doc(db, 'students/big1'), big)); // 40 fields — 과거 withinFieldLimit(36)이면 거부됐음
   });
 
-  // message_consent는 서버(promoConsent/optOut080Sync)가 admin SDK로 기록하는 필드.
-  // allowed 목록에 없으면 보유 학생의 모든 클라 편집이 hasOnly 위반으로 조용히 거부된다
-  // (2026-07-04 발견, school_* 사고와 동일 클래스).
-  test('message_consent 보유 학생도 클라 편집 허용', async () => {
+  // message_consent는 서버(promoConsent/optOut080Sync)가 admin SDK로 기록하는 서버 전용 필드.
+  // update는 diff.affectedKeys 기반이라 서버 필드 보유 문서도 클라 편집이 깨지지 않아야 하고
+  // (2026-07-04 사고의 근본 해소), 클라가 이 필드를 직접 쓰는 것은 거부돼야 한다.
+  test('message_consent 보유 학생도 클라 편집 허용 (diff 기반 — 서버 필드 무관)', async () => {
     await seed('s1', { ...base, message_consent: { promo: { agreed: true, at: '2026-07-04' } } });
     const db = authedCtx(env, 't1');
     await assertSucceeds(updateDoc(doc(db, 'students/s1'), { memo: '상담 예정', has_memo: true }));
   });
 
-  test('50개 전 필드 문서(message_consent 포함) 저장 허용 (한도 49→50)', async () => {
+  test('클라가 message_consent를 직접 수정 → 거부 (서버 전용 필드 위조 차단)', async () => {
+    await seed('s1', base);
+    const db = authedCtx(env, 't1');
+    await assertFails(updateDoc(doc(db, 'students/s1'), { message_consent: { promo: { agreed: true } } }));
+  });
+
+  test('클라가 message_consent 포함 문서 생성 → 거부', async () => {
+    const db = authedCtx(env, 't1');
+    await assertFails(setDoc(doc(db, 'students/forged'), {
+      name: '위조', enrollments: [], status: '상담',
+      message_consent: { promo: { agreed: true } },
+    }));
+  });
+
+  test('49개 전 클라 필드 문서 생성 허용 (한도 49)', async () => {
     const db = authedCtx(env, 't1');
     const full = {
       name: '홍길동', level: '중등', grade: 1,
@@ -97,8 +111,13 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
       status_changed_at: '', status_changed_by: '', status_previous: '',
       nameNormalized: 'hgd', studentNumber: 1, studentNumberSource: 'manual', studentNumberIssuedAt: '',
       studentNumberHistory: [],
-      message_consent: { promo: { agreed: true } },
     };
-    await assertSucceeds(setDoc(doc(db, 'students/full1'), full)); // 정확히 50 fields
+    await assertSucceeds(setDoc(doc(db, 'students/full1'), full)); // 정확히 49 fields
+  });
+
+  test('클라가 허용 외 임의 필드 추가 update → 거부 (diff 전환 후에도 주입 차단 유지)', async () => {
+    await seed('s1', base);
+    const db = authedCtx(env, 't1');
+    await assertFails(updateDoc(doc(db, 'students/s1'), { hacked_field: true }));
   });
 });

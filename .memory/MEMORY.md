@@ -44,7 +44,7 @@
 - [⏳ 에코시스템 SSO 보류](project_ecosystem_sso.md) — 구글 1회 로그인. Auth 세션 origin별 격리가 원인. 권장 B(One Tap 자동로그인). 인증 화제 시 재제안 (2026-05-28)
 - [반 이동 안전화](project_class_move_unification.md) — moveClass 공유함수(v1.11.0) + 일괄 반 변경 학기 가드. 학기 ON이면 내신 숨김 정규 복원→합반 누락 해소. applyBulkDays 가드도 완료, DSC 미지원 확정 (2026-05-29)
 - [공용 필드 제거 시 인앱 보조 경로 전수+리뷰 필수](feedback_field_removal_inapp_paths.md) — 영향분석이 본선만 잡으면 보조 upsert(diagnostic)·admin import 스크립트·read 표시에서 깨짐. admin은 rules 우회라 미러 재기록 위험. 배포 전 code review 필수 (2026-05-30 school 미러 제거 사고)
-- [학생 필드 추가 시 rules 동기화 필수](feedback_student_field_rules_sync.md) — students client write 필드는 rules allowed에 넣어야 함. 누락 시 폼 저장 조용히 reject(admin은 우회), withinFieldLimit도 점검 (2026-05-30 school_* 버그)
+- [학생 필드 추가 시 rules 동기화 필수](feedback_student_field_rules_sync.md) — students에 새 필드를 쓰는 주체가 클라든 서버(admin)든 rules allowed+withinFieldLimit 갱신 필수. 누락 시 그 학생의 클라 편집 전부 조용히 reject (2026-05-30 school_*, 2026-07-04 message_consent 재발)
 - [shared 버전 선점 충돌 주의](feedback_shared_version_conflict.md) — 크로스앱 실행 전 shared version·태그 확인, 점유됐으면 다음 번호로. npm link 사고 시 lock 미갱신 배포 깨짐 (2026-05-29)
 - [newtest cloudrun shared(ESM)+배포 함정](feedback_newtest_shared_cjs_deploy.md) — CJS라 @impact7/shared를 동적 import 프리로드+listen 게이팅으로 사용. 배포 시 README 전체명령은 env 키 덮어씀 → 코드만 배포는 env/secret 플래그 생략(상속). 배포처 gws-impact7-cli (2026-05-31)
 - 재원기간 기산일 = 첫 출석일로 변경(deriveTenure v1.12.0, attendances 인자). 상세: [내신/자유학기 파생](project_naesin_free_derivation.md) 재원기간 섹션
@@ -60,4 +60,5 @@
 
 - [codegraph 활용 가이드](reference_codegraph_guide.md) — 인덱스 현황, 도메인별 탐색 쿼리, 주요 모듈 위치
 
+- [App Check 단계 적용 로드맵](project_appcheck_rollout.md) — 클라 init 4/5 완료(DB·tablet 2026-07-05 추가), enforce 전환 전 콘솔 확인 3가지 + 전환 순서 5단계
 - [HR 깔끔한 루트 + 생태계 프록시 워커 + App Check 도메인](project_hr_cleanroot_appcheck_domains.md) — *.impact7.kr 라우팅은 Cloudflare Worker **impact7-proxy**(소스 impact7-hosting/proxy-worker, 구 newtest-proxy 개명; 옛 워커 계정 부재·11개 서브도메인 라이브 200 검증완료, forms 합류). 신규 서브도메인 함정: wrangler.toml custom_domain route 추가 후 첫 wrangler deploy에서 Custom Domain(DNS) 생성이 조용히 누락 가능 → 재배포로 해결, 직후 로컬 DNS negative 캐시로 잠시 000. hr는 SvelteKit base=/hr라 루트서 부팅 불가 → base='' 전용 impact7hr.web.app를 루트 프록시(완료, 검증됨). App Check enforce는 reCAPTCHA 키에 *.impact7.kr 등록 필수(app:MISSING 401 함정) (2026-06-22)

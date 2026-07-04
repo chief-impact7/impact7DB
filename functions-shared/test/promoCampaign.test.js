@@ -11,6 +11,7 @@ const {
   assertAdContentCompliant, resolvePromoScheduledDate,
   handleCreatePromoCampaign,
 } = await import('../src/promoCampaignHandler.js');
+const { recipientFingerprint } = await import('../src/campaignResume.js');
 
 const kst = (y, mo, d, h, mi = 0) => new Date(Date.UTC(y, mo - 1, d, h - 9, mi));
 
@@ -184,6 +185,16 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
       async getAll(...refs) {
         return refs.map((r) => ({ id: r.id, exists: !!docs[`students/${r.id}`], data: () => docs[`students/${r.id}`] }));
       },
+      async runTransaction(fn) {
+        const ops = [];
+        const tx = {
+          get: async (ref) => { const s = await ref.get(); return { exists: s.exists, data: s.data }; },
+          update: (ref, v) => { ops.push(() => ref.update(v)); },
+        };
+        const res = await fn(tx);
+        for (const op of ops) await op();
+        return res;
+      },
       batch() {
         const ops = [];
         return { set: (ref, v) => ops.push([ref, v]), async commit() { for (const [ref, v] of ops) await ref.set(v); } };
@@ -236,7 +247,11 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
       'students/s1': CONSENTED,
       'students/s2': CONSENTED_2,
       // 20분 전 시작된 enqueuing 고착 — lease(10분) 만료로 재개 대상
-      'promo_campaigns/req1': { status: 'enqueuing', stats: { queued: 2 }, content: AD_CONTENT, enqueue_started_at: now.getTime() - 20 * 60 * 1000 },
+      'promo_campaigns/req1': {
+        status: 'enqueuing', stats: { queued: 2 }, content: AD_CONTENT,
+        enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+        request_fingerprint: recipientFingerprint(['s1', 's2'], null),
+      },
       'message_queue/q1': { kind: 'promo_sms', campaign_id: 'req1', student_id: 's1' }, // 이전 호출이 s1까지 enqueue 후 실패
     });
     const res = await handleCreatePromoCampaign(
@@ -270,13 +285,36 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
     const now = kst(2026, 6, 17, 14, 0);
     const db = makeDb({
       'students/s1': CONSENTED,
-      'promo_campaigns/req1': { status: 'enqueuing', stats: {}, content: AD_CONTENT, enqueue_started_at: now.getTime() - 20 * 60 * 1000 },
+      'promo_campaigns/req1': {
+        status: 'enqueuing', stats: {}, content: AD_CONTENT,
+        enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+        request_fingerprint: recipientFingerprint(['s1'], null),
+      },
     });
     await expect(
       handleCreatePromoCampaign(
         { auth, data: { title: '홍보', content: '(광고)다른 문구\n무료거부 080-000-0000', studentIds: ['s1'], requestId: 'req1' } },
         { db, now, loadFriendPhones: async () => new Set() },
       ),
-    ).rejects.toThrow('본문이 원 캠페인과 다릅니다');
+    ).rejects.toThrow('원 캠페인과 다릅니다');
+  });
+
+  it('재개 요청의 대상 구성이 다르면 거부 — phone dedup 귀속 변경으로 인한 중복 발송 차단', async () => {
+    const now = kst(2026, 6, 17, 14, 0);
+    const db = makeDb({
+      'students/s1': CONSENTED,
+      'students/s2': CONSENTED_2,
+      'promo_campaigns/req1': {
+        status: 'enqueuing', stats: {}, content: AD_CONTENT,
+        enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+        request_fingerprint: recipientFingerprint(['s1', 's2'], null), // 원 호출은 s1+s2
+      },
+    });
+    await expect(
+      handleCreatePromoCampaign(
+        { auth, data: { title: '홍보', content: AD_CONTENT, studentIds: ['s2'], requestId: 'req1' } }, // 재개는 s2만
+        { db, now, loadFriendPhones: async () => new Set() },
+      ),
+    ).rejects.toThrow('원 캠페인과 다릅니다');
   });
 });

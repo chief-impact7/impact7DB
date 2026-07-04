@@ -1,7 +1,7 @@
 import { test, before, after, beforeEach, describe } from 'node:test';
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { setDoc, doc, getDoc, getDocs, collection, updateDoc } from 'firebase/firestore';
-import { createTestEnv, unauthedCtx } from './firestore-rules-helpers.js';
+import { createTestEnv, unauthedCtx, authedCtx } from './firestore-rules-helpers.js';
 
 // G03: 공개 토큰 read·직원/계약 get을 제거(getHrPublicToken callable로 이전)했음을 검증.
 // 동시에 비인증 write 완료 경로(온보딩/서명 update)는 유지되어야 한다(HR 제출 플로우 보존).
@@ -68,5 +68,34 @@ describe('HR 공개 read/get 차단 + write 경로 유지 (C-02/C-03/N-02 = G03)
     await seed('onboardingTokens/t2', { status: 'pending', expiresAt: new Date(Date.now() - 1000) });
     const db = unauthedCtx(env);
     await assertFails(updateDoc(doc(db, 'onboardingTokens/t2'), { status: 'completed', staffId: 's1' }));
+  });
+
+  // H-1: 임의 Google 계정(비 impact7 도메인)은 로그인해도 조직 데이터 read·감사로그 create 불가.
+  // 단기직원(외부 도메인 + HR_users role=shortterm)은 계속 허용.
+  const outsider = () => authedCtx(env, 'evil1', 'attacker@gmail.com');
+
+  test('비도메인 계정: entities/contractTemplates read 거부 (H-1)', async () => {
+    await seed('entities/e1', { bizNumber: '123-45-67890' });
+    await seed('contractTemplates/ct1', { body: '계약 조항' });
+    await assertFails(getDoc(doc(outsider(), 'entities/e1')));
+    await assertFails(getDoc(doc(outsider(), 'contractTemplates/ct1')));
+  });
+
+  test('비도메인 계정: auditLog create 거부 (허위 감사기록 주입 차단, H-1)', async () => {
+    await assertFails(setDoc(doc(outsider(), 'auditLog/forged1'), { action: 'fake', at: new Date() }));
+  });
+
+  test('도메인 직원: entities read·auditLog create 허용 유지', async () => {
+    await seed('entities/e1', { bizNumber: '123-45-67890' });
+    const db = authedCtx(env, 'staff1');
+    await assertSucceeds(getDoc(doc(db, 'entities/e1')));
+    await assertSucceeds(setDoc(doc(db, 'auditLog/a1'), { action: 'login', at: new Date() }));
+  });
+
+  test('단기직원(외부 도메인 + role=shortterm): contractTemplates read 허용 유지', async () => {
+    await seed('HR_users/short1', { role: 'shortterm' });
+    await seed('contractTemplates/ct1', { body: '계약 조항' });
+    const db = authedCtx(env, 'short1', 'worker@gmail.com');
+    await assertSucceeds(getDoc(doc(db, 'contractTemplates/ct1')));
   });
 });

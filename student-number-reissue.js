@@ -73,6 +73,7 @@ async function commitStudentNumber(student, studentNumber, source) {
         studentNumber,
         studentNumberSource: source,
         studentNumberIssuedAt: serverTimestamp(),
+        updated_at: serverTimestamp(),
     };
     if (historyEntry) patch.studentNumberHistory = [...(student.studentNumberHistory || []), historyEntry];
 

@@ -6,6 +6,8 @@ vi.mock('firebase-admin/firestore', () => ({
 vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
 
 const { buildBulkRecipients, handleCreateBulkMessage, applyMessageVars } = await import('../src/bulkMessageHandler.js');
+const { recipientFingerprint } = await import('../src/campaignResume.js');
+const bulkFp = (ids) => recipientFingerprint(ids, { recipientField: null, recipientFields: null });
 
 const auth = { token: { email: 'staff@impact7.kr' }, uid: 'u1' };
 
@@ -41,11 +43,29 @@ function makeDb() {
       },
       async update(v) { docs[`${name}/${key}`] = { ...docs[`${name}/${key}`], ...v }; },
     }; },
+    where: (field, _op, val) => ({
+      async get() {
+        const matched = Object.entries(docs)
+          .filter(([k, v]) => k.startsWith(`${name}/`) && v?.[field] === val)
+          .map(([, v]) => ({ data: () => v }));
+        return { docs: matched };
+      },
+    }),
   });
   return {
     _docs: docs,
     collection: col,
     async getAll(...refs) { return refs.map((r) => ({ id: r.id, exists: !!docs[`students/${r.id}`], data: () => docs[`students/${r.id}`] })); },
+    async runTransaction(fn) {
+      const ops = [];
+      const tx = {
+        get: async (ref) => { const s = await ref.get(); return { exists: s.exists, data: s.data }; },
+        update: (ref, v) => { ops.push(() => ref.update(v)); },
+      };
+      const res = await fn(tx);
+      for (const op of ops) await op();
+      return res;
+    },
     batch() { const ops = []; return { set: (ref, v) => ops.push([ref, v]), create: (ref, v) => ops.push([ref, v, true]), async commit() { for (const [ref, v] of ops) await ref.set(v); } }; },
   };
 }
@@ -259,5 +279,68 @@ describe('handleCreateBulkMessage', () => {
     expect([r1, r2].filter((r) => !r.duplicate)).toHaveLength(1);
     expect([r1, r2].filter((r) => r.duplicate)).toHaveLength(1);
     expect(Object.keys(db._docs).filter((k) => k.startsWith('message_queue/'))).toHaveLength(1);
+  });
+
+  it('enqueuing 고착(lease 만료) 재호출 → 이미 enqueue된 학생 제외하고 잔여만 재개', async () => {
+    const now = new Date('2026-07-04T05:00:00Z');
+    db._docs['bulk_campaigns/b-stuck'] = {
+      status: 'enqueuing', stats: {}, content: 'x',
+      enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+      request_fingerprint: bulkFp(['s1', 's2']),
+    };
+    db._docs['message_queue/q1'] = { kind: 'promo', campaign_id: 'b-stuck', student_id: 's1' };
+    const res = await handleCreateBulkMessage(
+      { auth, data: { title: 't', content: 'x', studentIds: ['s1', 's2'], requestId: 'b-stuck' } },
+      { db, now },
+    );
+    expect(res.duplicate).toBeUndefined();
+    const queue = Object.entries(db._docs).filter(([k]) => k.startsWith('message_queue/')).map(([, v]) => v);
+    expect(queue.filter((q) => q.student_id === 's1')).toHaveLength(1);
+    expect(queue.filter((q) => q.student_id === 's2')).toHaveLength(1);
+    expect(db._docs['bulk_campaigns/b-stuck'].status).toBe('queued');
+  });
+
+  it('enqueuing 진행 중(lease 유효) 재호출 → duplicate 단락 (더블클릭 race 차단)', async () => {
+    const now = new Date('2026-07-04T05:00:00Z');
+    db._docs['bulk_campaigns/b-live'] = {
+      status: 'enqueuing', stats: {}, content: 'x',
+      enqueue_started_at: now.getTime() - 5000,
+    };
+    const res = await handleCreateBulkMessage(
+      { auth, data: { title: 't', content: 'x', studentIds: ['s1'], requestId: 'b-live' } },
+      { db, now },
+    );
+    expect(res.duplicate).toBe(true);
+    expect(Object.keys(db._docs).some((k) => k.startsWith('message_queue/'))).toBe(false);
+  });
+
+  it('재개 요청의 본문이 다르면 거부', async () => {
+    const now = new Date('2026-07-04T05:00:00Z');
+    db._docs['bulk_campaigns/b-diff'] = {
+      status: 'enqueuing', stats: {}, content: '원래 본문',
+      enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+      request_fingerprint: bulkFp(['s1']),
+    };
+    await expect(
+      handleCreateBulkMessage(
+        { auth, data: { title: 't', content: '다른 본문', studentIds: ['s1'], requestId: 'b-diff' } },
+        { db, now },
+      ),
+    ).rejects.toThrow('원 캠페인과 다릅니다');
+  });
+
+  it('재개 요청의 대상/수신필드 구성이 다르면 거부 — 공유번호 dedup 귀속 변경 차단', async () => {
+    const now = new Date('2026-07-04T05:00:00Z');
+    db._docs['bulk_campaigns/b-fp'] = {
+      status: 'enqueuing', stats: {}, content: 'x',
+      enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+      request_fingerprint: bulkFp(['s1', 's2']),
+    };
+    await expect(
+      handleCreateBulkMessage(
+        { auth, data: { title: 't', content: 'x', studentIds: ['s2'], requestId: 'b-fp' } },
+        { db, now },
+      ),
+    ).rejects.toThrow('원 캠페인과 다릅니다');
   });
 });

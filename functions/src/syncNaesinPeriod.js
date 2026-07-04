@@ -65,7 +65,8 @@ export async function syncNaesinPeriod(db, csKey, before, after) {
         const chunk = targets.slice(i, i + BATCH_CHUNK_SIZE);
         const batch = db.batch();
         for (const t of chunk) {
-            batch.update(t.ref, { enrollments: t.enrollments });
+            // updated_at 갱신 — 클라 증분 동기화(updated_at 델타)가 내신기간 변경을 놓치지 않게 한다.
+            batch.update(t.ref, { enrollments: t.enrollments, updated_at: FieldValue.serverTimestamp() });
             const histRef = db.collection('history_logs').doc();
             batch.set(histRef, {
                 doc_id: t.id,

@@ -180,6 +180,7 @@ async function markSent(db, ref, data, result) {
     status: 'sent',
     attempt_count: (data.attempt_count ?? 0) + 1,
     next_attempt_at: null,
+    sent_attempt_at: FieldValue.delete(), // 발송 시도 종결 — 크래시 마커 해제
     last_error_code: null,
     purge_after: new Date(Date.now() + RETENTION_MS), // 종결 → 보존기간 후 평문 PII purge
     updated_at: FieldValue.serverTimestamp(),
@@ -199,6 +200,11 @@ async function markRetry(db, ref, nextAttempt, statusCode) {
     status: 'failed_retryable',
     attempt_count: nextAttempt,
     next_attempt_at: new Date(Date.now() + backoff),
+    // provider가 실패를 반환한 경우 — 재시도는 새 시도로 취급해 마커 해제.
+    // 한계: NetworkError(응답 유실)는 솔라피가 접수했을 수도 있어 재시도가 중복 발송이 될 수
+    // 있으나, 이를 전부 수동 검토로 돌리면 일시 네트워크 오류마다 발송이 멈춘다 — at-least-once
+    // 트레이드오프로 수용. 근본 해소는 솔라피 멱등키 지원 확인 후.
+    sent_attempt_at: FieldValue.delete(),
     last_error_code: statusCode ?? null,
     updated_at: FieldValue.serverTimestamp(),
   });
@@ -210,6 +216,7 @@ async function markPermanent(db, ref, data, nextAttempt, fields) {
     status: 'failed_permanent',
     attempt_count: nextAttempt,
     next_attempt_at: null,
+    sent_attempt_at: FieldValue.delete(),
     delivery_check_at: null, // awaiting에서 영구실패로 종결 시 폴링 잔여 필드 정리(다른 경로엔 무해)
     last_error_code: fields.statusCode ?? null,
     purge_after: new Date(Date.now() + RETENTION_MS), // 종결 → 보존기간 후 평문 PII purge
@@ -251,6 +258,10 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
     }
     if (data.scheduled_date) scheduledSendAt = parseKstToDate(data.scheduled_date);
   }
+
+  // 발송 직전 마커 — 이 이후 크래시하면 솔라피 접수 여부가 불확실하다. sweeper가 리스 회수 시
+  // 이 마커를 보고 자동 재발송 대신 수동 검토(failed_permanent)로 종결해 중복 발송을 차단한다.
+  await ref.update({ sent_attempt_at: FieldValue.serverTimestamp() });
 
   // provider는 예외를 던지지 않지만, 방어적 catch 경로는 일시적 미상 오류로 재시도 취급한다.
   let result;
@@ -306,6 +317,7 @@ async function markAwaitingDeliveryResult(db, ref, data, result, checkAt) {
   await ref.update({
     status: 'awaiting_delivery_result',
     attempt_count: (data.attempt_count ?? 0) + 1,
+    sent_attempt_at: FieldValue.delete(), // 접수 확인됨 — 크래시 마커 해제(이후는 폴링이 확정)
     scheduled_date: data.scheduled_date ?? null, // 야간 보정값 영속화 — 폴링·문자전환이 참조
     solapi_group_id: result.groupId ?? null,
     solapi_message_id: result.messageId ?? null,
@@ -552,6 +564,19 @@ export async function runRetrySweep(deps = {}) {
     // 실제 status로 CAS — 그 사이 다른 워커가 종결/회수했으면 null로 건너뛴다.
     const claimed = await claimForProcessing(db, doc.ref, data.status);
     if (!claimed) continue; // 다른 워커가 선점
+    // 크래시 고착 회수분 중 발송 직전 마커(sent_attempt_at)가 남은 doc은 솔라피 접수 여부가
+    // 불확실하다 — 자동 재발송하면 학부모가 같은 메시지를 2번 받을 수 있어 수동 검토로 종결.
+    // (마커 없는 processing = provider 호출 전 크래시 → 안전하게 자동 재발송)
+    if (data.status === 'processing' && claimed.sent_attempt_at) {
+      await markPermanent(db, doc.ref, claimed, (claimed.attempt_count ?? 0) + 1, {
+        statusCode: 'crash_after_dispatch',
+        message: '발송 접수 후 결과 기록 전 중단 — 중복 발송 방지를 위해 자동 재발송하지 않음. 발송실패 관리에서 솔라피 발송내역 확인 후 수동 재발송.',
+        channel: null,
+      });
+      await fireResultCallback(notifyResultCallback, doc.ref, claimed, { status: 'failed', channel: null });
+      processed += 1;
+      continue;
+    }
     await dispatch(db, doc.ref, claimed, sender, notifyResultCallback, now);
     processed += 1;
   }

@@ -314,6 +314,26 @@ describe('runRetrySweep', () => {
     expect(doc.attempt_count).toBe(1); // 클레임이 attempt를 올리지 않아 이중 카운트되지 않음
   });
 
+  it('크래시 고착 + 발송 직전 마커(sent_attempt_at) → 자동 재발송 대신 수동 검토 종결(중복 발송 차단)', async () => {
+    const now = new Date('2026-06-12T10:00:00Z');
+    const expiredLease = new Date(now.getTime() - 1000);
+    const db = makeDb({
+      stuck: baseQueueDoc({
+        status: 'processing', attempt_count: 0, next_attempt_at: expiredLease,
+        sent_attempt_at: new Date(now.getTime() - 20 * 60_000), // 솔라피 호출 직후·markSent 전 크래시
+      }),
+    });
+    const sender = vi.fn();
+
+    const res = await runRetrySweep({ db, sender, now });
+
+    expect(res.processed).toBe(1);
+    expect(sender).not.toHaveBeenCalled(); // 재발송 안 함 — 접수됐다면 이미 학부모에게 나감
+    const doc = db._queue.get('stuck');
+    expect(doc.status).toBe('failed_permanent');
+    expect(doc.last_error_code).toBe('crash_after_dispatch');
+  });
+
   it('리스 미만료 processing doc은 건드리지 않는다', async () => {
     const now = new Date('2026-06-12T10:00:00Z');
     const future = new Date(now.getTime() + 60_000);
