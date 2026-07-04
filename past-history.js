@@ -21,6 +21,7 @@ import { state } from './store.js';
 import { db } from './firebase-config.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { staffLabel } from '@impact7/shared/staff-label';
+import { teacherDisplayName } from '@impact7/shared/teacher-label';
 import { ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { groupLeaveCycles } from '@impact7/shared/leave-cycles';
 import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
@@ -164,7 +165,7 @@ async function lookupCurrentTeacher(code) {
         const fallback = staffLabel(email) || email;
         const tSnap = await getDoc(doc(db, 'teachers', email));
         if (!tSnap.exists()) return fallback;
-        return (tSnap.data() || {}).display_name || fallback;
+        return teacherDisplayName((tSnap.data() || {}).display_name) || fallback;
     } catch (e) {
         console.warn('[past-history] lookupCurrentTeacher failed for', code, e);
         return null;

@@ -15,6 +15,7 @@ import { currentSchool, SCHOOL_FIELD, studentFullLabel } from '@impact7/shared/s
 import { staffLabel } from '@impact7/shared/staff-label';
 import { esc as _sharedEsc, escAttr as _sharedEscAttr } from '@impact7/shared/html-escape';
 import { branchFromClassNumber as _branchFromClassNumber, branchFromStudent as _branchFromStudent, branchesFromStudent as _branchesFromStudent } from '@impact7/shared/branch';
+import { normalizeClassCode } from '@impact7/shared/class-code';
 import {
     enrollmentClassParts,
     selectableClassCodes,
@@ -4170,7 +4171,7 @@ async function runUpsertFromRows(rows, sourceName) {
     const dayWarnings = [];
     for (const [docId, s] of Object.entries(studentMap)) {
         for (const e of s.enrollments) {
-            const ls = (e.level_symbol || '').toUpperCase();
+            const ls = normalizeClassCode(e.level_symbol);
             if (ls !== 'KS' && e.class_type !== '내신' && Array.isArray(e.day) && e.day.length === 1) {
                 dayWarnings.push(`${s.name} (${enrollmentCode(e)}): ${e.day.join(',')}`);
             }
@@ -4884,7 +4885,7 @@ window.applyBulkStatus = async () => {
 // ---------------------------------------------------------------------------
 window.applyBulkClass = async () => {
     if (pastSemesterBlocked()) return;
-    const raw = document.getElementById('bulk-class-code').value.trim().toUpperCase();
+    const raw = normalizeClassCode(document.getElementById('bulk-class-code').value);
     if (!raw) { showToast('반코드를 입력해주세요. (예: HX103)', 'warn'); return; }
     if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
 
@@ -4904,7 +4905,7 @@ window.applyBulkClass = async () => {
         if (!ENROLLABLE_STATUSES.has(s.status)) return;
         (s.enrollments || []).forEach(e => {
             if ((e.class_type || '정규') === '정규' && e.semester === sem) {
-                const code = enrollmentCode(e).toUpperCase();  // 입력 raw도 toUpperCase — 대소문자 무관 비교
+                const code = normalizeClassCode(enrollmentCode(e));  // 입력 raw도 정규화 — 대소문자 무관 비교
                 if (code) regularCodes.add(code);
             }
         });
