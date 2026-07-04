@@ -1,4 +1,5 @@
 import { getFirestore } from 'firebase-admin/firestore';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { maskPhone } from './phoneMask.js';
 
@@ -12,6 +13,7 @@ const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
 const CHANNELS = ['kakao', 'sms', 'lms'];
 const MAX_FAILURES = 30;
 const SCAN_LIMIT = 500;
+const RANGED_SCAN_LIMIT = 2000; // 기간 지정 통계는 상한을 넉넉히(학원 규모에서 사실상 전수)
 
 // 표시용 마스킹. 저장(recipient_masked)·표시 포맷이 공용 maskPhone으로 통일됐으므로
 // purge 후 남는 recipient_masked를 그대로 쓰고, 없으면 평문 번호를 즉시 마스킹한다(재마스킹 없음).
@@ -40,8 +42,19 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
     .limit(MAX_FAILURES)
     .get();
 
-  const logsPromise = db.collection('message_logs')
-    .orderBy('created_at', 'desc').limit(SCAN_LIMIT).get();
+  // 기간 필터(선택) — fromMs/toMs epoch ms. 발송 통계(sent/failed/채널)에만 적용되고
+  // 큐 상태 카운트·실패 목록은 현재 스냅샷이므로 기간과 무관하다.
+  const fromMs = Number(request.data?.fromMs);
+  const toMs = Number(request.data?.toMs);
+  if (Number.isFinite(fromMs) && Number.isFinite(toMs) && fromMs > toMs) {
+    throw new HttpsError('invalid-argument', '기간이 올바르지 않습니다 (from > to).');
+  }
+  const hasRange = Number.isFinite(fromMs) || Number.isFinite(toMs);
+  let logsQuery = db.collection('message_logs').orderBy('created_at', 'desc');
+  if (Number.isFinite(fromMs)) logsQuery = logsQuery.where('created_at', '>=', new Date(fromMs));
+  if (Number.isFinite(toMs)) logsQuery = logsQuery.where('created_at', '<=', new Date(toMs));
+  const logScanLimit = hasRange ? RANGED_SCAN_LIMIT : SCAN_LIMIT;
+  const logsPromise = logsQuery.limit(logScanLimit).get();
 
   const [queueCountEntries, archivedAgg, failuresSnap, logSnap] = await Promise.all([
     Promise.all(queueCountPromises),
@@ -90,6 +103,8 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
     channelCounts,
     sentCount,
     failedCount,
+    // 스캔 상한 도달 = 기간 내 로그가 더 있음(통계가 하한값) — UI가 안내한다.
+    logLimitReached: (logSnap.size ?? logSnap.docs?.length ?? 0) >= logScanLimit,
     failures,
     generatedAt: Date.now(),
   };

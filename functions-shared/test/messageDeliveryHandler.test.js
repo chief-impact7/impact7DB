@@ -15,6 +15,8 @@ function makeFirestore({ queue = [], logs = [] } = {}) {
     const match = () => rows.filter(r => filters.every(([f, op, v]) => {
       if (op === '==') return r[f] === v;
       if (op === 'in') return Array.isArray(v) && v.includes(r[f]);
+      if (op === '>=') return r[f] >= v;
+      if (op === '<=') return r[f] <= v;
       return true;
     }));
     return {
@@ -78,6 +80,32 @@ describe('handleGetMessageDeliveryStatus', () => {
     const serialized = JSON.stringify(res);
     expect(serialized).not.toContain('01055556666');
     expect(serialized).not.toContain('01077778888');
+  });
+
+  it('filters log stats by fromMs/toMs range (queue counts stay snapshot)', async () => {
+    const day = (n) => new Date(Date.UTC(2026, 6, n)); // 2026-07-0n
+    const firestore = makeFirestore({
+      queue: [{ id: 'q1', status: 'pending', recipient_phone: '01011112222' }],
+      logs: [
+        { id: 'l1', status: 'sent', channel: 'kakao', created_at: day(1) },
+        { id: 'l2', status: 'sent', channel: 'sms', created_at: day(3) },
+        { id: 'l3', status: 'failed', channel: 'kakao', created_at: day(4) },
+      ],
+    });
+    const res = await handleGetMessageDeliveryStatus(
+      { auth, data: { fromMs: day(3).getTime(), toMs: day(4).getTime() } }, { firestore },
+    );
+    expect(res.sentCount).toBe(1);   // l2만 기간 내 sent
+    expect(res.failedCount).toBe(1); // l3
+    expect(res.channelCounts).toMatchObject({ kakao: 0, sms: 1 });
+    expect(res.queueCounts.pending).toBe(1); // 큐 스냅샷은 기간 무관
+    expect(res.logLimitReached).toBe(false);
+  });
+
+  it('rejects an inverted range (from > to)', async () => {
+    await expect(handleGetMessageDeliveryStatus(
+      { auth, data: { fromMs: 2000, toMs: 1000 } }, { firestore: makeFirestore() },
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 
   it('uses the stored recipient_masked after PII purge (no plaintext phone field)', async () => {
