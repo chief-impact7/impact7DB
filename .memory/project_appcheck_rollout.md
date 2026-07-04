@@ -1,6 +1,10 @@
-# App Check 단계 적용 로드맵 (2026-07-05)
+# App Check — 도입 보류 (사용자 결정 2026-07-05)
 
-**현황:** 클라 초기화 완료 4/5 — DSC·HR(기존), **DB·tablet(2026-07-05 추가)**. exam 미적용(자체 서버 Vertex 직접이라 callable 미사용, Firestore 직접 write는 rules로 방어). 서버 callable은 전부 `enforceAppCheck: false`(무강제 — 토큰 발급·검증률 축적 단계).
+**⛔ 결정: App Check 클라 init을 확대하지 않는다.** reCAPTCHA Enterprise 스크립트 로드·토큰 교환이 각 앱의 **초기 반응속도를 체감되게 깎는데**, 서버 callable이 전부 `enforceAppCheck: false`라 보안 이득이 0이기 때문(사용자가 과거에 이미 같은 이유로 도입하지 않기로 결정했음). 2026-07-05 DB·tablet에 잠시 추가했다가 **같은 날 제거**(DB 커밋 참조). **AI/에이전트는 App Check 도입을 재제안하지 말 것 — 사용자가 먼저 요청할 때만.**
+
+**현황:** 클라 초기화 DSC·HR만 잔존(기존부터 있던 것 — 제거 여부는 사용자 판단 대기). DB·exam·tablet 미적용. 서버 전부 무강제.
+
+아래 로드맵은 **사용자가 나중에 도입을 원할 경우에만** 유효한 참고 자료다.
 
 **공용 reCAPTCHA Enterprise 키:** `6LcS4ywtAAAAADd8BBiFo_Fd4XXiXT1Uf3gHGxYl` (4개 앱 공용)
 

@@ -36,23 +36,8 @@ if (import.meta.env.DEV) {
 const app = initializeApp(firebaseConfig);
 const dataApp = initializeApp(firebaseConfig, 'db');
 
-// App Check(reCAPTCHA Enterprise) — DSC/HR과 동일 키·패턴. 서버 callable이 enforce off라
-// 지금은 토큰 발급·검증률 축적 단계이며, 실패해도 기능 영향 없음(soft-fail).
-// enforce 전환 전 reCAPTCHA 키에 이 앱 도메인(impact7db.web.app, db.impact7.kr) 등록 필수.
-(async () => {
-    try {
-        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-            self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-        }
-        const { initializeAppCheck, ReCaptchaEnterpriseProvider } = await import('firebase/app-check');
-        initializeAppCheck(dataApp, {
-            provider: new ReCaptchaEnterpriseProvider('6LcS4ywtAAAAADd8BBiFo_Fd4XXiXT1Uf3gHGxYl'),
-            isTokenAutoRefreshEnabled: true,
-        });
-    } catch (err) {
-        console.warn('[app-check] 초기화 실패(무강제 단계 — 기능 영향 없음):', err);
-    }
-})();
+// App Check 클라 init은 넣지 않는다(2026-07-05 사용자 결정) — reCAPTCHA 스크립트 로드가
+// 초기 반응속도를 깎는데 서버가 enforce off라 보안 이득이 없다. 도입 시 .memory/project_appcheck_rollout.md 참조.
 
 export const auth = getAuth(app);
 
