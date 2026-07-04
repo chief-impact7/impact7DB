@@ -20,3 +20,18 @@ describe('channelInvite', () => {
     expect(channelInviteSuffix(undefined)).toBe('');
   });
 });
+
+describe('loadChannelInviteText', () => {
+  const dbWith = (data) => ({ collection: () => ({ doc: () => ({ get: async () => ({ data: () => data }) }) }) });
+
+  it('운영자 설정(channel_invite)이 있으면 그것을 쓴다', async () => {
+    const { loadChannelInviteText } = await import('../src/channelInvite.js');
+    expect(await loadChannelInviteText(dbWith({ channel_invite: '커스텀 안내 문구' }))).toBe('커스텀 안내 문구');
+  });
+
+  it('설정이 없거나 조회 실패면 기본 문구', async () => {
+    const { loadChannelInviteText } = await import('../src/channelInvite.js');
+    expect(await loadChannelInviteText(dbWith({}))).toContain('talk.impact7.kr/kakao');
+    expect(await loadChannelInviteText({ collection: () => { throw new Error('down'); } })).toContain('talk.impact7.kr/kakao');
+  });
+});

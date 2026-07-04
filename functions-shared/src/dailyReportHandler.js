@@ -3,7 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { resolveRecipientPhone } from './recipientPhone.js';
 import { isChannelFriend } from './channelFriendsHandler.js';
-import { resolveChannelAddUrl, channelInviteSuffix } from './channelInvite.js';
+import { loadChannelInviteText } from './channelInvite.js';
 import { resolveAdScheduledAt } from './promoSchedule.js';
 
 // 일일 학습 리포트 발송. 학생별 수동 발송(직원 권한).
@@ -25,7 +25,6 @@ export async function handleSendDailyReport(request, deps = {}) {
 
   const joined = await isChannelFriend(db, phone);
   const createdBy = request.auth?.token?.email ?? null;
-  const channelUrl = resolveChannelAddUrl(deps);
 
   const base = {
     status: 'pending',
@@ -46,9 +45,9 @@ export async function handleSendDailyReport(request, deps = {}) {
     if (scheduledDate) payload.scheduled_date = scheduledDate;
     channel = 'report';
   } else {
-    // 비친구(채널 미가입)에겐 원본 내용을 문자로 보내되, 채널 가입 유도를 함께 붙인다
-    // (링크 미설정 시 유도는 생략하고 원본만 발송).
-    const suffix = channelInviteSuffix(channelUrl);
+    // 비친구(채널 미가입)에겐 원본 내용을 문자로 보내되, 채널 가입 유도를 함께 붙인다.
+    // 문구는 운영자 설정(message_settings) 우선, 없으면 기본(링크 미설정이면 생략하고 원본만).
+    const suffix = await loadChannelInviteText(db, deps);
     payload = { ...base, kind: 'direct', content: suffix ? `${content}\n\n${suffix}` : content };
     channel = 'invite_sms';
   }

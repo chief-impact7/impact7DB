@@ -18,3 +18,16 @@ export function channelInviteSuffix(channelUrl) {
   if (!channelUrl) return '';
   return `카카오톡 채널 미가입으로 문자 안내드립니다. 자유로운 소통은 채널 가입으로 가능합니다. → ${channelUrl}`;
 }
+
+// 운영자가 메시지센터에서 수정한 문구(message_settings/global.channel_invite)가 있으면 그것을,
+// 없거나 조회 실패면 위 기본 문구를 쓴다. 자동 fallback과 수동 삽입 버튼이 같은 설정을 공유한다.
+export async function loadChannelInviteText(db, overrides = {}) {
+  try {
+    const snap = await db.collection('message_settings').doc('global').get();
+    const custom = String(snap.data()?.channel_invite ?? '').trim();
+    if (custom) return custom;
+  } catch {
+    // 설정 조회 실패는 발송을 막을 사유가 아니다 — 기본 문구로 진행.
+  }
+  return channelInviteSuffix(resolveChannelAddUrl(overrides));
+}

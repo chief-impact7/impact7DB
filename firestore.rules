@@ -1357,12 +1357,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // 메시지 공용 설정(학원 꼬리말 등) — 전 직원 공유. 개인정보 없는 문안 전용.
+    // 메시지 공용 설정(학원 꼬리말·채널 가입 안내 문구) — 전 직원 공유. 개인정보 없는 문안 전용.
     match /message_settings/{id} {
       allow read: if isAuthorized();
       allow write: if isAuthorized()
-        && request.resource.data.keys().hasOnly(['sms_footer', 'updated_by', 'updated_at'])
-        && request.resource.data.sms_footer is string && request.resource.data.sms_footer.size() <= 300;
+        && request.resource.data.keys().hasOnly(['sms_footer', 'channel_invite', 'updated_by', 'updated_at'])
+        && request.resource.data.get('sms_footer', '') is string && request.resource.data.get('sms_footer', '').size() <= 300
+        && request.resource.data.get('channel_invite', '') is string && request.resource.data.get('channel_invite', '').size() <= 300;
     }
 
     // 메시지 템플릿(자주 쓰는 문구) — 전 직원 공유 저장소. 개인정보 없는 문안만 담는다.
