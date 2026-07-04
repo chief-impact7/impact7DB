@@ -73,7 +73,7 @@ describe('handleSendDailyReport', () => {
     expect(res).toMatchObject({ channel: 'invite_sms', joined: false });
     const c = Object.values(db._store.message_queue)[0].content;
     expect(c).toContain('리포트'); // 원본
-    expect(c).toContain('kakao.impact7.kr'); // + 기본 채널 링크 유도
+    expect(c).toContain('talk.impact7.kr/kakao'); // + 기본 채널 링크 유도
   });
 
   it('requestId 중복은 멱등 처리', async () => {

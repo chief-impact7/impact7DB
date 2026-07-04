@@ -40,6 +40,7 @@ import {
   handleHrDeleteFile,
 } from './src/hrUploadHandler.js';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './src/solapiSecrets.js';
+import { runOptOut080Sync } from './src/optOut080Sync.js';
 import { computeLabelUpdate } from './src/studentLabelSync.js';
 import { handleStaffAutoClockout } from './src/staffAutoClockoutHandler.js';
 import { handleStaffAutoClockin } from './src/staffAutoClockinHandler.js';
@@ -180,6 +181,12 @@ export const sendDailyReport = onCall({ enforceAppCheck: false }, handleSendDail
 export const promoConsentReconfirm = onSchedule(
   { schedule: 'every day 09:00', timeZone: 'Asia/Seoul' },
   () => runPromoConsentReconfirm(),
+);
+
+// 솔라피 080 수신거부 명단 → 학생 동의 기록(철회) 동기화 — 6시간 주기.
+export const optOut080Sweeper = onSchedule(
+  { schedule: 'every 6 hours', timeZone: 'Asia/Seoul', secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
+  () => runOptOut080Sync(),
 );
 
 // 관리자 발송 현황 화면(T6)의 수동 재시도 — 실패 큐 doc을 failed_retryable로 되돌려 sweeper 재처리.

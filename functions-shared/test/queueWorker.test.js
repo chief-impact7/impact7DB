@@ -545,7 +545,7 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(smsDoc.status).toBe('pending');
     // sms_suffix 미지정 → 기본 채널 가입 유도가 자동으로 덧붙는다(원문 유지).
     expect(smsDoc.content).toContain('[진단평가] 6/25(수) 오후 2시');
-    expect(smsDoc.content).toContain('kakao.impact7.kr');
+    expect(smsDoc.content).toContain('talk.impact7.kr/kakao');
     expect(smsDoc.result_callback).toMatchObject({ url: 'https://example.com/cb', applicationId: 'app_bms' });
     expect(db._queue.get('pb_nf').status).toBe('converted_to_sms');
     expect(db._queue.get('pb_nf').last_error_code).toBe('3120');
