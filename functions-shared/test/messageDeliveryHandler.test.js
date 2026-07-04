@@ -54,7 +54,7 @@ describe('handleGetMessageDeliveryStatus', () => {
       queue: [
         { id: 'q1', status: 'pending', recipient_phone: '01011112222' },
         { id: 'q2', status: 'sent', recipient_phone: '01033334444' },
-        { id: 'q3', status: 'failed_permanent', student_id: 's3', recipient_phone: '01055556666', last_error_code: '4000', updated_at: { toMillis: () => 1700000000000 } },
+        { id: 'q3', status: 'failed_permanent', student_id: 's3', recipient_phone: '01055556666', last_error_code: '4000', fallback_text: '홍길동 학생이 등원하였습니다.', updated_at: { toMillis: () => 1700000000000 } },
         { id: 'q4', status: 'failed_retryable', student_id: 's4', recipient_phone: '01077778888' },
       ],
       logs: [
@@ -72,7 +72,7 @@ describe('handleGetMessageDeliveryStatus', () => {
 
     expect(res.failures).toHaveLength(2);
     const f = res.failures.find(x => x.id === 'q3');
-    expect(f).toMatchObject({ studentId: 's3', status: 'failed_permanent', lastErrorCode: '4000', recipientMasked: '***-****-6666', updatedAt: 1700000000000 });
+    expect(f).toMatchObject({ studentId: 's3', status: 'failed_permanent', lastErrorCode: '4000', recipientMasked: '***-****-6666', updatedAt: 1700000000000, content: '홍길동 학생이 등원하였습니다.' });
 
     // 평문 번호가 응답 어디에도 없어야 한다.
     const serialized = JSON.stringify(res);
@@ -91,5 +91,6 @@ describe('handleGetMessageDeliveryStatus', () => {
     const res = await handleGetMessageDeliveryStatus({ auth, data: {} }, { firestore });
     const f = res.failures.find(x => x.id === 'q9');
     expect(f.recipientMasked).toBe('***-****-6666'); // 저장값 그대로 표시
+    expect(f.content).toBeNull(); // purge로 본문(fallback_text)도 삭제된 상태
   });
 });

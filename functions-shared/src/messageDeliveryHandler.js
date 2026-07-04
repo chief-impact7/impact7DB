@@ -64,6 +64,8 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
       lastErrorCode: d.last_error_code ?? null,
       recipientMasked: recipientMaskedOf(d),
       updatedAt: d.updated_at?.toMillis?.() ?? null,
+      // 실패한 메시지의 본문 — 알림톡은 fallback_text(렌더된 문안)에 있다. purge 후엔 null.
+      content: d.content || d.fallback_text || null,
       // 보존기간 경과(평문 번호 purge) — 재발송 불가, 클라가 버튼을 비활성화한다.
       piiPurged: d.pii_purged_at != null,
     });
