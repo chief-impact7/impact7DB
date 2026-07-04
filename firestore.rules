@@ -1355,6 +1355,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 메시지 템플릿(자주 쓰는 문구) — 전 직원 공유 저장소. 개인정보 없는 문안만 담는다.
+    match /message_templates/{id} {
+      allow read, delete: if isAuthorized();
+      allow create, update: if isAuthorized()
+        && request.resource.data.keys().hasOnly(['title', 'content', 'updated_by', 'updated_at'])
+        && request.resource.data.title is string && request.resource.data.title.size() <= 100
+        && request.resource.data.content is string && request.resource.data.content.size() <= 5000;
+    }
+
     // 홍보(광고) 캠페인 — 서버(createPromoCampaign callable) 전용 쓰기.
     // 광고 발송 이력·대상은 민감하므로 read는 원장(isDirector)만.
     match /promo_campaigns/{id} {
