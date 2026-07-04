@@ -23,7 +23,6 @@ import { handleSendParentNotice } from './src/parentNoticeHandler.js';
 import { handleGetStudentMessages } from './src/studentMessagesHandler.js';
 import { handleSendDirectMessage } from './src/directMessageHandler.js';
 import { handleCreateBulkMessage } from './src/bulkMessageHandler.js';
-import { handleSyncChannelFriends, handleGetChannelFriends } from './src/channelFriendsHandler.js';
 import { handleSendDailyReport } from './src/dailyReportHandler.js';
 import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery, handleManageMessageFailure } from './src/messageRetryHandler.js';
@@ -176,10 +175,6 @@ export const sendDirectMessage = onCall({ enforceAppCheck: false }, handleSendDi
 
 // 정보성 대용량 발송 — 메시지 센터 ②블록. 직원 권한. message_queue(kind=promo, targeting=I) 배치 enqueue.
 export const createBulkMessage = onCall({ enforceAppCheck: false }, handleCreateBulkMessage);
-
-// 카카오 채널 친구목록 업로드 동기화 / 조회 — 직원 권한.
-export const syncChannelFriends = onCall({ enforceAppCheck: false }, handleSyncChannelFriends);
-export const getChannelFriends = onCall({ enforceAppCheck: false }, handleGetChannelFriends);
 
 // 일일 학습 리포트 발송 — 직원 권한. 친구→정보형 BMS, 비친구→가입안내 SMS.
 export const sendDailyReport = onCall({ enforceAppCheck: false }, handleSendDailyReport);
