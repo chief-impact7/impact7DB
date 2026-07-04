@@ -31,6 +31,7 @@ import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii
 import { runAbsenceNoticeSweep, handleSendAbsenceNotice, syncAbsenceNoticeDeliveryStatus } from './src/absenceNoticeSweep.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
 import { handleSubmitEmployeeContractSignature } from './src/employeeContractSignatureHandler.js';
+import { handleSubmitContractSignature, handleSubmitSalaryAgreementSignature } from './src/contractSignatureHandler.js';
 import {
   handleHrUploadStaffDocument,
   handleHrUploadContract,
@@ -93,6 +94,13 @@ export const getHrPublicToken = onCall({ enforceAppCheck: false }, handleGetHrPu
 // 계약 서명+status, staff.status='active', 토큰 소진을 단일 트랜잭션으로 원자 갱신한다.
 // 경로 ID는 토큰 doc에서만 도출(호출자 입력 무시). assertAuthorizedStaff 미사용(의도).
 export const submitEmployeeContractSignature = onCall({ enforceAppCheck: false }, handleSubmitEmployeeContractSignature);
+
+// 공개(비로그인) 강사계약·급여약정 서명 제출 — PUBLIC·토큰 게이트. submitEmployeeContractSignature와
+// 동일 패턴으로, 비인증 client가 staff/{id}/contracts/{id}에 직접 write하던 서명을 서버로 이전.
+// rules는 최상위 키만 검증해 signatures.director 덮어쓰기·SVG XSS를 못 막으므로, 서버가 raster
+// 서명만 검증·write하고 토큰을 소진한다. 경로 ID는 토큰 doc에서만 도출(호출자 입력 무시).
+export const submitContractSignature = onCall({ enforceAppCheck: false }, handleSubmitContractSignature);
+export const submitSalaryAgreementSignature = onCall({ enforceAppCheck: false }, handleSubmitSalaryAgreementSignature);
 
 // H-01: HR 파일 접근을 전부 callable 경유로 옮기는 서버 골격(ADDITIVE — storage.rules는 후속 단계).
 // 업로드는 base64를 받아 서버가 크기(<20MB)·MIME(PDF/이미지, 매직넘버 재검증)을 검증한 뒤

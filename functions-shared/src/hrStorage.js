@@ -43,6 +43,32 @@ export function assertSafePathId(value, label) {
   return id;
 }
 
+// 서명 이미지 검증 — SignaturePad가 만드는 raster PNG/JPEG base64 data URL만 허용한다.
+// image/svg+xml은 렌더 시 스크립트 실행(저장형 XSS) 위험이 있어 raster만 허용한다.
+// 서명은 계약 doc에 inline 저장되므로 Firestore 1MiB 문서 한도 아래(다른 필드 여유분 포함)로
+// 크기를 제한하고, 오버사이즈 페이로드는 정규식 스캔 전에 먼저 거른다.
+const SIGNATURE_DATA_URL = /^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/;
+const MAX_SIGNATURE_LEN = 900_000;
+export function assertSignatureDataUrl(value) {
+  const url = textOf(value);
+  if (url.length > MAX_SIGNATURE_LEN || !SIGNATURE_DATA_URL.test(url)) {
+    throw new HttpsError('invalid-argument', '서명 이미지가 올바르지 않습니다.');
+  }
+  return url;
+}
+
+// 서명 PDF URL 검증 — uploadSignedContractFile(writeFileWithDownloadUrl)가 만든 Firebase
+// Storage 다운로드 URL만 허용한다. 비인증 서명자가 javascript:·data:·외부 피싱 URL을 계약
+// doc에 심어 나중에 관리자가 여는 것을 차단. PDF 생성 실패 시 빈 값은 허용(서명만 저장).
+const STORAGE_DOWNLOAD_URL_PREFIX = 'https://firebasestorage.googleapis.com/';
+export function assertStorageUrlOrEmpty(value) {
+  const url = textOf(value);
+  if (url && !url.startsWith(STORAGE_DOWNLOAD_URL_PREFIX)) {
+    throw new HttpsError('invalid-argument', '서명 문서 URL이 올바르지 않습니다.');
+  }
+  return url;
+}
+
 function startsWith(buf, magic) {
   if (buf.length < magic.length) return false;
   return buf.subarray(0, magic.length).equals(magic);

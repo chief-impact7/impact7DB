@@ -1,7 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { loadValidToken } from './hrPublicTokenHandler.js';
-import { assertSafePathId } from './hrStorage.js';
+import { assertSafePathId, assertSignatureDataUrl } from './hrStorage.js';
 
 // Task rules45 #4: 공개(비로그인) 근로계약서 서명 제출을 서버 callable로 이전.
 // 기존 클라 플로우는 비인증 사용자가 staff/{id}.status='active'를 직접 write 했으나
@@ -20,16 +20,9 @@ export async function handleSubmitEmployeeContractSignature(request, deps = {}) 
   const data = request?.data ?? {};
 
   const tokenId = textOf(data.tokenId);
-  const signatureUrl = textOf(data.signatureUrl);
+  const signatureUrl = assertSignatureDataUrl(data.signatureUrl);
   const deviceInfo = textOf(data.deviceInfo);
   const claimedContractId = textOf(data.contractId);
-
-  // 서명 이미지는 SignaturePad가 만드는 PNG/JPEG base64 data URL만 허용한다.
-  // image/svg+xml은 렌더 시 스크립트 실행(저장형 XSS) 위험이 있어 raster만 허용하고, 길이도 제한한다.
-  if (!/^data:image\/(png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(signatureUrl)
-    || signatureUrl.length > 2_000_000) {
-    throw new HttpsError('invalid-argument', '서명 이미지가 올바르지 않습니다.');
-  }
 
   // 1) 토큰 검증(존재·미사용·미만료). tokenId 누락/오류는 loadValidToken이 throw.
   const { token } = await loadValidToken(db, TOKEN_TYPE, tokenId);
