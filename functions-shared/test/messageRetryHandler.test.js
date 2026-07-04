@@ -13,6 +13,7 @@ const auth = { uid: 'u1', token: { email: 'director@impact7.kr' } };
 function makeFirestore({ queueDoc, role = 'owner' } = {}) {
   const updates = [];
   const deletes = [];
+  const sets = [];
   const queueRef = { id: 'q1', _updates: updates };
   const firestore = {
     collection(name) {
@@ -27,9 +28,11 @@ function makeFirestore({ queueDoc, role = 'owner' } = {}) {
       },
       update(_ref, data) { updates.push(data); },
       delete(ref) { deletes.push(ref); },
+      set(_ref, data) { sets.push(data); },
     }),
     _updates: updates,
     _deletes: deletes,
+    _sets: sets,
   };
   return firestore;
 }
@@ -182,19 +185,34 @@ describe('handleManageMessageFailure', () => {
     )).rejects.toMatchObject({ code: 'failed-precondition' });
   });
 
-  it('delete: requires director — staff is denied', async () => {
-    await expect(handleManageMessageFailure(
-      { auth: staffAuth, data: { queueId: 'q1', action: 'delete' } },
-      { firestore: makeFirestore({ queueDoc: failedDoc(), role: 'staff' }) },
-    )).rejects.toMatchObject({ code: 'permission-denied' });
-  });
-
-  it('delete: director can delete a failed or archived doc', async () => {
-    const firestore = makeFirestore({ queueDoc: { status: 'archived' } });
-    const res = await handleManageMessageFailure({ auth, data: { queueId: 'q1', action: 'delete' } }, { firestore });
+  it('delete: staff can delete — 감사 기록(누가·누구에게·언제)을 남기고 doc을 지운다', async () => {
+    const firestore = makeFirestore({
+      queueDoc: { status: 'failed_permanent', kind: 'attendance', student_id: 's1', recipient_phone: '01011112222', last_error_code: '3058' },
+    });
+    const res = await handleManageMessageFailure({ auth: staffAuth, data: { queueId: 'q1', action: 'delete' } }, { firestore });
     expect(res).toMatchObject({ ok: true, action: 'delete' });
     expect(firestore._deletes).toHaveLength(1);
     expect(firestore._updates).toHaveLength(0);
+    expect(firestore._sets).toHaveLength(1);
+    expect(firestore._sets[0]).toMatchObject({
+      queue_id: 'q1',
+      student_id: 's1',
+      kind: 'attendance',
+      status_at_delete: 'failed_permanent',
+      last_error_code: '3058',
+      deleted_by: 'teacher@impact7.kr',
+    });
+    expect(firestore._sets[0].deleted_at).toBe('<serverTimestamp>');
+    // 감사 기록에도 평문 번호는 남기지 않는다.
+    expect(JSON.stringify(firestore._sets[0])).not.toContain('01011112222');
+    expect(firestore._sets[0].recipient_masked).toMatch(/\*/);
+  });
+
+  it('delete: archived doc도 삭제 가능', async () => {
+    const firestore = makeFirestore({ queueDoc: { status: 'archived' } });
+    const res = await handleManageMessageFailure({ auth: staffAuth, data: { queueId: 'q1', action: 'delete' } }, { firestore });
+    expect(res).toMatchObject({ ok: true, action: 'delete' });
+    expect(firestore._deletes).toHaveLength(1);
   });
 
   it('delete: rejects a sent doc', async () => {

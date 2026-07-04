@@ -1,6 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff, assertDirector } from './authGuards.js';
+import { maskPhone } from './phoneMask.js';
 
 // 관리자 수동 재시도. 클라는 message_queue를 직접 쓸 수 없으므로(rules: write if false)
 // 이 callable이 서버 검증 후 doc을 failed_retryable로 되돌려 sweeper(T3)가 재처리하게 한다.
@@ -63,8 +64,9 @@ export async function handleRetryMessageDelivery(request, deps = {}) {
 }
 
 // 실패 항목 정리 — 목록에 무한 누적되는 실패 doc을 보관(숨김) 또는 삭제한다.
-// archive: status를 'archived'로 바꿔 실패 목록 쿼리(status in failed_*)에서 제외. 직원 가능.
-// delete: doc 자체를 삭제. message_logs가 남으므로 발송 이력은 소실되지 않는다. 원장만.
+// archive: status를 'archived'로 바꿔 실패 목록 쿼리(status in failed_*)에서 제외.
+// delete: doc 자체를 삭제하되 message_deletions에 감사 기록(누가·누구에게 간 것을·언제)을 남긴다.
+// 둘 다 직원 가능 — 감사 기록이 있으므로 원장 승격 불필요(2026-07-04 사용자 결정).
 const MANAGE_ACTIONS = new Set(['archive', 'delete']);
 // failed_permanent만 허용: failed_retryable은 message_logs 미기록(삭제=이력 소실)·purge_after
 // 미설정(보관=평문 번호 영구 잔존)이며, 아직 sweeper가 재처리 중인 상태라 정리 대상이 아니다.
@@ -75,8 +77,7 @@ export async function handleManageMessageFailure(request, deps = {}) {
   const db = deps.firestore || getFirestore();
   const action = String(request.data?.action ?? '');
   if (!MANAGE_ACTIONS.has(action)) throw new HttpsError('invalid-argument', 'action은 archive 또는 delete여야 합니다.');
-  if (action === 'delete') await assertDirector(request.auth, db);
-  else assertAuthorizedStaff(request.auth);
+  assertAuthorizedStaff(request.auth);
 
   const queueId = String(request.data?.queueId ?? '').trim();
   if (!queueId) throw new HttpsError('invalid-argument', 'queueId가 필요합니다.');
@@ -93,6 +94,17 @@ export async function handleManageMessageFailure(request, deps = {}) {
       throw new HttpsError('failed-precondition', '보관/삭제할 수 없는 상태입니다.');
     }
     if (action === 'delete') {
+      // 서버 전용 감사 기록(rules상 클라 접근 없음) — 번호는 마스킹만 남긴다.
+      tx.set(db.collection('message_deletions').doc(queueId), {
+        queue_id: queueId,
+        student_id: d.student_id ?? null,
+        kind: d.kind ?? null,
+        status_at_delete: d.status,
+        recipient_masked: d.recipient_masked ?? maskPhone(d.recipient_phone),
+        last_error_code: d.last_error_code ?? null,
+        deleted_by: email,
+        deleted_at: FieldValue.serverTimestamp(),
+      });
       tx.delete(ref);
       return { ok: true, queueId, action };
     }
