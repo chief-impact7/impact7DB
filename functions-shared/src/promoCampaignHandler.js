@@ -139,6 +139,8 @@ export function resolvePromoScheduledDate(scheduledAt, now) {
 export async function handleCreatePromoCampaign(request, deps = {}) {
   const db = deps.db ?? getFirestore();
   const now = deps.now ?? new Date();
+  // 전 직원 발송 허용(2026-07-04 사용자 결정) — DSC 교사 개별 홍보 플로우 유지.
+  // 원장 전용 격상 시 DSC UI role 게이팅 + 원장 HR_users 등록 확인이 선행돼야 한다.
   assertAuthorizedStaff(request.auth);
 
   const data = request.data ?? {};
@@ -171,17 +173,9 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   const scheduledDate = resolvePromoScheduledDate(data.scheduledAt, now);
   const nightDeferred = data.scheduledAt == null && !!resolveAdScheduledAt(now);
 
-  // 멱등: requestId 지정 시 같은 id로 캠페인 doc 선점 — 더블클릭/재시도 중복 발송 방지.
   const campaignRef = data.requestId
     ? db.collection('promo_campaigns').doc(String(data.requestId))
     : db.collection('promo_campaigns').doc();
-  if (data.requestId) {
-    const existing = await campaignRef.get();
-    if (existing.exists) {
-      const ex = existing.data() ?? {};
-      return { campaignId: campaignRef.id, duplicate: true, stats: ex.stats ?? null, scheduledDate: ex.scheduled_date ?? null };
-    }
-  }
 
   const refs = studentIds.map((id) => db.collection('students').doc(id));
   const loadFriendPhones = deps.loadFriendPhones ?? defaultLoadFriendPhones;
@@ -191,25 +185,57 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   const { docs, stats } = buildPromoRecipients(entries, { campaignId: campaignRef.id, content, buttons, imageId, targeting, scheduledDate, recipientField: data.recipientField, friendPhones });
   stats.skipped_missing = studentIds.length - entries.length; // 존재하지 않는 학생 id
 
-  // 캠페인 doc을 먼저 'enqueuing'으로 기록 → 배치 도중 실패해도 이력·부분상태가 남아 추적 가능.
-  await campaignRef.set({
-    title,
-    content,
-    targeting,
-    message_type: imageId ? 'CTI' : 'CTA',
-    image_id: imageId,
-    buttons,
-    scheduled_date: scheduledDate ?? null,
-    status: 'enqueuing',
-    stats,
-    created_by: request.auth?.uid ?? null,
-    created_at: FieldValue.serverTimestamp(),
-  });
+  // 멱등: create()로 원자 선점(bulkMessageHandler와 동일 관용구) — 같은 requestId 동시
+  // 요청(더블클릭)에서 정확히 하나만 enqueue한다. 캠페인 doc을 먼저 'enqueuing'으로 기록해
+  // 배치 도중 실패해도 이력·부분상태가 남는다.
+  // 이미 존재하는 캠페인: 완료(queued/scheduled)면 duplicate 단락. 'enqueuing' 고착이면 이전
+  // 호출이 배치 도중 죽었을 수 있으나 아직 진행 중일 수도 있으므로, enqueue_started_at이
+  // RESUME_LEASE_MS 이상 지난 경우에만 잔여 재개 — duplicate 단락으로 잔여 대상이 영영
+  // 미발송되는 것과, 진행 중 호출과의 경쟁으로 중복 발송되는 것을 동시에 차단한다.
+  const RESUME_LEASE_MS = 10 * 60 * 1000;
+  let resuming = false;
+  try {
+    await campaignRef.create({
+      title,
+      content,
+      targeting,
+      message_type: imageId ? 'CTI' : 'CTA',
+      image_id: imageId,
+      buttons,
+      scheduled_date: scheduledDate ?? null,
+      status: 'enqueuing',
+      stats,
+      created_by: request.auth?.uid ?? null,
+      created_at: FieldValue.serverTimestamp(),
+      enqueue_started_at: now.getTime(),
+    });
+  } catch (e) {
+    if (!(e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message)))) throw e;
+    const ex = (await campaignRef.get()).data() ?? {};
+    const leaseExpired = now.getTime() - (ex.enqueue_started_at ?? 0) >= RESUME_LEASE_MS;
+    if (ex.status !== 'enqueuing' || !leaseExpired) {
+      return { campaignId: campaignRef.id, duplicate: true, stats: ex.stats ?? null, scheduledDate: ex.scheduled_date ?? null };
+    }
+    // 재개는 동일 본문 요청만 허용 — 한 캠페인 안에서 수신자별로 다른 문구가 섞이는 것 차단.
+    if (ex.content !== content) {
+      throw new HttpsError('failed-precondition', '재개 요청의 본문이 원 캠페인과 다릅니다. 새 requestId로 발송하세요.');
+    }
+    resuming = true;
+    await campaignRef.update({ stats, status: 'enqueuing', enqueue_started_at: now.getTime() });
+  }
+
+  // 재개 시 이미 enqueue된 학생은 제외 — 같은 학생에게 2건 쌓이는 중복 발송 차단.
+  let pendingDocs = docs;
+  if (resuming) {
+    const queuedSnap = await db.collection('message_queue').where('campaign_id', '==', campaignRef.id).get();
+    const already = new Set(queuedSnap.docs.map((d) => d.data().student_id));
+    pendingDocs = docs.filter((d) => !already.has(d.student_id));
+  }
 
   // 큐 배치 enqueue (400건씩).
   let batch = db.batch();
   let inBatch = 0;
-  for (const doc of docs) {
+  for (const doc of pendingDocs) {
     const qref = db.collection('message_queue').doc();
     batch.set(qref, { ...doc, created_at: FieldValue.serverTimestamp() });
     if ((inBatch += 1) >= BATCH_LIMIT) {
@@ -220,7 +246,9 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   }
   if (inBatch > 0) await batch.commit();
 
-  await campaignRef.update({ status: scheduledDate ? 'scheduled' : 'queued' });
+  // 재개 시 예약시각이 재계산됐을 수 있어(야간 보정) scheduled_date를 status와 함께 갱신 —
+  // scheduled_date=null인데 status='scheduled'가 되는 필드 간 모순 차단.
+  await campaignRef.update({ status: scheduledDate ? 'scheduled' : 'queued', scheduled_date: scheduledDate ?? null });
 
   return { campaignId: campaignRef.id, scheduledDate: scheduledDate ?? null, nightDeferred, stats };
 }

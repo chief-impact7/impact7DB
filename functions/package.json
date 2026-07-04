@@ -7,7 +7,9 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --exclude '**/*.integration.test.js'",
+    "test:integration": "firebase emulators:exec --only firestore --project demo-impact7 \"vitest run integration\"",
     "test:watch": "vitest",
     "serve": "firebase emulators:start --only functions,firestore",
     "deploy": "firebase deploy --only functions:leave-request --project impact7db",

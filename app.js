@@ -633,12 +633,38 @@ async function promoteEnrollPending() {
     }
 }
 
+// 스케줄 전환/백필 공통 커밋: 200건 청킹 + 청크 커밋 성공분만 로컬 반영(M-04 패턴).
+// 매 페이지 로드마다 실행되는 경로라 단일 batch(500 op 한도)로는 대량 전환 시 전체 거부되고,
+// 커밋 전 로컬 mutate는 실패 시 UI만 전환된 것처럼 보이는 무음 불일치를 만든다.
+async function commitChunkedTransitions(tag, items) {
+    if (items.length === 0) return 0;
+    const BATCH_SIZE = 200;
+    let committed = 0;
+    try {
+        for (let i = 0; i < items.length; i += BATCH_SIZE) {
+            const chunk = items.slice(i, i + BATCH_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(it => {
+                batch.update(doc(db, 'students', it.id), it.update);
+                if (it.log) batch.set(doc(collection(db, 'history_logs')), it.log);
+            });
+            await batch.commit();
+            chunk.forEach(it => it.applyLocal());
+            committed += chunk.length;
+        }
+        console.log(`[${tag}] ${committed}건 처리 완료`);
+    } catch (err) {
+        console.error(`[${tag}] 실패: ${committed}/${items.length}건 처리됨`, err);
+        showToast(`자동 처리(${tag}) 일부 실패: ${committed}/${items.length}건 반영됨. 새로고침 후에도 반복되면 관리자 확인 필요.`, 'error');
+    }
+    return committed;
+}
+
 async function backfillStudentNumbers() {
     const targets = allStudents.filter(s => ENROLLABLE_STATUSES.has(s.status) && !s.studentNumber);
     if (targets.length === 0) return;
     const assigned = new Set(allStudents.filter(s => s.studentNumber).map(s => studentNumberIdentityKey(s.name, s.studentNumber)));
-    const batch = writeBatch(db);
-    const pending = [];
+    const items = [];
     const duplicates = [];
     for (const s of targets) {
         const { studentNumber, source } = deriveStudentNumber(s);
@@ -647,25 +673,20 @@ async function backfillStudentNumbers() {
         if (!key) continue;
         if (assigned.has(key)) { duplicates.push(`${s.name} (#${studentNumber})`); continue; }
         assigned.add(key);
-        batch.update(doc(db, 'students', s.id), {
-            studentNumber,
-            studentNumberSource: source,
-            studentNumberIssuedAt: serverTimestamp(),
-        });
-        pending.push({ s, studentNumber, source });
-    }
-    if (pending.length > 0) {
-        try {
-            await batch.commit();
-            for (const { s, studentNumber, source } of pending) {
+        items.push({
+            id: s.id,
+            update: {
+                studentNumber,
+                studentNumberSource: source,
+                studentNumberIssuedAt: serverTimestamp(),
+            },
+            applyLocal: () => {
                 s.studentNumber = studentNumber;
                 s.studentNumberSource = source;
-            }
-            console.log(`[backfillStudentNumbers] ${pending.length}명 학생번호 발급`);
-        } catch (err) {
-            console.error('[backfillStudentNumbers] 실패:', err);
-        }
+            },
+        });
     }
+    await commitChunkedTransitions('backfillStudentNumbers', items);
     if (duplicates.length > 0) {
         const msg = `이름+학생번호 중복 발생 — 수동 확인 필요: ${duplicates.join(', ')}`;
         console.warn('[backfillStudentNumbers]', msg);
@@ -686,107 +707,109 @@ function alertStudentNumberDuplicate(name, studentNumber, duplicate) {
 // 휴원 날짜 기반 자동 전환: 시작일 전이면 재원 유지, 시작일 도래 시 휴원 전환
 async function handleScheduledLeaves() {
     const today = getTodayDateStr();
-    const batch = writeBatch(db);
-    let count = 0;
+    const items = [];
 
     for (const s of allStudents) {
         // 1) 휴원 상태인데 pause_start_date가 아직 안 됐으면 → 재원으로 복원
         if ((s.status === '실휴원' || s.status === '가휴원') && s.pause_start_date && s.pause_start_date > today) {
             const beforeStatus = s.status;
-            batch.update(doc(db, 'students', s.id), {
-                status: '재원',
-                scheduled_leave_status: s.status,
-                updated_at: serverTimestamp(),
+            items.push({
+                id: s.id,
+                update: {
+                    status: '재원',
+                    scheduled_leave_status: beforeStatus,
+                    updated_at: serverTimestamp(),
+                },
+                log: {
+                    doc_id: s.id, change_type: 'UPDATE',
+                    before: beforeStatus, after: '재원',
+                    google_login_id: 'auto-transition', timestamp: serverTimestamp(),
+                },
+                applyLocal: () => {
+                    s.scheduled_leave_status = beforeStatus;
+                    s.status = '재원';
+                },
             });
-            batch.set(doc(collection(db, 'history_logs')), {
-                doc_id: s.id, change_type: 'UPDATE',
-                before: beforeStatus, after: '재원',
-                google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-            });
-            s.scheduled_leave_status = s.status;
-            s.status = '재원';
-            count++;
         }
         // 2) 재원인데 예약된 휴원 시작일이 도래했으면 → 휴원으로 전환
         else if (s.status === '재원' && s.scheduled_leave_status && s.pause_start_date && s.pause_start_date <= today) {
             const leaveStatus = s.scheduled_leave_status;
-            batch.update(doc(db, 'students', s.id), {
-                status: leaveStatus,
-                scheduled_leave_status: deleteField(),
-                updated_at: serverTimestamp(),
+            items.push({
+                id: s.id,
+                update: {
+                    status: leaveStatus,
+                    scheduled_leave_status: deleteField(),
+                    updated_at: serverTimestamp(),
+                },
+                log: {
+                    doc_id: s.id, change_type: 'UPDATE',
+                    before: '재원', after: leaveStatus,
+                    google_login_id: 'auto-transition', timestamp: serverTimestamp(),
+                },
+                applyLocal: () => {
+                    s.status = leaveStatus;
+                    delete s.scheduled_leave_status;
+                },
             });
-            batch.set(doc(collection(db, 'history_logs')), {
-                doc_id: s.id, change_type: 'UPDATE',
-                before: '재원', after: leaveStatus,
-                google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-            });
-            s.status = leaveStatus;
-            delete s.scheduled_leave_status;
-            count++;
         }
     }
 
-    if (count === 0) return;
-    try {
-        await batch.commit();
-        console.log(`[handleScheduledLeaves] ${count}명 휴원 상태 전환 완료`);
-    } catch (err) {
-        console.error('[handleScheduledLeaves] 전환 실패:', err);
-    }
+    await commitChunkedTransitions('handleScheduledLeaves', items);
 }
 
 // 퇴원 날짜 기반 자동 전환: 퇴원일 전이면 기존 상태 유지, 퇴원일 도래 시 퇴원 전환
 async function handleScheduledWithdrawals() {
     const today = getTodayDateStr();
-    const batch = writeBatch(db);
-    let count = 0;
+    const items = [];
 
     for (const s of allStudents) {
         // 1) 퇴원 상태인데 withdrawal_date가 아직 안 됐으면 → 이전 상태로 복원
         if (s.status === '퇴원' && s.withdrawal_date && s.withdrawal_date > today) {
             const prevStatus = s.pre_withdrawal_status || '재원';
-            batch.update(doc(db, 'students', s.id), {
-                status: prevStatus,
-                pre_withdrawal_status: prevStatus,
-                updated_at: serverTimestamp(),
+            items.push({
+                id: s.id,
+                update: {
+                    status: prevStatus,
+                    pre_withdrawal_status: prevStatus,
+                    updated_at: serverTimestamp(),
+                },
+                log: {
+                    doc_id: s.id, change_type: 'UPDATE',
+                    before: '퇴원', after: prevStatus,
+                    google_login_id: 'auto-transition', timestamp: serverTimestamp(),
+                },
+                applyLocal: () => {
+                    s.pre_withdrawal_status = prevStatus;
+                    s.status = prevStatus;
+                },
             });
-            batch.set(doc(collection(db, 'history_logs')), {
-                doc_id: s.id, change_type: 'UPDATE',
-                before: '퇴원', after: prevStatus,
-                google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-            });
-            s.pre_withdrawal_status = prevStatus;
-            s.status = prevStatus;
-            count++;
         }
         // 2) 예약된 퇴원일이 도래했으면 → 퇴원으로 전환
         else if (s.pre_withdrawal_status && s.withdrawal_date && s.withdrawal_date <= today) {
             const beforeStatus = s.status;
-            batch.update(doc(db, 'students', s.id), {
-                status: '퇴원',
-                enrollments: [],
-                pre_withdrawal_status: deleteField(),
-                updated_at: serverTimestamp(),
+            items.push({
+                id: s.id,
+                update: {
+                    status: '퇴원',
+                    enrollments: [],
+                    pre_withdrawal_status: deleteField(),
+                    updated_at: serverTimestamp(),
+                },
+                log: {
+                    doc_id: s.id, change_type: 'UPDATE',
+                    before: beforeStatus, after: '퇴원',
+                    google_login_id: 'auto-transition', timestamp: serverTimestamp(),
+                },
+                applyLocal: () => {
+                    s.status = '퇴원';
+                    s.enrollments = [];
+                    delete s.pre_withdrawal_status;
+                },
             });
-            batch.set(doc(collection(db, 'history_logs')), {
-                doc_id: s.id, change_type: 'UPDATE',
-                before: beforeStatus, after: '퇴원',
-                google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-            });
-            s.status = '퇴원';
-            s.enrollments = [];
-            delete s.pre_withdrawal_status;
-            count++;
         }
     }
 
-    if (count === 0) return;
-    try {
-        await batch.commit();
-        console.log(`[handleScheduledWithdrawals] ${count}명 퇴원 상태 전환 완료`);
-    } catch (err) {
-        console.error('[handleScheduledWithdrawals] 전환 실패:', err);
-    }
+    await commitChunkedTransitions('handleScheduledWithdrawals', items);
 }
 
 // 특강 end_date 만료 자동 종강 전환: 만료된 특강 enrollment를 제거하고,
@@ -794,8 +817,7 @@ async function handleScheduledWithdrawals() {
 async function handleScheduledSpecialClassEnds() {
     const today = getTodayDateStr();
     const isExpired = (e) => e.class_type === '특강' && e.end_date && /^\d{4}-/.test(e.end_date) && e.end_date < today;
-    const batch = writeBatch(db);
-    let count = 0;
+    const items = [];
 
     for (const s of allStudents) {
         if (!ENROLLABLE_STATUSES.has(s.status)) continue;
@@ -810,32 +832,29 @@ async function handleScheduledSpecialClassEnds() {
             updateData.status = hasRegular ? '퇴원' : '종강';
         }
 
-        batch.update(doc(db, 'students', s.id), updateData);
-        batch.set(doc(collection(db, 'history_logs')), {
-            doc_id: s.id,
-            change_type: remaining.length === 0 ? 'WITHDRAW' : 'UPDATE',
-            before: expired.map(e => `특강 ${enrollmentCode(e)}`).join(', '),
-            after: remaining.length === 0
-                ? `특강 만료 → ${updateData.status}`
-                : `특강 만료 (나머지 ${remaining.length}개 수업 유지)`,
-            google_login_id: 'auto-transition',
-            timestamp: serverTimestamp(),
+        items.push({
+            id: s.id,
+            update: updateData,
+            log: {
+                doc_id: s.id,
+                change_type: remaining.length === 0 ? 'WITHDRAW' : 'UPDATE',
+                before: expired.map(e => `특강 ${enrollmentCode(e)}`).join(', '),
+                after: remaining.length === 0
+                    ? `특강 만료 → ${updateData.status}`
+                    : `특강 만료 (나머지 ${remaining.length}개 수업 유지)`,
+                google_login_id: 'auto-transition',
+                timestamp: serverTimestamp(),
+            },
+            applyLocal: () => {
+                s.enrollments = remaining;
+                if (updateData.status) {
+                    s.status = updateData.status;
+                }
+            },
         });
-
-        s.enrollments = remaining;
-        if (updateData.status) {
-            s.status = updateData.status;
-        }
-        count++;
     }
 
-    if (count === 0) return;
-    try {
-        await batch.commit();
-        console.log(`[handleScheduledSpecialClassEnds] ${count}명 특강 만료 처리`);
-    } catch (err) {
-        console.error('[handleScheduledSpecialClassEnds] 실패:', err);
-    }
+    await commitChunkedTransitions('handleScheduledSpecialClassEnds', items);
 }
 
 // ---------------------------------------------------------------------------
@@ -2536,9 +2555,13 @@ window.submitNewStudent = async () => {
     saveBtn.disabled = true;
     saveBtn.textContent = '저장 중...';
 
+    // 커밋 중 사용자가 다른 학생을 클릭하면 전역 currentStudentId가 바뀔 수 있어
+    // 저장 대상을 캡처해 둔다 — 저장 후 로컬 병합이 엉뚱한 학생을 오염시키지 않게(race 가드).
+    let savedDocId = null;
     try {
         if (isEditMode) {
             const docId = currentStudentId;
+            savedDocId = docId;
             const oldStudent = allStudents.find(s => s.id === docId) || {};
 
             // studentNumber가 없으면 이번 저장에서 함께 발급.
@@ -2638,6 +2661,8 @@ window.submitNewStudent = async () => {
             }
         } else {
             const docId = makeDocId(name, parentPhone1);
+            savedDocId = docId;
+            const selectionBeforeCommit = currentStudentId;
             const existingStudent = allStudents.find(s => s.id === docId);
 
             if (existingStudent) {
@@ -2712,6 +2737,9 @@ window.submitNewStudent = async () => {
                     });
                 }
                 await batch.commit();
+                // 로컬 병합도 실제 저장본(mergeData)으로 — studentData만 쓰면
+                // enrollments/status/branch가 로컬 캐시에 반영되지 않는다.
+                studentData = mergeData;
             } else {
                 // 완전 신규 — 폼에 입력한 수업이 있으면 그 status·enrollments·branch로 생성,
                 // 없으면 기존처럼 '상담' 상태로만 생성.
@@ -2750,22 +2778,31 @@ window.submitNewStudent = async () => {
                 });
                 await batch.commit();
             }
-            currentStudentId = docId;
-            storeUpdate({ currentStudentId: docId });
+            // 커밋 중 다른 학생을 선택했으면 덮어쓰지 않는다 — 아래 재선택 가드와 한 쌍(race 가드)
+            if (currentStudentId === selectionBeforeCommit) {
+                currentStudentId = docId;
+                storeUpdate({ currentStudentId: docId });
+            }
         }
 
-        _pendingEnrollments = [];
-        markFormClean();
-        hideForm();
+        // 커밋 중 다른 학생 폼을 새로 열었을 수 있다 — 그 폼의 입력·dirty 상태를 지우지 않는다
+        if (currentStudentId === savedDocId) {
+            _pendingEnrollments = [];
+            markFormClean();
+            hideForm();
+        }
 
         // 저장 성공 후 UI 갱신 — 로컬 캐시 업데이트 (전체 재조회 없이)
         try {
-            _upsertLocalStudent(currentStudentId, studentData);
+            _upsertLocalStudent(savedDocId, studentData);
             _refreshUIAfterMutation();
-            const savedStudent = allStudents.find(s => s.id === currentStudentId);
-            if (savedStudent) {
-                const targetEl = document.querySelector(`.list-item[data-id="${CSS.escape(currentStudentId)}"]`);
-                selectStudent(savedStudent.id, savedStudent, targetEl);
+            // 커밋 중 다른 학생으로 이동했으면 재선택하지 않는다(사용자 선택 존중)
+            if (currentStudentId === savedDocId) {
+                const savedStudent = allStudents.find(s => s.id === savedDocId);
+                if (savedStudent) {
+                    const targetEl = document.querySelector(`.list-item[data-id="${CSS.escape(savedDocId)}"]`);
+                    selectStudent(savedStudent.id, savedStudent, targetEl);
+                }
             }
         } catch (refreshErr) {
             console.warn('[POST-SAVE REFRESH]', refreshErr);
@@ -4921,6 +4958,7 @@ window.applyBulkClass = async () => {
 
     const ids = [...selectedStudentIds];
     const newBranch = branchFromClassNumber(classNumber);
+    let committed = 0, total = 0;
     try {
         const changes = [];
         const skipped = [];
@@ -4955,6 +4993,7 @@ window.applyBulkClass = async () => {
             return;
         }
 
+        total = changes.length;
         const BATCH_SIZE = 200;
         for (let i = 0; i < changes.length; i += BATCH_SIZE) {
             const chunk = changes.slice(i, i + BATCH_SIZE);
@@ -4969,15 +5008,16 @@ window.applyBulkClass = async () => {
                 });
             });
             await batch.commit();
+            // 커밋된 청크만 로컬 반영 — 이후 청크가 실패해도 성공분과 로컬 상태가 일관(M-04).
+            chunk.forEach(c => {
+                const s = allStudents.find(s => s.id === c.id);
+                if (s) {
+                    s.enrollments = c.enrollments;
+                    if (newBranch) s.branch = newBranch;
+                }
+            });
+            committed += chunk.length;
         }
-
-        changes.forEach(c => {
-            const s = allStudents.find(s => s.id === c.id);
-            if (s) {
-                s.enrollments = c.enrollments;
-                if (newBranch) s.branch = newBranch;
-            }
-        });
 
         document.getElementById('bulk-class-code').value = '';
         const sdEl = document.getElementById('bulk-class-startdate');
@@ -4992,7 +5032,13 @@ window.applyBulkClass = async () => {
         showToast(msg, hasIssues ? 'warn' : 'success', { sticky: hasIssues });
     } catch (e) {
         console.error('[BULK CLASS ERROR]', e);
-        showToast('일괄 반 변경 실패: ' + e.message, 'error');
+        buildClassFilterSidebar();
+        applyFilterAndRender();
+        updateBulkEditSummary();
+        const msg = total > 0
+            ? `일괄 반 변경 일부 실패: ${committed}/${total}명 처리됨. ${e.message}`
+            : `일괄 반 변경 실패: ${e.message}`;
+        showToast(msg, 'error');
     }
 };
 
@@ -6099,19 +6145,23 @@ window.approveLeaveRequest = async (docId, studentId) => {
 };
 
 window.cancelLeaveRequest = async (docId, studentId) => {
+    if (_inflightLeaveActions.has(docId)) return;
     if (!confirm('요청을 취소하시겠습니까?')) return;
+    _inflightLeaveActions.add(docId);
     try {
         await updateDoc(doc(db, 'leave_requests', docId), {
             status: 'cancelled',
             updated_at: serverTimestamp()
         });
         leaveRequests = leaveRequests.filter(lr => lr.docId !== docId);
-        storeUpdate({ leaveRequests });
+        storeUpdate({ leaveRequests: [...leaveRequests] });
         const stu = allStudents.find(s => s.id === studentId);
         if (stu) window.selectStudent(studentId, stu);
     } catch (err) {
         showToast('취소 실패: ' + err.message, 'error');
         console.error(err);
+    } finally {
+        _inflightLeaveActions.delete(docId);
     }
 };
 

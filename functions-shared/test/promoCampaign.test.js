@@ -4,7 +4,7 @@ vi.mock('firebase-admin/firestore', () => ({
   getFirestore: vi.fn(),
   FieldValue: { serverTimestamp: () => '<ts>', delete: () => '<delete>' },
 }));
-vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
+vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn(), assertDirector: vi.fn() }));
 
 const {
   buildPromoQueueDoc, buildPromoRecipients,
@@ -163,8 +163,20 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
           async get() { return { exists: !!docs[`${name}/${key}`], data: () => docs[`${name}/${key}`] }; },
           async set(v) { docs[`${name}/${key}`] = v; },
           async update(v) { docs[`${name}/${key}`] = { ...docs[`${name}/${key}`], ...v }; },
+          async create(v) {
+            if (docs[`${name}/${key}`]) { const err = new Error('already exists'); err.code = 6; throw err; }
+            docs[`${name}/${key}`] = v;
+          },
         };
       },
+      where: (field, _op, val) => ({
+        async get() {
+          const matched = Object.entries(docs)
+            .filter(([k, v]) => k.startsWith(`${name}/`) && v?.[field] === val)
+            .map(([, v]) => ({ data: () => v }));
+          return { docs: matched };
+        },
+      }),
     });
     return {
       _docs: docs,
@@ -199,5 +211,72 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
         { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
       ),
     ).resolves.toMatchObject({ campaignId: expect.any(String) });
+  });
+
+  const AD_CONTENT = '(광고)이벤트 안내\n무료거부 080-000-0000';
+  const CONSENTED = { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } };
+  const CONSENTED_2 = { parent_phone_1: '01033334444', message_consent: { promo: { optedIn: true } } };
+
+  it('requestId 재호출: queued 완료 캠페인 → duplicate 반환(재발송 없음)', async () => {
+    const db = makeDb({
+      'students/s1': CONSENTED,
+      'promo_campaigns/req1': { status: 'queued', stats: { queued: 1 }, scheduled_date: null },
+    });
+    const res = await handleCreatePromoCampaign(
+      { auth, data: { title: '홍보', content: AD_CONTENT, studentIds: ['s1'], requestId: 'req1' } },
+      { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
+    );
+    expect(res.duplicate).toBe(true);
+    expect(Object.keys(db._docs).some((k) => k.startsWith('message_queue/'))).toBe(false);
+  });
+
+  it('requestId 재호출: enqueuing 고착(lease 만료) 캠페인 → 이미 enqueue된 학생 제외하고 잔여만 재개', async () => {
+    const now = kst(2026, 6, 17, 14, 0);
+    const db = makeDb({
+      'students/s1': CONSENTED,
+      'students/s2': CONSENTED_2,
+      // 20분 전 시작된 enqueuing 고착 — lease(10분) 만료로 재개 대상
+      'promo_campaigns/req1': { status: 'enqueuing', stats: { queued: 2 }, content: AD_CONTENT, enqueue_started_at: now.getTime() - 20 * 60 * 1000 },
+      'message_queue/q1': { kind: 'promo_sms', campaign_id: 'req1', student_id: 's1' }, // 이전 호출이 s1까지 enqueue 후 실패
+    });
+    const res = await handleCreatePromoCampaign(
+      { auth, data: { title: '홍보', content: AD_CONTENT, studentIds: ['s1', 's2'], requestId: 'req1' } },
+      { db, now, loadFriendPhones: async () => new Set() },
+    );
+    expect(res.duplicate).toBeUndefined();
+    const queued = Object.entries(db._docs).filter(([k]) => k.startsWith('message_queue/')).map(([, v]) => v);
+    expect(queued.filter((q) => q.student_id === 's1')).toHaveLength(1); // 중복 없음
+    expect(queued.filter((q) => q.student_id === 's2')).toHaveLength(1); // 잔여 재개
+    expect(db._docs['promo_campaigns/req1'].status).toBe('queued');
+  });
+
+  it('requestId 재호출: enqueuing 진행 중(lease 유효) → duplicate 단락, 재발송 없음 (더블클릭 race 차단)', async () => {
+    const now = kst(2026, 6, 17, 14, 0);
+    const db = makeDb({
+      'students/s1': CONSENTED,
+      'students/s2': CONSENTED_2,
+      // 5초 전 시작된 enqueuing — 다른 호출이 배치 커밋 중일 수 있으므로 손대면 안 됨
+      'promo_campaigns/req1': { status: 'enqueuing', stats: { queued: 2 }, content: AD_CONTENT, enqueue_started_at: now.getTime() - 5000 },
+    });
+    const res = await handleCreatePromoCampaign(
+      { auth, data: { title: '홍보', content: AD_CONTENT, studentIds: ['s1', 's2'], requestId: 'req1' } },
+      { db, now, loadFriendPhones: async () => new Set() },
+    );
+    expect(res.duplicate).toBe(true);
+    expect(Object.keys(db._docs).some((k) => k.startsWith('message_queue/'))).toBe(false);
+  });
+
+  it('재개 요청의 본문이 원 캠페인과 다르면 거부 — 한 캠페인 내 문구 혼합 차단', async () => {
+    const now = kst(2026, 6, 17, 14, 0);
+    const db = makeDb({
+      'students/s1': CONSENTED,
+      'promo_campaigns/req1': { status: 'enqueuing', stats: {}, content: AD_CONTENT, enqueue_started_at: now.getTime() - 20 * 60 * 1000 },
+    });
+    await expect(
+      handleCreatePromoCampaign(
+        { auth, data: { title: '홍보', content: '(광고)다른 문구\n무료거부 080-000-0000', studentIds: ['s1'], requestId: 'req1' } },
+        { db, now, loadFriendPhones: async () => new Set() },
+      ),
+    ).rejects.toThrow('본문이 원 캠페인과 다릅니다');
   });
 });
