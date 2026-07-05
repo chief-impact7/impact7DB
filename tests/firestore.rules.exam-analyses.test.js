@@ -19,6 +19,11 @@ describe('exam_analyses — 외부 도메인 read/create 차단 (N-01)', () => {
     });
   }
 
+  // write는 exam_users 멤버(teacher/owner)만 — 테스트 uid를 멤버로 시딩
+  async function seedMember(uid) {
+    await seed(`exam_users/${uid}`, { uid, email: `${uid}@impact7.kr`, displayName: uid, role: 'teacher', deptIds: [] });
+  }
+
   test('impact7 도메인 계정 read 허용', async () => {
     await seed('exam_analyses/a1', { createdBy: 'u1', title: 'A' });
     const db = authedCtx(env, 'u1');
@@ -31,9 +36,15 @@ describe('exam_analyses — 외부 도메인 read/create 차단 (N-01)', () => {
     await assertFails(getDoc(doc(db, 'exam_analyses/a1')));
   });
 
-  test('impact7 계정 createdBy=self create 허용', async () => {
+  test('exam 멤버 createdBy=self create 허용', async () => {
+    await seedMember('u1');
     const db = authedCtx(env, 'u1');
     await assertSucceeds(setDoc(doc(db, 'exam_analyses/a1'), { createdBy: 'u1', title: 'A' }));
+  });
+
+  test('exam_users 문서 없는 impact7 계정 create 거부 (역할 강화)', async () => {
+    const db = authedCtx(env, 'u9');
+    await assertFails(setDoc(doc(db, 'exam_analyses/a1'), { createdBy: 'u9', title: 'A' }));
   });
 
   test('외부 도메인 계정 create 거부 (N-01)', async () => {
@@ -42,11 +53,14 @@ describe('exam_analyses — 외부 도메인 read/create 차단 (N-01)', () => {
   });
 
   test('createdBy != 본인 create 거부', async () => {
+    await seedMember('u1');
     const db = authedCtx(env, 'u1');
     await assertFails(setDoc(doc(db, 'exam_analyses/a1'), { createdBy: 'someone-else', title: 'A' }));
   });
 
   test('작성자 update 허용 / 타인 update 거부', async () => {
+    await seedMember('u1');
+    await seedMember('u2');
     await seed('exam_analyses/a1', { createdBy: 'u1', title: 'A' });
     const owner = authedCtx(env, 'u1');
     await assertSucceeds(updateDoc(doc(owner, 'exam_analyses/a1'), { title: 'B' }));
