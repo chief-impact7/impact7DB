@@ -12,7 +12,8 @@
 - 설정성(departments, examTypes) = isExamOwner() — exam 프론트 OwnerOnly 게이트(nav-config `ownerOnly` + OwnerOnly.tsx)와 짝. 게이트와 rules 모두 같은 exam_users.role 소스.
 - 테스트: tests/firestore.rules.exam-role-write.test.js (에뮬레이터 19건)
 
-## 미해결 (2026-07-05 기준)
-- personnel rules 테스트 3건 stale 실패 — e93f290(계약 서명 callable 이관)·9f6d40e(shortterm PII 제거) 보안 커밋에 맞춰 미갱신. 이번 변경과 무관, 정리 필요.
-- exam_analyses update/delete의 `request.auth.token.admin` 클레임 분기는 프로비저닝 경로 없는 죽은 분기 — 후속 정리 후보(isExamOwner 대체 또는 제거).
-- exam 앱 owner 게이트 프론트는 커밋/푸시 대기 — rules 먼저 배포된 상태라 push 전까지 teacher에게 설정 화면이 보이나 저장은 거부.
+## 후속 정리 완료 (90906e3, 2026-07-05)
+- personnel stale 테스트 3건 → 의도된 거부 기대로 전환(계약 서명 테스트는 익명 규칙 부활 방지 가드로 재활용). 전체 스위트 141/141 그린.
+- exam_analyses update/delete의 admin 커스텀 클레임 죽은 분기 → isExamOwner() 모더레이션으로 교체·배포·4-repo 동기화.
+- externalCtx 테스트 헬퍼 firestore-rules-helpers.js로 승격.
+- exam owner 게이트 프론트 커밋됨(exam 52cf4d0) — **push 대기(ahead 2)**. push 전까지 teacher에게 설정 화면이 보이나 저장은 거부.
