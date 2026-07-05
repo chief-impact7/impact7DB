@@ -53,8 +53,8 @@ setGlobalOptions({
   maxInstances: 10,
 });
 
-// App Check enforce (N-05 카나리). DSC가 App Check init(reCAPTCHA Enterprise) 배포됨 → 토큰 검증.
-// 문제 시 false로 즉시 롤백. 호출자 보호는 request.auth(직원) + rate limit도 유지.
+// App Check 도입 보류(사용자 결정 2026-07-05) — 전 앱 클라 init 제거됨, enforce 전환 금지.
+// 재개 시 .memory/project_appcheck_rollout.md 참조. 호출자 보호는 request.auth(직원) + rate limit 유지.
 export const llmGenerate = onCall({ enforceAppCheck: false }, handleLlmGenerate);
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 호출로 생성(기존 consultation/status 콜러블 통합).
 // Chat 언급은 syncChatMessages가 적재한 chat_messages를 조회하므로 여기엔 secret 불필요.
