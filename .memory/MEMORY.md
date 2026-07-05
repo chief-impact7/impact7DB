@@ -54,6 +54,7 @@
 - [학부별 학교명 + 라벨](project_school_by_level.md) — school_elementary/middle/high + studentFullLabel(예측 학부 기준 v1.15.0, 정규화 약어·지역명17·예외14) + 트리거 동기화+가드. 전체 15,032명 백필. 졸업생 "고(졸업+N)" 예측(B 완료). **전역 전환 전 항목 완료**(2026-05-30): ①표시·검색 3앱 통일 ②rules school_* 화이트리스트 버그 수정 ③구 school 미러 완전 제거(블로커 exam·내신키·newtest + read전환/write중단 + **데이터 15,675건 백업후 삭제** + rules school 제거) ④검색어 shared 공통화(v1.16.0, DB 회귀 교정) ⑤학년승급 캐시 동기화. DB/DSC/exam/newtest/shared/functions 전부 배포. 미러 백업 `_workspace/school-mirror-backup.json`
 - [HR 권한 설정 + simplify/code-review 하네스 강화](project_hr_permissions_quality_guard_2026_06_05.md) — HR owner/권한 설정 페이지, HR_users rules 강화, 4-repo rules sync, source/security pre-commit quality guard. 다음은 DB/DSC/Dashboard 인원현황 `canViewPopulationStats` 적용.
 - [HR 공개 서명 callable 전용化 (보안)](project_hr_signing_callable_security_2026_07_05.md) — 강사계약·급여약정·근로계약 서명 write는 서버 callable 전용. rules에 익명 계약 서명 update 재추가 금지(signatures.director 덮어쓰기·SVG XSS 재개방). 토큰게이트 write 이관은 callable→클라→rules 순서 엄수.
+- [exam 컬렉션 역할 기반 write 제한](project_exam_role_rules_2026_07_05.md) — 역할 소스는 exam_users.role(HR_users 금지), results/*/students owner 전용화 금지(OCR 채점 마비), examUserRole 이중 가드(exists+data.get) 유지, personnel stale 테스트 3건 미해결 (2026-07-05)
 
 - [DSC UI/UX 선행 작업 이식](project_dsc_uiux_handoff_2026-06-12.md) — 한국어 캘린더(date-picker.js, DSC 사본과 상호 동기화 의무)·검색 범위 배너·로그인 aria-disabled 가드·FOUT 방지 적용 + DSC발 함정(re-export 스코프, innerHTML throw, 조용한 early return)·인프라 주의(두 앱 firebase-config, shared 명시 설치) (2026-06-12, f84a84e)
 
