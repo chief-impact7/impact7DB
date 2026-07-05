@@ -37,6 +37,8 @@ const validInput = {
   departAt: '2026-06-30T09:00:00.000Z',
   memo: '지각 보정',
 };
+const outingAt = '2026-06-30T04:00:00.000Z';
+const returnAt = '2026-06-30T04:20:00.000Z';
 
 describe('handleEditStaffAttendance — 인증/권한', () => {
   it('미인증은 거부(unauthenticated)', async () => {
@@ -99,6 +101,54 @@ describe('handleEditStaffAttendance — 편집', () => {
     await handleEditStaffAttendance({ auth, data: { date: '2026-06-30', staffId: 'st1', arriveAt: null } }, { firestore });
     expect(firestore._sets[0].data.arriveAt).toBeNull();
   });
+
+  it('events를 서버에서 검증·정렬하고 at_ms를 재계산해 저장', async () => {
+    const firestore = makeFirestore({ attendance: { state: '퇴근' } });
+    await handleEditStaffAttendance({
+      auth,
+      data: {
+        date: '2026-06-30',
+        staffId: 'st1',
+        events: [
+          { action: '귀원', at: returnAt, at_ms: 1 },
+          { action: '외출', at: outingAt, at_ms: 1 },
+          { action: '출근', at: '2026-06-30T00:00:00.000Z', at_ms: 1 },
+        ],
+      },
+    }, { firestore });
+    expect(firestore._sets[0].data.events).toEqual([
+      { action: '출근', at: '2026-06-30T00:00:00.000Z', at_ms: Date.parse('2026-06-30T00:00:00.000Z') },
+      { action: '외출', at: outingAt, at_ms: Date.parse(outingAt) },
+      { action: '귀원', at: returnAt, at_ms: Date.parse(returnAt) },
+    ]);
+    expect(firestore._sets[0].data).toMatchObject({
+      state: '근무중',
+      last_event: { action: '귀원', at_ms: Date.parse(returnAt) },
+      arriveAt: '2026-06-30T00:00:00.000Z',
+      departAt: null,
+    });
+  });
+
+  it('events 전체를 상태머신으로 검증해 최종 퇴근 상태를 저장', async () => {
+    const firestore = makeFirestore({ attendance: { state: '근무중' } });
+    await handleEditStaffAttendance({
+      auth,
+      data: {
+        date: '2026-06-30',
+        staffId: 'st1',
+        events: [
+          { action: '출근', at: '2026-06-30T00:00:00.000Z' },
+          { action: '외출', at: outingAt },
+          { action: '복귀', at: returnAt },
+          { action: '퇴근', at: '2026-06-30T09:00:00.000Z' },
+        ],
+      },
+    }, { firestore });
+    expect(firestore._sets[0].data.state).toBe('퇴근');
+    expect(firestore._sets[0].data.last_event).toMatchObject({ action: '퇴근' });
+    expect(firestore._sets[0].data.arriveAt).toBe('2026-06-30T00:00:00.000Z');
+    expect(firestore._sets[0].data.departAt).toBe('2026-06-30T09:00:00.000Z');
+  });
 });
 
 describe('handleEditStaffAttendance — not-found/invalid-argument', () => {
@@ -131,6 +181,44 @@ describe('handleEditStaffAttendance — not-found/invalid-argument', () => {
   it('memo가 문자열이 아니면 invalid-argument', async () => {
     await expect(handleEditStaffAttendance(
       { auth, data: { date: '2026-06-30', staffId: 'st1', memo: 123 } },
+      { firestore: makeFirestore({ attendance: {} }) },
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  it('events가 배열이 아니면 invalid-argument', async () => {
+    await expect(handleEditStaffAttendance(
+      { auth, data: { date: '2026-06-30', staffId: 'st1', events: 'x' } },
+      { firestore: makeFirestore({ attendance: {} }) },
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  it('events.action이 허용값이 아니면 invalid-argument', async () => {
+    await expect(handleEditStaffAttendance(
+      { auth, data: { date: '2026-06-30', staffId: 'st1', events: [{ action: '점심', at: outingAt }] } },
+      { firestore: makeFirestore({ attendance: {} }) },
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  it('events.at가 ISO가 아니면 invalid-argument', async () => {
+    await expect(handleEditStaffAttendance(
+      { auth, data: { date: '2026-06-30', staffId: 'st1', events: [{ action: '외출', at: 'not-a-date' }] } },
+      { firestore: makeFirestore({ attendance: {} }) },
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  it('events 순서가 상태 전이에 맞지 않으면 invalid-argument', async () => {
+    await expect(handleEditStaffAttendance(
+      {
+        auth,
+        data: {
+          date: '2026-06-30',
+          staffId: 'st1',
+          events: [
+            { action: '외출', at: outingAt },
+            { action: '귀원', at: returnAt },
+          ],
+        },
+      },
       { firestore: makeFirestore({ attendance: {} }) },
     )).rejects.toMatchObject({ code: 'invalid-argument' });
   });

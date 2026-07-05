@@ -13,6 +13,45 @@ function textOf(v) { return String(v ?? '').trim(); }
 
 const REENTRY_WINDOW_MS = 20_000;
 const ACTIVE_STATUS = 'active';
+const STATUS_CANCELLED = new Set(['join_cancelled', 'leave_cancelled']);
+const AUTO_STATUS_BY_DATE_TYPE = {
+  joinDate: { status: 'active', priority: 1, from: ['onboarding', 'join_pending', 'active'] },
+  plannedJoinDate: { status: 'active', priority: 1, from: ['onboarding', 'join_pending', 'active'] },
+  firstWorkDate: { status: 'active', priority: 1, from: ['onboarding', 'join_pending', 'active'] },
+  returnDate: { status: 'active', priority: 1, from: ['inactive', 'leave_pending'] },
+  leaveDate: { status: 'inactive', priority: 2, from: ['active', 'leave_pending'] },
+  plannedResignationDate: { status: 'terminated', priority: 3, from: ['active', 'inactive', 'leave_pending'] },
+  resignationDate: { status: 'terminated', priority: 3, from: ['active', 'inactive', 'leave_pending'] },
+  lastWorkDate: { status: 'terminated', priority: 3, from: ['active', 'inactive', 'leave_pending'] },
+};
+
+function personnelDatesOf(staff) {
+  const records = Array.isArray(staff?.personnelDates) ? staff.personnelDates : [];
+  const out = records
+    .filter((record) => record?.type && record?.date)
+    .map((record) => ({ type: textOf(record.type), date: textOf(record.date) }));
+  for (const type of Object.keys(AUTO_STATUS_BY_DATE_TYPE)) {
+    const date = textOf(staff?.[type]);
+    if (date && !out.some((record) => record.type === type)) out.push({ type, date });
+  }
+  return out;
+}
+
+function effectiveStaffStatus(staff, dateKST) {
+  const current = textOf(staff?.status) || ACTIVE_STATUS;
+  if (STATUS_CANCELLED.has(current)) return current;
+  const changes = [];
+  for (const record of personnelDatesOf(staff)) {
+    if (!record.date || record.date > dateKST) continue;
+    const change = AUTO_STATUS_BY_DATE_TYPE[record.type];
+    if (change?.from.includes(current)) {
+      changes.push({ date: record.date, status: change.status, priority: change.priority });
+    }
+  }
+  if (!changes.length) return current;
+  changes.sort((a, b) => a.date.localeCompare(b.date) || a.priority - b.priority);
+  return changes[changes.length - 1].status;
+}
 
 const STAFF_NOTICE_TEMPLATES = {
   [STAFF_ACTIONS.CLOCK_IN]: {
@@ -60,7 +99,7 @@ async function lookupStaff(firestore, phoneKey, dateKST) {
   const out = [];
   for (const d of snap.docs) {
     const s = d.data();
-    if (s.status !== ACTIVE_STATUS) continue;
+    if (effectiveStaffStatus(s, dateKST) !== ACTIVE_STATUS) continue;
     const attSnap = await firestore.collection('staff_attendance').doc(`${dateKST}_${d.id}`).get();
     const dayState = (attSnap.exists ? attSnap.data()?.state : null) || STAFF_DAY_STATES.NONE;
     out.push({
@@ -117,7 +156,8 @@ export async function handleStaffCheckin(request, deps = {}) {
     const [staffSnap, attSnap] = await Promise.all([tx.get(staffRef), tx.get(attRef)]);
     if (!staffSnap.exists) throw new HttpsError('not-found', '직원을 찾을 수 없습니다.');
     const staff = staffSnap.data();
-    if (staff.status !== ACTIVE_STATUS) {
+    const effectiveStatus = effectiveStaffStatus(staff, dateKST);
+    if (effectiveStatus !== ACTIVE_STATUS) {
       throw new HttpsError('failed-precondition', '재직 중인 직원만 처리할 수 있습니다.');
     }
     // 학생 핸들러(studentNumber 재검증)와 동일한 권한 재확인: 조회 단계에서 받은
@@ -160,6 +200,7 @@ export async function handleStaffCheckin(request, deps = {}) {
     if (action === STAFF_ACTIONS.CLOCK_IN && !att?.arriveAt) update.arriveAt = occurredAt.toISOString();
     if (action === STAFF_ACTIONS.CLOCK_OUT) update.departAt = occurredAt.toISOString();
 
+    if (textOf(staff.status) !== effectiveStatus) tx.set(staffRef, { status: effectiveStatus }, { merge: true });
     tx.set(attRef, update, { merge: true });
 
     try {

@@ -82,6 +82,45 @@ describe('handleStaffCheckin 조회', () => {
     expect(res.candidates[0]).toMatchObject({ kind: 'staff', name: '김선생', englishName: 'Kim', dayState: '미출근' });
     expect(res.candidates[0].allowedActions).toEqual(['출근']);
   });
+
+  test('입사예정일이 지난 join_pending 직원은 active 후보로 간주', async () => {
+    const firestore = makeFirestore({
+      staff: {
+        st1: { name: '김예정', phoneKey: '123456', status: 'join_pending', plannedJoinDate: '2000-01-01' },
+        st2: { name: '박예정', phoneKey: '123456', status: 'join_pending', plannedJoinDate: '2999-01-01' },
+      },
+      attendance: {},
+    });
+    const res = await handleStaffCheckin({ auth: AUTH, data: { phoneKey: '123456' } }, { firestore });
+    expect(res.result).toBe('candidates');
+    expect(res.candidates).toHaveLength(1);
+    expect(res.candidates[0]).toMatchObject({ staffId: 'st1', name: '김예정' });
+  });
+
+  test('휴직일/퇴사예정일이 지난 직원은 후보에서 제외', async () => {
+    const firestore = makeFirestore({
+      staff: {
+        st1: { name: '휴직', phoneKey: '123456', status: 'active', leaveDate: '2000-01-01' },
+        st2: { name: '퇴사예정', phoneKey: '123456', status: 'active', plannedResignationDate: '2000-01-01' },
+      },
+      attendance: {},
+    });
+    const res = await handleStaffCheckin({ auth: AUTH, data: { phoneKey: '123456' } }, { firestore });
+    expect(res.result).toBe('candidates');
+    expect(res.candidates).toHaveLength(0);
+  });
+
+  test('수동 other 상태는 과거 입사일이 있어도 active 후보로 덮지 않음', async () => {
+    const firestore = makeFirestore({
+      staff: {
+        st1: { name: '수동상태', phoneKey: '123456', status: 'other', joinDate: '2000-01-01' },
+      },
+      attendance: {},
+    });
+    const res = await handleStaffCheckin({ auth: AUTH, data: { phoneKey: '123456' } }, { firestore });
+    expect(res.result).toBe('candidates');
+    expect(res.candidates).toHaveLength(0);
+  });
 });
 
 describe('handleStaffCheckin 확정', () => {
@@ -97,6 +136,33 @@ describe('handleStaffCheckin 확정', () => {
     expect(res.result).toBe('created');
     expect(res.dayState).toBe('근무중');
     expect(res.action).toBe('출근');
+  });
+
+  test('입사예정일이 지난 join_pending 직원은 출근 확정 시 staff.status도 active로 갱신', async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김예정', phoneKey: '123456', status: 'join_pending', plannedJoinDate: '2000-01-01' } },
+      attendance: {},
+    });
+    const res = await handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    );
+    expect(res.result).toBe('created');
+    const staffSnap = await firestore._ref('staff', 'st1').get();
+    expect(staffSnap.data().status).toBe('active');
+  });
+
+  test('휴직일이 지난 active 직원은 출근 확정 거부', async () => {
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    const firestore = makeFirestore({
+      staff: { st1: { name: '김휴직', phoneKey: '123456', status: 'active', leaveDate: '2000-01-01' } },
+      attendance: {},
+    });
+    await expect(handleStaffCheckin(
+      { auth: AUTH, data: { phoneKey: '123456', staffId: 'st1', action: '출근' } },
+      { firestore, staffRef: firestore._ref('staff', 'st1'), attRef: firestore._ref('staff_attendance', `${dateStr}_st1`) },
+    )).rejects.toMatchObject({ code: 'failed-precondition' });
   });
 
   test('미출근에서 퇴근은 거부(failed-precondition)', async () => {
