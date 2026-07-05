@@ -55,6 +55,7 @@
 - [HR 권한 설정 + simplify/code-review 하네스 강화](project_hr_permissions_quality_guard_2026_06_05.md) — HR owner/권한 설정 페이지, HR_users rules 강화, 4-repo rules sync, source/security pre-commit quality guard. 다음은 DB/DSC/Dashboard 인원현황 `canViewPopulationStats` 적용.
 - [HR 공개 서명 callable 전용化 (보안)](project_hr_signing_callable_security_2026_07_05.md) — 강사계약·급여약정·근로계약 서명 write는 서버 callable 전용. rules에 익명 계약 서명 update 재추가 금지(signatures.director 덮어쓰기·SVG XSS 재개방). 토큰게이트 write 이관은 callable→클라→rules 순서 엄수.
 - [exam 컬렉션 역할 기반 write 제한](project_exam_role_rules_2026_07_05.md) — 역할 소스는 exam_users.role(HR_users 금지), results/*/students owner 전용화 금지(OCR 채점 마비), examUserRole 이중 가드(exists+data.get) 유지, personnel stale 테스트 3건 미해결 (2026-07-05)
+- [CG students 인덱스 + 이력 쿼리 전환](project_cg_students_index_2026_07_05.md) — indexes 배포 전 라이브 diff 필수(역병합), /{path=**}/students 와일드카드 rules 추가 않기로 결정, result 문서ID==studentId 관례 없음(백필 유도 금지), studentId ?? '' 주입 금지 (2026-07-05)
 
 - [DSC UI/UX 선행 작업 이식](project_dsc_uiux_handoff_2026-06-12.md) — 한국어 캘린더(date-picker.js, DSC 사본과 상호 동기화 의무)·검색 범위 배너·로그인 aria-disabled 가드·FOUT 방지 적용 + DSC발 함정(re-export 스코프, innerHTML throw, 조용한 early return)·인프라 주의(두 앱 firebase-config, shared 명시 설치) (2026-06-12, f84a84e)
 
