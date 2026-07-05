@@ -29,3 +29,8 @@ export function authedCtx(env, uid, email = `${uid}@impact7.kr`) {
 export function unauthedCtx(env) {
   return env.unauthenticatedContext().firestore();
 }
+
+// 외부(비 impact7) 도메인 인증 컨텍스트 — 조직 정책 완화로 외부 구글 계정도 토큰을 얻을 수 있음.
+export function externalCtx(env, uid = 'ext1', email = 'attacker@gmail.com') {
+  return env.authenticatedContext(uid, { email, email_verified: true }).firestore();
+}

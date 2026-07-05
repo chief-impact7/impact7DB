@@ -1,11 +1,7 @@
 import { test, before, after, beforeEach, describe } from 'node:test';
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { setDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { createTestEnv, authedCtx, unauthedCtx } from './firestore-rules-helpers.js';
-
-function externalCtx(env, uid = 'ext1', email = 'attacker@gmail.com') {
-  return env.authenticatedContext(uid, { email, email_verified: true }).firestore();
-}
+import { setDoc, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { createTestEnv, authedCtx, unauthedCtx, externalCtx } from './firestore-rules-helpers.js';
 
 describe('exam_analyses — 외부 도메인 read/create 차단 (N-01)', () => {
   let env;
@@ -66,6 +62,15 @@ describe('exam_analyses — 외부 도메인 read/create 차단 (N-01)', () => {
     await assertSucceeds(updateDoc(doc(owner, 'exam_analyses/a1'), { title: 'B' }));
     const other = authedCtx(env, 'u2');
     await assertFails(updateDoc(doc(other, 'exam_analyses/a1'), { title: 'C' }));
+  });
+
+  test('owner는 타인 분석자료 update/delete 허용 (모더레이션)', async () => {
+    await seedMember('u1');
+    await seed('exam_users/own1', { uid: 'own1', email: 'own1@impact7.kr', displayName: 'own1', role: 'owner', deptIds: [] });
+    await seed('exam_analyses/a1', { createdBy: 'u1', title: 'A' });
+    const db = authedCtx(env, 'own1');
+    await assertSucceeds(updateDoc(doc(db, 'exam_analyses/a1'), { title: 'MOD' }));
+    await assertSucceeds(deleteDoc(doc(db, 'exam_analyses/a1')));
   });
 
   test('비인증 read 거부', async () => {

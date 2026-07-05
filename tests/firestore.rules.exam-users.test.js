@@ -1,12 +1,7 @@
 import { test, before, after, beforeEach, describe } from 'node:test';
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { setDoc, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { createTestEnv, authedCtx, unauthedCtx } from './firestore-rules-helpers.js';
-
-// 외부(비 impact7) 도메인 인증 컨텍스트 — 조직 정책 완화로 외부 구글 계정도 토큰을 얻을 수 있음.
-function externalCtx(env, uid = 'ext1', email = 'attacker@gmail.com') {
-  return env.authenticatedContext(uid, { email, email_verified: true }).firestore();
-}
+import { createTestEnv, authedCtx, unauthedCtx, externalCtx } from './firestore-rules-helpers.js';
 
 const TEACHER = { uid: 'u1', email: 'u1@impact7.kr', displayName: 'U One', role: 'teacher', deptIds: [] };
 

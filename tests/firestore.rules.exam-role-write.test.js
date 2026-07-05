@@ -1,11 +1,7 @@
 import { test, before, after, beforeEach, describe } from 'node:test';
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import { setDoc, doc, getDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { createTestEnv, authedCtx, unauthedCtx } from './firestore-rules-helpers.js';
-
-function externalCtx(env, uid = 'ext1', email = 'attacker@gmail.com') {
-  return env.authenticatedContext(uid, { email, email_verified: true }).firestore();
-}
+import { createTestEnv, authedCtx, unauthedCtx, externalCtx } from './firestore-rules-helpers.js';
 
 const TEACHER = { uid: 'teacher1', email: 'teacher1@impact7.kr', displayName: 'T One', role: 'teacher', deptIds: [] };
 const OWNER = { uid: 'owner1', email: 'owner1@impact7.kr', displayName: 'O One', role: 'owner', deptIds: [] };

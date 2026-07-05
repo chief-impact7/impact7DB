@@ -251,11 +251,13 @@ describe('staff 통합 온보딩(3토큰)·계약서명(다토큰) 규칙 (Task 
     });
   }
 
-  test('계약 서명: 유효 employeeContractSigningTokens → staff contract ready→signed 성공', async () => {
+  // 익명 서명 write는 e93f290에서 서버 callable 전용으로 이관 — 유효 토큰이어도
+  // 클라 직접 update는 항상 거부되어야 한다(익명 update 규칙 부활 방지 가드).
+  test('계약 서명: 유효 토큰이어도 익명 직접 write 거부 (callable 전용)', async () => {
     await seedContract('sig-ok', 'c1');
     await seedToken('employeeContractSigningTokens', 'sigtok-ok', { extra: { contractId: 'c1' } });
     const db = unauthedCtx(env);
-    await assertSucceeds(updateDoc(doc(db, 'staff/sig-ok/contracts/c1'), {
+    await assertFails(updateDoc(doc(db, 'staff/sig-ok/contracts/c1'), {
       status: 'signed',
       signatures: { employee: { signatureUrl: 'https://sig/e.png' } },
       signingTokenId: 'sigtok-ok',
@@ -340,9 +342,11 @@ describe('staff read PII 제한 — director+manager 전체, shortterm은 단기
     await assertSucceeds(getDoc(doc(db, 'staff/short1')));
   });
 
-  test('shortterm: 단기 부서 문서 read → 성공(기존 동작 보존)', async () => {
+  // shortterm의 단기 PII read는 9f6d40e(H-1 예방)에서 제거 — 역할 재도입 시
+  // 본인 문서 스코프(ownerUid)로 재설계 예정. 그 전까지는 거부가 정답.
+  test('shortterm: 단기 부서 문서 read → 거부(H-1 PII 제거)', async () => {
     const db = await ctxWithRole('st1', 'shortterm');
-    await assertSucceeds(getDoc(doc(db, 'staff/short1')));
+    await assertFails(getDoc(doc(db, 'staff/short1')));
   });
 
   test('shortterm: 교수 문서 read → 거부(PII 차단)', async () => {
@@ -367,9 +371,9 @@ describe('staff read PII 제한 — director+manager 전체, shortterm은 단기
   });
 
   // ── LIST 쿼리 규칙 평가 ──────────────────────────────────────────────
-  test('shortterm LIST: where(department==단기) 쿼리 → 성공', async () => {
+  test('shortterm LIST: where(department==단기) 쿼리 → 거부(H-1 PII 제거)', async () => {
     const db = await ctxWithRole('st-list-ok', 'shortterm');
-    await assertSucceeds(getDocs(query(collection(db, 'staff'), where('department', '==', '단기'))));
+    await assertFails(getDocs(query(collection(db, 'staff'), where('department', '==', '단기'))));
   });
 
   test('shortterm LIST: 무제약 staff 열거 → 거부(전 직원 PII 노출 차단)', async () => {
