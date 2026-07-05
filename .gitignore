@@ -59,3 +59,6 @@ SECURITY_TEST_SCENARIOS.md
 PATCH_NOTES.js
 .agents/.migration-bak.*
 headroom_memory.db
+
+# OMC 런타임 상태 (세션별 임시)
+.omc/
