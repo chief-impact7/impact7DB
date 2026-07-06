@@ -101,7 +101,7 @@ service cloud.firestore {
           && (!data.keys().hasAny(['branch']) || data.branch is string);
       }
 
-      // 클라이언트가 생성/수정할 수 있는 필드 목록(49개). 서버 전용 필드(message_consent —
+      // 클라이언트가 생성/수정할 수 있는 필드 목록(50개). 서버 전용 필드(message_consent —
       // promoConsent/optOut080Sync가 admin으로 기록)는 여기 넣지 않는다 — update가 diff 기반이라
       // 서버가 학생 문서에 새 필드를 추가해도 기존 문서의 클라 편집이 깨지지 않고, 클라는
       // 서버 전용 필드를 위조할 수 없다.
@@ -125,7 +125,8 @@ service cloud.firestore {
           'status_changed_at', 'status_changed_by', 'status_previous',
           'nameNormalized', 'studentNumber', 'studentNumberSource', 'studentNumberIssuedAt',
           'studentNumberHistory',
-          'school_history'
+          'school_history',
+          'message_recipient_settings'
         ];
       }
       // withinFieldLimit는 create의 클라 필드 목록 크기(50)와 맞춘다 — 과거 36은 hasOnly가 이미
