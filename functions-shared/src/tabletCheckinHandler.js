@@ -12,7 +12,7 @@ import { isLate } from '@impact7/shared/expected-arrival';
 import { loadExpectedArrival } from './expectedArrivalLoader.js';
 import { PARENT_NOTICE_TEMPLATES, buildParentNoticeVariables } from './parentNoticeHandler.js';
 import { applyTemplate } from './templates.js';
-import { resolveRecipientPhone } from './recipientPhone.js';
+import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
 
 function textOf(v) { return String(v ?? '').trim(); }
 
@@ -51,7 +51,7 @@ function arrivalTimeKST(date) {
 }
 
 // 액션별 알림톡 message_queue payload. 템플릿 코드 미설정이어도 fallback_text로 적재.
-function buildEventQueuePayload({ studentId, studentName, recipientPhone, action, occurredAt, eventId, late = false, source = 'tablet' }) {
+function buildEventQueuePayload({ studentId, studentName, recipientRole, recipientPhone, action, occurredAt, eventId, late = false, source = 'tablet' }) {
   // 지각 등원은 별도 템플릿(late)으로 라우팅 — 등원 안내와 분리한다. 지각은 템플릿 제목으로
   // 드러나므로 시각에 "(지각)" 문자열을 덧붙이지 않는다(부착 시 LATE 템플릿과 이중 표기).
   const templateKey = (action === ACTIONS.ARRIVE && late) ? 'late' : ACTION_TEMPLATE_KEY[action];
@@ -64,6 +64,7 @@ function buildEventQueuePayload({ studentId, studentName, recipientPhone, action
     kind: 'attendance',
     event_id: eventId,
     student_id: studentId,
+    recipient_role: recipientRole ?? null,
     recipient_phone: recipientPhone,
     template_code: templateCode,
     template_variables: variables,
@@ -76,6 +77,12 @@ function buildEventQueuePayload({ studentId, studentName, recipientPhone, action
     created_at: FieldValue.serverTimestamp(),
     updated_at: FieldValue.serverTimestamp(),
   };
+}
+
+function attendanceTargets(student, data) {
+  if (Array.isArray(data.recipientFields)) return resolveRecipientTargets(student, data.recipientFields);
+  const target = resolveRecipientTarget(student, 'parent_1');
+  return target ? [target] : [];
 }
 
 async function lookupCandidates(firestore, studentNumber, departurePolicy) {
@@ -185,13 +192,14 @@ export async function handleTabletCheckin(request, deps = {}) {
 
     // 이벤트 append
     const eventRef = firestore.collection('attendance_events').doc();
-    const recipientPhone = resolveRecipientPhone(student, 'parent_1') || resolveRecipientPhone(student, 'parent_2');
-    let queueId = null;
-    if (recipientPhone) {
+    const targets = attendanceTargets(student, data);
+    const queueIds = [];
+    for (const target of targets) {
       const queueRef = firestore.collection('message_queue').doc();
-      queueId = queueRef.id;
+      queueIds.push(queueRef.id);
       tx.set(queueRef, buildEventQueuePayload({
-        studentId, studentName: textOf(student.name), recipientPhone,
+        studentId, studentName: textOf(student.name),
+        recipientRole: target.field, recipientPhone: target.phone,
         action, occurredAt, eventId: eventRef.id, late, source,
       }));
     }
@@ -205,7 +213,8 @@ export async function handleTabletCheckin(request, deps = {}) {
       source,
       device_id: deviceId,
       created_by: email,
-      queue_id: queueId,
+      queue_id: queueIds[0] ?? null,
+      queue_ids: queueIds,
     });
 
     // daily_records 동기화
@@ -237,6 +246,6 @@ export async function handleTabletCheckin(request, deps = {}) {
     }
     tx.set(dailyRef, dailyUpdate, { merge: true });
 
-    return { result: 'created', dayState: newState, action, eventId: eventRef.id, queued: !!queueId };
+    return { result: 'created', dayState: newState, action, eventId: eventRef.id, queued: queueIds.length > 0, queueIds, queuedCount: queueIds.length };
   });
 }

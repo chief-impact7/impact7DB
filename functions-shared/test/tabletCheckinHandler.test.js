@@ -147,8 +147,39 @@ describe('handleTabletCheckin 확정', () => {
     const queued = Object.values(fs._stores.message_queue);
     expect(queued).toHaveLength(1);
     expect(queued[0].kind).toBe('attendance');
+    expect(queued[0].recipient_role).toBe('parent_1');
     expect(queued[0].template_variables).toBeTruthy();
     expect(queued[0].fallback_text).toContain('등원');
+  });
+
+  test('DSC 빠른 등원 — recipientFields 선택값대로 수신자별 알림톡 큐를 enqueue', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const d = todayKST();
+    const fs = makeTxFirestore({
+      students: {
+        s1: {
+          studentNumber: '123456',
+          name: '김민수',
+          status: '재원',
+          parent_phone_1: '010-1111-2222',
+          parent_phone_2: '010-3333-4444',
+        },
+      },
+      daily: {},
+      devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+    const res = await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '등원', source: 'dsc', recipientFields: ['parent_1', 'parent_2'] } },
+      { firestore: fs },
+    );
+    expect(res).toMatchObject({ result: 'created', queued: true, queuedCount: 2 });
+    expect(fs._stores.attendance_events[res.eventId].queue_ids).toHaveLength(2);
+    expect(fs._stores.daily_records[`s1_${d}`].day_state).toBe('원내');
+    const queued = Object.values(fs._stores.message_queue);
+    expect(queued.map((q) => [q.recipient_role, q.recipient_phone])).toEqual([
+      ['parent_1', '01011112222'],
+      ['parent_2', '01033334444'],
+    ]);
   });
 
   test('등원 지각 — 예정+5분 초과면 status 지각 + 지각(late) 템플릿으로 발송', async () => {
