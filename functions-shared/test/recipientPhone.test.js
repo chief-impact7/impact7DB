@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRecipientPhone, resolveRecipientPhones } from '../src/recipientPhone.js';
+import { resolveRecipientPhone, resolveRecipientTarget, resolveRecipientPhones, resolveRecipientTargets } from '../src/recipientPhone.js';
 
 const student = {
   student_phone: '010-1111-1111',
@@ -50,5 +50,39 @@ describe('resolveRecipientPhones', () => {
   it('같은 번호가 여러 field에 있어도 모두 반환(dedup은 호출자 담당)', () => {
     const s = { parent_phone_1: '01011112222', parent_phone_2: '01011112222' };
     expect(resolveRecipientPhones(s, ['parent_1', 'parent_2'])).toEqual(['01011112222', '01011112222']);
+  });
+});
+
+describe('resolveRecipientTarget', () => {
+  it('fallback으로 실제 선택된 수신 역할과 번호를 함께 반환한다', () => {
+    expect(resolveRecipientTarget({ parent_phone_2: '010-9999-9999' }, undefined)).toEqual({
+      field: 'parent_2',
+      phone: '01099999999',
+    });
+    expect(resolveRecipientTarget({ parent_phone_1: '010-2222-2222' }, 'student')).toEqual({
+      field: 'parent_1',
+      phone: '01022222222',
+    });
+  });
+
+  it('번호가 없으면 null을 반환한다', () => {
+    expect(resolveRecipientTarget({}, 'student')).toBeNull();
+    expect(resolveRecipientTarget(null, 'parent_1')).toBeNull();
+  });
+});
+
+describe('resolveRecipientTargets', () => {
+  it('수신 역할과 번호를 함께 반환한다', () => {
+    expect(resolveRecipientTargets(student, ['student', 'parent_2'])).toEqual([
+      { field: 'student', phone: '01011111111' },
+      { field: 'parent_2', phone: '01033333333' },
+    ]);
+  });
+
+  it('빈 번호·알 수 없는 field를 제외하고 같은 번호는 첫 역할만 남긴다', () => {
+    const s = { parent_phone_1: '010-1111-2222', parent_phone_2: '01011112222' };
+    expect(resolveRecipientTargets(s, ['student', 'parent_1', 'parent_2', 'bad'])).toEqual([
+      { field: 'parent_1', phone: '01011112222' },
+    ]);
   });
 });

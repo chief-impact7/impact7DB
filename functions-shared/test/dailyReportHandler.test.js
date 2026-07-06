@@ -43,7 +43,25 @@ describe('handleSendDailyReport', () => {
     const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: '[6/16] 수업 결과...' } }, { db });
     expect(res).toMatchObject({ queued: true, channel: 'report', joined: true });
     const q = Object.values(db._store.message_queue)[0];
-    expect(q).toMatchObject({ kind: 'report', recipient_phone: '01011112222', targeting: 'I', ad_flag: false, content: '[6/16] 수업 결과...' });
+    expect(q).toMatchObject({ kind: 'report', recipient_phone: '01011112222', recipient_role: 'parent_1', targeting: 'I', ad_flag: false, content: '[6/16] 수업 결과...' });
+  });
+
+  it('recipientFields 다중 선택 시 BMS/문자 큐를 수신자별로 enqueue한다', async () => {
+    const db = makeDb({
+      students: { s1: { name: '김동윤', parent_phone_1: '010-1111-2222', parent_phone_2: '010-3333-4444' } },
+      kakao_channel_friends: { '01011112222': {} },
+    });
+    const res = await handleSendDailyReport(
+      { auth, data: { studentId: 's1', content: '안내', recipientFields: ['parent_1', 'parent_2'], requestId: 'rpt1' } },
+      { db, channelAddUrl: '' },
+    );
+    expect(res).toMatchObject({ queued: true, queuedCount: 2, channel: 'mixed', joinedCount: 1 });
+    const qs = Object.values(db._store.message_queue);
+    expect(qs).toHaveLength(2);
+    expect(qs.map((q) => [q.recipient_role, q.kind, q.recipient_phone])).toEqual([
+      ['parent_1', 'report', '01011112222'],
+      ['parent_2', 'direct', '01033334444'],
+    ]);
   });
 
   it('비친구면 원본 내용 + 채널 가입 유도 SMS(kind=direct)로 enqueue', async () => {

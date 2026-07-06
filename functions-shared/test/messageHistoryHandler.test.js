@@ -40,7 +40,7 @@ describe('handleGetRecipientMessageHistory', () => {
       {
         id: 'q1', student_id: 's1', kind: 'attendance', status: 'sent',
         template_code: 'TPL1', fallback_text: '홍길동 학생이 등원하였습니다.',
-        recipient_phone: '01011112222', last_error_code: null,
+        recipient_phone: '01011112222', recipient_role: 'parent_2', last_error_code: null,
         created_at: { toMillis: () => 100 }, updated_at: { toMillis: () => 200 },
       },
       { id: 'q2', student_id: 's2', kind: 'direct', status: 'sent', content: '다른 학생', recipient_phone: '01033334444' },
@@ -52,6 +52,7 @@ describe('handleGetRecipientMessageHistory', () => {
       kind: 'attendance',
       status: 'sent',
       content: '홍길동 학생이 등원하였습니다.',
+      recipientRole: 'parent_2',
       createdAt: 100,
       piiPurged: false,
     });

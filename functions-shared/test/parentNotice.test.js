@@ -55,9 +55,30 @@ describe('handleSendParentNotice', () => {
     expect(doc.kind).toBe('parent_notice');
     expect(doc.template_code).toBe('KA01TP_COUNSEL');
     expect(doc.recipient_phone).toBe('01011112222');
+    expect(doc.recipient_role).toBe('parent_1');
     expect(doc.template_variables['#{상담일시}']).toBe('6/20 15시');
     expect(doc.fallback_text).toContain('상담 안내');
     expect(doc.fallback_text).toContain('6/20 15시');
+  });
+
+  it('recipientFields 다중 선택 시 수신자별 parent_notice를 enqueue하고 같은 번호는 dedup한다', async () => {
+    process.env.COUNSEL_TEMPLATE_CODE = 'KA01TP_COUNSEL';
+    const db = makeDb({
+      s1: {
+        name: '김학생',
+        student_phone: '010-1111-2222',
+        parent_phone_1: '010-1111-2222',
+        parent_phone_2: '010-3333-4444',
+      },
+    });
+    const res = await handleSendParentNotice(
+      { auth, data: { studentId: 's1', templateKey: 'counsel', variables: { 상담일시: '6/20', 장소: '2층' }, recipientFields: ['student', 'parent_1', 'parent_2'], requestId: 'req1' } },
+      { db },
+    );
+    expect(res).toMatchObject({ queued: true, queuedCount: 2, duplicateCount: 0 });
+    expect(db.queue).toHaveLength(2);
+    expect(db.queue.map((d) => d.recipient_role)).toEqual(['student', 'parent_2']);
+    expect(db.queue.map((d) => d.recipient_phone)).toEqual(['01011112222', '01033334444']);
   });
 
   it('rejects when template code is not configured (not approved yet)', async () => {

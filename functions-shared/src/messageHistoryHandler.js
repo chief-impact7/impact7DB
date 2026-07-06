@@ -25,6 +25,7 @@ export function mapQueueDoc(id, d) {
     id,
     kind: d.kind ?? null,
     status: d.status ?? null,
+    recipientRole: d.recipient_role ?? null,
     templateCode: d.template_code ?? null,
     content: d.content || d.fallback_text || null,
     recipientMasked: d.recipient_masked ?? maskPhone(d.recipient_phone),

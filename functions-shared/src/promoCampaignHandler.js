@@ -3,7 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { promoEligibility, getPromoConsent, consentTargetOf } from './promoConsent.js';
 import { resolveAdScheduledAt, isAdNightKST, parseKstToDate } from './promoSchedule.js';
-import { resolveRecipientPhone } from './recipientPhone.js';
+import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
 import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
 
 // 홍보(브랜드 메시지) 캠페인 생성 callable. 원장 권한으로 대상 학생을 동의/번호 게이트에 걸러
@@ -25,12 +25,13 @@ async function defaultLoadFriendPhones(db) {
 }
 
 // 학생 1명 → promo 큐 doc(타임스탬프 제외 순수 형태). 호출자가 created_at을 덧붙인다.
-export function buildPromoQueueDoc({ studentId, phone, smsAllowed, consent, campaignId, content, buttons, imageId, targeting, scheduledDate }) {
+export function buildPromoQueueDoc({ studentId, phone, recipientRole, smsAllowed, consent, campaignId, content, buttons, imageId, targeting, scheduledDate }) {
   const tg = targeting === 'I' ? 'I' : 'M';
   return {
     kind: 'promo',
     campaign_id: campaignId,
     student_id: studentId,
+    recipient_role: recipientRole ?? null,
     recipient_phone: phone,
     content,
     buttons: buttons ?? null,
@@ -48,11 +49,12 @@ export function buildPromoQueueDoc({ studentId, phone, smsAllowed, consent, camp
 }
 
 // 비친구 광고동의자에게 보내는 광고 SMS 큐 doc (promo_sms). 발송은 queueWorker가 sendSms로 라우팅.
-function buildPromoSmsQueueDoc({ studentId, phone, consent, campaignId, content, scheduledDate }) {
+function buildPromoSmsQueueDoc({ studentId, phone, recipientRole, consent, campaignId, content, scheduledDate }) {
   return {
     kind: 'promo_sms',
     campaign_id: campaignId,
     student_id: studentId,
+    recipient_role: recipientRole ?? null,
     recipient_phone: phone,
     content,
     ad_flag: true, // 광고 SMS는 항상 광고
@@ -83,34 +85,41 @@ export function buildPromoRecipients(entries, opts) {
   };
   const docs = [];
 
-  // 동의는 번호 주인 단위 — 학생 본인에게 보내는 캠페인은 학생 동의, 그 외는 보호자 동의로 판정.
-  const consentTarget = consentTargetOf(opts.recipientField);
+  const fields = Array.isArray(opts.recipientFields) && opts.recipientFields.length
+    ? opts.recipientFields
+    : null;
 
   for (const { id, student } of entries) {
-    const phone = resolveRecipientPhone(student, opts.recipientField);
-    if (!phone) { stats.skipped_no_phone += 1; continue; }
+    const targets = fields
+      ? resolveRecipientTargets(student, fields)
+      : [resolveRecipientTarget(student, opts.recipientField)].filter(Boolean);
+    if (!targets.length) { stats.skipped_no_phone += 1; continue; }
 
-    const elig = promoEligibility(student, consentTarget);
-    if (elig.reason === 'revoked') { stats.skipped_revoked += 1; continue; }
+    for (const target of targets) {
+      // 동의는 번호 주인 단위 — 학생 본인에게 보내는 캠페인은 학생 동의, 그 외는 보호자 동의로 판정.
+      const consentTarget = consentTargetOf(target.field);
+      const elig = promoEligibility(student, consentTarget);
+      if (elig.reason === 'revoked') { stats.skipped_revoked += 1; continue; }
 
-    if (hasFriendSet) {
-      if (opts.friendPhones.has(phone)) {
-        if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
-        docs.push(buildPromoQueueDoc({ studentId: id, phone, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student, consentTarget), ...opts }));
-        stats.friend_bms += 1;
-      } else if (elig.smsFallbackAllowed) {
-        docs.push(buildPromoSmsQueueDoc({ studentId: id, phone, consent: getPromoConsent(student, consentTarget), campaignId: opts.campaignId, content: opts.content, scheduledDate: opts.scheduledDate }));
-        stats.ad_sms += 1;
+      if (hasFriendSet) {
+        if (opts.friendPhones.has(target.phone)) {
+          if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
+          docs.push(buildPromoQueueDoc({ studentId: id, phone: target.phone, recipientRole: target.field, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student, consentTarget), ...opts }));
+          stats.friend_bms += 1;
+        } else if (elig.smsFallbackAllowed) {
+          docs.push(buildPromoSmsQueueDoc({ studentId: id, phone: target.phone, recipientRole: target.field, consent: getPromoConsent(student, consentTarget), campaignId: opts.campaignId, content: opts.content, scheduledDate: opts.scheduledDate }));
+          stats.ad_sms += 1;
+        } else {
+          stats.skipped_no_consent += 1;
+          continue;
+        }
       } else {
-        stats.skipped_no_consent += 1;
-        continue;
+        // 하위호환: friendPhones 없으면 전원 BMS 경로
+        if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
+        docs.push(buildPromoQueueDoc({ studentId: id, phone: target.phone, recipientRole: target.field, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student, consentTarget), ...opts }));
       }
-    } else {
-      // 하위호환: friendPhones 없으면 전원 BMS 경로
-      if (elig.smsFallbackAllowed) stats.sms_allowed += 1;
-      docs.push(buildPromoQueueDoc({ studentId: id, phone, smsAllowed: elig.smsFallbackAllowed, consent: getPromoConsent(student, consentTarget), ...opts }));
+      stats.queued += 1;
     }
-    stats.queued += 1;
   }
   return { docs, stats };
 }
@@ -183,7 +192,17 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   const [snaps, friendPhones] = await Promise.all([db.getAll(...refs), loadFriendPhones(db)]);
   const entries = snaps.filter((s) => s.exists).map((s) => ({ id: s.id, student: s.data() }));
 
-  const { docs, stats } = buildPromoRecipients(entries, { campaignId: campaignRef.id, content, buttons, imageId, targeting, scheduledDate, recipientField: data.recipientField, friendPhones });
+  const { docs, stats } = buildPromoRecipients(entries, {
+    campaignId: campaignRef.id,
+    content,
+    buttons,
+    imageId,
+    targeting,
+    scheduledDate,
+    recipientField: data.recipientField,
+    recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : undefined,
+    friendPhones,
+  });
   stats.skipped_missing = studentIds.length - entries.length; // 존재하지 않는 학생 id
 
   // 멱등: create()로 원자 선점(bulkMessageHandler와 동일 관용구) — 같은 requestId 동시
@@ -193,7 +212,10 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   // 호출이 배치 도중 죽었을 수 있으나 아직 진행 중일 수도 있으므로, lease 만료 시에만
   // 트랜잭션 CAS(claimCampaignResume)로 잔여 재개 — duplicate 단락으로 잔여 대상이 영영
   // 미발송되는 것과, 진행 중/동시 재개 호출과의 경쟁으로 중복 발송되는 것을 동시에 차단한다.
-  const fingerprint = recipientFingerprint(studentIds, data.recipientField ?? null);
+  const fingerprint = recipientFingerprint(studentIds, {
+    recipientField: data.recipientField ?? null,
+    recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : null,
+  });
   let resuming = false;
   try {
     await campaignRef.create({
@@ -221,12 +243,21 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
     resuming = true;
   }
 
-  // 재개 시 이미 enqueue된 학생은 제외 — 같은 학생에게 2건 쌓이는 중복 발송 차단.
+  // 재개 시 이미 enqueue된 수신자는 제외 — 구버전 role 없는 큐는 학생 단위로 보수적으로 제외.
   let pendingDocs = docs;
   if (resuming) {
     const queuedSnap = await db.collection('message_queue').where('campaign_id', '==', campaignRef.id).get();
-    const already = new Set(queuedSnap.docs.map((d) => d.data().student_id));
-    pendingDocs = docs.filter((d) => !already.has(d.student_id));
+    const alreadyStudents = new Set();
+    const alreadyTargets = new Set();
+    for (const doc of queuedSnap.docs) {
+      const queued = doc.data();
+      if (queued.recipient_role) alreadyTargets.add(`${queued.student_id}:${queued.recipient_role}`);
+      else alreadyStudents.add(queued.student_id);
+    }
+    pendingDocs = docs.filter((d) => (
+      !alreadyStudents.has(d.student_id)
+      && !alreadyTargets.has(`${d.student_id}:${d.recipient_role}`)
+    ));
   }
 
   // 큐 배치 enqueue (400건씩).

@@ -14,6 +14,7 @@ const {
 const { recipientFingerprint } = await import('../src/campaignResume.js');
 
 const kst = (y, mo, d, h, mi = 0) => new Date(Date.UTC(y, mo - 1, d, h - 9, mi));
+const promoFp = (ids) => recipientFingerprint(ids, { recipientField: null, recipientFields: null });
 
 describe('buildPromoQueueDoc', () => {
   it('opted-in → SMS fallback allowed, marketing ad_flag, consent snapshot with source/at', () => {
@@ -111,6 +112,36 @@ describe('buildPromoRecipients — 친구/비친구 분기(friendPhones 주입)'
     expect(stats.queued).toBe(2);
     expect(docs.every((d) => d.kind === 'promo')).toBe(true);
     expect(docs.find((d) => d.student_id === 's2').disable_sms).toBe(true);
+  });
+
+  it('recipientFields 다중 선택 시 역할별 큐를 만들고 같은 번호는 dedup한다', () => {
+    const { docs, stats } = buildPromoRecipients(
+      [{
+        id: 's1',
+        student: {
+          student_phone: '01011112222',
+          parent_phone_1: '01011112222',
+          parent_phone_2: '01033334444',
+          message_consent: {
+            promo: { optedIn: true },
+            promo_student: { optedIn: true },
+          },
+        },
+      }],
+      {
+        campaignId: 'c1',
+        content: '(광고)x 무료거부 080',
+        targeting: 'M',
+        scheduledDate: null,
+        recipientFields: ['student', 'parent_1', 'parent_2'],
+        friendPhones: new Set(['01011112222', '01033334444']),
+      },
+    );
+    expect(stats.queued).toBe(2);
+    expect(docs.map((d) => [d.recipient_role, d.recipient_phone, d.kind])).toEqual([
+      ['student', '01011112222', 'promo'],
+      ['parent_2', '01033334444', 'promo'],
+    ]);
   });
 });
 
@@ -250,7 +281,7 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
       'promo_campaigns/req1': {
         status: 'enqueuing', stats: { queued: 2 }, content: AD_CONTENT,
         enqueue_started_at: now.getTime() - 20 * 60 * 1000,
-        request_fingerprint: recipientFingerprint(['s1', 's2'], null),
+        request_fingerprint: promoFp(['s1', 's2']),
       },
       'message_queue/q1': { kind: 'promo_sms', campaign_id: 'req1', student_id: 's1' }, // 이전 호출이 s1까지 enqueue 후 실패
     });
@@ -263,6 +294,36 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
     expect(queued.filter((q) => q.student_id === 's1')).toHaveLength(1); // 중복 없음
     expect(queued.filter((q) => q.student_id === 's2')).toHaveLength(1); // 잔여 재개
     expect(db._docs['promo_campaigns/req1'].status).toBe('queued');
+  });
+
+  it('requestId 재호출: 다중 수신 캠페인은 이미 enqueue된 역할만 제외하고 남은 역할을 재개', async () => {
+    const now = kst(2026, 6, 17, 14, 0);
+    const db = makeDb({
+      'students/s1': {
+        student_phone: '01011112222',
+        parent_phone_2: '01033334444',
+        message_consent: {
+          promo: { optedIn: true },
+          promo_student: { optedIn: true },
+        },
+      },
+      'promo_campaigns/req1': {
+        status: 'enqueuing', stats: { queued: 2 }, content: AD_CONTENT,
+        enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+        request_fingerprint: recipientFingerprint(['s1'], {
+          recipientField: null,
+          recipientFields: ['student', 'parent_2'],
+        }),
+      },
+      'message_queue/q1': { kind: 'promo', campaign_id: 'req1', student_id: 's1', recipient_role: 'student' },
+    });
+    await handleCreatePromoCampaign(
+      { auth, data: { title: '홍보', content: AD_CONTENT, studentIds: ['s1'], recipientFields: ['student', 'parent_2'], requestId: 'req1' } },
+      { db, now, loadFriendPhones: async () => new Set(['01011112222', '01033334444']) },
+    );
+    const queued = Object.entries(db._docs).filter(([k]) => k.startsWith('message_queue/')).map(([, v]) => v);
+    expect(queued.map((q) => q.recipient_role).sort()).toEqual(['parent_2', 'student']);
+    expect(queued.filter((q) => q.recipient_role === 'student')).toHaveLength(1);
   });
 
   it('requestId 재호출: enqueuing 진행 중(lease 유효) → duplicate 단락, 재발송 없음 (더블클릭 race 차단)', async () => {
@@ -288,7 +349,7 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
       'promo_campaigns/req1': {
         status: 'enqueuing', stats: {}, content: AD_CONTENT,
         enqueue_started_at: now.getTime() - 20 * 60 * 1000,
-        request_fingerprint: recipientFingerprint(['s1'], null),
+        request_fingerprint: promoFp(['s1']),
       },
     });
     await expect(
@@ -307,7 +368,7 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
       'promo_campaigns/req1': {
         status: 'enqueuing', stats: {}, content: AD_CONTENT,
         enqueue_started_at: now.getTime() - 20 * 60 * 1000,
-        request_fingerprint: recipientFingerprint(['s1', 's2'], null), // 원 호출은 s1+s2
+        request_fingerprint: promoFp(['s1', 's2']), // 원 호출은 s1+s2
       },
     });
     await expect(

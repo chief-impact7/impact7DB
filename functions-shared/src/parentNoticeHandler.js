@@ -2,7 +2,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { applyTemplate, BRAND_PREFIX } from './templates.js';
-import { resolveRecipientPhone } from './recipientPhone.js';
+import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
 
 // 개별 학부모 정보성 안내(알림톡) 발송 callable. 학생 상세 패널 '메시지' 탭에서 1건 발송.
 // 정보성이므로 동의·야간 제한 없음. 승인된 알림톡 템플릿 코드는 .env로 주입(검수 승인 후 확정).
@@ -99,6 +99,16 @@ export function buildParentNoticeVariables(student, templateKey, input = {}) {
   return vars;
 }
 
+function parentNoticeTargets(student, data) {
+  const fields = Array.isArray(data.recipientFields) && data.recipientFields.length
+    ? data.recipientFields
+    : null;
+  if (fields) return resolveRecipientTargets(student, fields);
+
+  const target = resolveRecipientTarget(student, data.recipientField);
+  return target ? [target] : [];
+}
+
 export async function handleSendParentNotice(request, deps = {}) {
   const db = deps.db ?? getFirestore();
   assertAuthorizedStaff(request.auth);
@@ -118,34 +128,50 @@ export async function handleSendParentNotice(request, deps = {}) {
   const snap = await db.collection('students').doc(studentId).get();
   if (!snap.exists) throw new HttpsError('not-found', '학생을 찾을 수 없습니다.');
   const student = snap.data();
-  const phone = resolveRecipientPhone(student, data.recipientField);
-  if (!phone) throw new HttpsError('failed-precondition', '선택한 대상의 연락처가 없습니다.');
+  const targets = parentNoticeTargets(student, data);
+  if (!targets.length) throw new HttpsError('failed-precondition', '선택한 대상의 연락처가 없습니다.');
 
   const variables = buildParentNoticeVariables(student, templateKey, data.variables);
 
-  // 멱등: requestId 지정 시 큐 doc id로 선점 — 응답 타임아웃 후 재시도의 중복 발송 차단.
-  const queueRef = data.requestId
-    ? db.collection('message_queue').doc(String(data.requestId))
-    : db.collection('message_queue').doc();
-  if (data.requestId) {
-    const existing = await queueRef.get();
-    if (existing.exists) return { queued: true, duplicate: true, queueId: queueRef.id, template: def.label };
+  const queueIds = [];
+  let duplicates = 0;
+  for (const target of targets) {
+    const queueRef = data.requestId
+      ? db.collection('message_queue').doc(targets.length === 1 ? String(data.requestId) : `${String(data.requestId)}_${target.field}`)
+      : db.collection('message_queue').doc();
+    if (data.requestId) {
+      const existing = await queueRef.get();
+      if (existing.exists) {
+        duplicates += 1;
+        queueIds.push(queueRef.id);
+        continue;
+      }
+    }
+    await queueRef.set({
+      kind: 'parent_notice',
+      student_id: studentId,
+      recipient_role: target.field,
+      recipient_phone: target.phone,
+      template_code: templateCode,
+      template_variables: variables,
+      fallback_text: applyTemplate(def.fallback, variables),
+      status: 'pending',
+      attempt_count: 0,
+      next_attempt_at: null,
+      source: 'manual',
+      created_by: request.auth?.uid ?? null,
+      created_at: FieldValue.serverTimestamp(),
+    });
+    queueIds.push(queueRef.id);
   }
 
-  await queueRef.set({
-    kind: 'parent_notice',
-    student_id: studentId,
-    recipient_phone: phone,
-    template_code: templateCode,
-    template_variables: variables,
-    fallback_text: applyTemplate(def.fallback, variables),
-    status: 'pending',
-    attempt_count: 0,
-    next_attempt_at: null,
-    source: 'manual',
-    created_by: request.auth?.uid ?? null,
-    created_at: FieldValue.serverTimestamp(),
-  });
-
-  return { queued: true, queueId: queueRef.id, template: def.label };
+  return {
+    queued: queueIds.length > duplicates,
+    duplicate: duplicates === targets.length,
+    queueId: queueIds[0] ?? null,
+    queueIds,
+    queuedCount: queueIds.length - duplicates,
+    duplicateCount: duplicates,
+    template: def.label,
+  };
 }

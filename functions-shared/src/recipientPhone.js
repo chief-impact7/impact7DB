@@ -12,15 +12,19 @@ export const RECIPIENT_FIELDS = {
 
 // field 지정 시 해당 번호(있으면). 미지정이거나 그 필드가 비어 있으면 parent_1 → parent_2 폴백.
 export function resolveRecipientPhone(student, field) {
+  return resolveRecipientTarget(student, field)?.phone ?? '';
+}
+
+export function resolveRecipientTarget(student, field) {
   if (field && RECIPIENT_FIELDS[field]) {
-    const d = onlyDigits(student?.[RECIPIENT_FIELDS[field]]);
-    if (d) return d;
+    const phone = onlyDigits(student?.[RECIPIENT_FIELDS[field]]);
+    if (phone) return { field, phone };
   }
-  for (const f of ['parent_phone_1', 'parent_phone_2']) {
-    const d = onlyDigits(student?.[f]);
-    if (d) return d;
+  for (const fallbackField of ['parent_1', 'parent_2']) {
+    const phone = onlyDigits(student?.[RECIPIENT_FIELDS[fallbackField]]);
+    if (phone) return { field: fallbackField, phone };
   }
-  return '';
+  return null;
 }
 
 // 여러 field를 순서대로 조회해 번호 배열을 반환한다. 빈 번호·알 수 없는 field는 제외.
@@ -31,6 +35,20 @@ export function resolveRecipientPhones(student, fields) {
     if (!RECIPIENT_FIELDS[field]) continue;
     const d = onlyDigits(student?.[RECIPIENT_FIELDS[field]]);
     if (d) result.push(d);
+  }
+  return result;
+}
+
+// 여러 수신 field를 실제 번호와 함께 반환한다. 같은 번호가 여러 역할에 있으면 첫 역할만 남긴다.
+export function resolveRecipientTargets(student, fields) {
+  const result = [];
+  const seen = new Set();
+  for (const field of fields) {
+    if (!RECIPIENT_FIELDS[field]) continue;
+    const phone = onlyDigits(student?.[RECIPIENT_FIELDS[field]]);
+    if (!phone || seen.has(phone)) continue;
+    seen.add(phone);
+    result.push({ field, phone });
   }
   return result;
 }
