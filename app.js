@@ -39,6 +39,80 @@ const _promoteEnrollPending = createPromoteEnrollPending(
     { db, writeBatch, doc, collection, serverTimestamp }
 );
 
+function installIconTooltips() {
+    let tooltip = null;
+    let activeEl = null;
+
+    const ensureTooltip = () => {
+        if (tooltip) return tooltip;
+        tooltip = document.createElement('div');
+        tooltip.className = 'ui-tooltip';
+        tooltip.setAttribute('role', 'tooltip');
+        document.body.appendChild(tooltip);
+        return tooltip;
+    };
+
+    const labelFor = (el) => (el.getAttribute('title') || el.getAttribute('aria-label') || '').trim();
+
+    const position = (el) => {
+        if (!tooltip) return;
+        const rect = el.getBoundingClientRect();
+        const gap = 8;
+        let top = rect.bottom + gap;
+        tooltip.style.left = `${rect.left + rect.width / 2}px`;
+        tooltip.style.top = `${top}px`;
+        const tipRect = tooltip.getBoundingClientRect();
+        if (tipRect.right > window.innerWidth - 8) {
+            tooltip.style.left = `${window.innerWidth - 8 - tipRect.width / 2}px`;
+        } else if (tipRect.left < 8) {
+            tooltip.style.left = `${8 + tipRect.width / 2}px`;
+        }
+        if (tipRect.bottom > window.innerHeight - 8) {
+            top = rect.top - tipRect.height - gap;
+            tooltip.style.top = `${Math.max(8, top)}px`;
+        }
+    };
+
+    const show = (target) => {
+        const el = target.closest?.('.icon-btn, .action-chip-btn');
+        if (!el) return;
+        if (activeEl === el) return;
+        const label = labelFor(el);
+        if (!label) return;
+        activeEl = el;
+        if (el.hasAttribute('title')) {
+            el.dataset.tooltipTitle = el.getAttribute('title');
+            el.removeAttribute('title');
+        }
+        const tip = ensureTooltip();
+        tip.textContent = label;
+        tip.classList.add('visible');
+        position(el);
+    };
+
+    const hide = () => {
+        if (activeEl?.dataset.tooltipTitle && !activeEl.hasAttribute('title')) {
+            activeEl.setAttribute('title', activeEl.dataset.tooltipTitle);
+        }
+        if (activeEl?.dataset.tooltipTitle) {
+            delete activeEl.dataset.tooltipTitle;
+        }
+        activeEl = null;
+        tooltip?.classList.remove('visible');
+    };
+
+    document.addEventListener('pointerover', (e) => show(e.target));
+    document.addEventListener('pointerout', (e) => {
+        if (activeEl && !activeEl.contains(e.relatedTarget)) hide();
+    });
+    document.addEventListener('focusin', (e) => show(e.target));
+    document.addEventListener('focusout', hide);
+    window.addEventListener('scroll', () => activeEl && position(activeEl), true);
+    window.addEventListener('resize', () => activeEl && position(activeEl));
+}
+
+installIconTooltips();
+
 // class_settings 캐시 — 내신/자유학기 기간 파생(getActiveEnrollments)에 사용하므로
 // 로그인 후 학생 목록 첫 렌더 전에 eager-load 한다. 반당 1문서라 작은 컬렉션, 1회 로드.
 // (모달의 _populateTargetClassDropdown도 이 캐시를 공유)
