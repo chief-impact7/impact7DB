@@ -2,20 +2,25 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('firebase-admin/firestore', () => ({
   getFirestore: vi.fn(),
-  FieldValue: { serverTimestamp: () => '<ts>', delete: () => '<delete>' },
+  FieldValue: { serverTimestamp: () => '<ts>', delete: () => '<delete>', increment: (n) => `<inc:${n}>` },
 }));
 
 const { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii, __testing } = await import('../src/queueWorker.js');
 
 // message_queue/message_logs/kakao_channel_friends를 흉내내는 인메모리 Firestore.
-function makeDb(initialQueue = {}, initialFriends = {}) {
+function makeDb(initialQueue = {}, initialFriends = {}, initialNonFriends = {}) {
   const queue = new Map(Object.entries(initialQueue));
   const logs = [];
   const friends = new Map(Object.entries(initialFriends));
+  const nonFriends = new Map(Object.entries(initialNonFriends));
 
   function docRef(collMap, id) {
     return {
       id,
+      async get() {
+        const data = collMap.get(id);
+        return { exists: data !== undefined, data: () => data };
+      },
       async update(patch) {
         collMap.set(id, { ...(collMap.get(id) ?? {}), ...patch });
       },
@@ -88,6 +93,12 @@ function makeDb(initialQueue = {}, initialFriends = {}) {
           where: (...a) => query(friends).where(...a),
         };
       }
+      if (name === 'kakao_nonfriend_targets') {
+        return {
+          doc: (id) => docRef(nonFriends, id),
+          where: (...a) => query(nonFriends).where(...a),
+        };
+      }
       return {
         doc: (id) => docRef(queue, id),
         where: (...a) => query(queue).where(...a),
@@ -119,6 +130,7 @@ function makeDb(initialQueue = {}, initialFriends = {}) {
     _queue: queue,
     _logs: logs,
     _friends: friends,
+    _nonFriends: nonFriends,
   };
 }
 
@@ -519,7 +531,7 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
   });
 
   it('도달(4000) → sent + 친구 학습 + 콜백(channel=kakao)', async () => {
-    const db = makeDb({ pb_ok: awaitingDoc() });
+    const db = makeDb({ pb_ok: awaitingDoc() }, {}, { '01099887766': { phone: '01099887766' } });
     const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'delivered', statusCode: '4000' });
     const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
 
@@ -529,6 +541,7 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(db._queue.get('pb_ok').status).toBe('sent');
     expect(db._friends.has('01099887766')).toBe(true);
     expect(db._friends.get('01099887766')).toMatchObject({ phone: '01099887766' });
+    expect(db._nonFriends.has('01099887766')).toBe(false); // 가입 확인 → 유도 명단 자동 제거
     expect(notifyResultCallback).toHaveBeenCalledTimes(1);
     expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({
       status: 'sent', channel: 'kakao', applicationId: 'app_bms',
@@ -570,6 +583,13 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(db._queue.get('pb_nf').status).toBe('converted_to_sms');
     expect(db._queue.get('pb_nf').last_error_code).toBe('3120');
     expect(notifyResultCallback).not.toHaveBeenCalled();
+    // 비친구 확정 → 채널 가입 유도 명단 기록(key/convert_count 포함)
+    const target = db._nonFriends.get('01099887766');
+    expect(target).toBeDefined();
+    expect(target.phone).toBe('01099887766');
+    expect(target.key).toMatch(/^[0-9a-f]{32}$/);
+    expect(target.convert_count).toBe('<inc:1>');
+    expect(target.hidden_at).toBe('<delete>'); // 새 증거 → 숨김 해제
   });
 
   it('비친구 → content/result_callback/scheduled_date를 문자 doc에 복제', async () => {
@@ -610,6 +630,7 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(db._queue.get('pb_nb').status).toBe('converted_to_sms');
     expect(db._queue.get('pb_nb_sms').kind).toBe('direct');
     expect(db._queue.get('pb_nb_sms').content).toBe('[진단평가] 6/25(수) 오후 2시');
+    expect(db._nonFriends.size).toBe(0); // 야간차단은 비친구 확정 아님 — 유도 명단 미기록
   });
 
   it('SMS 전환 batch 실패 → 원본 converted_to_sms 아님 + SMS doc 미생성(유실 방지, H-08)', async () => {

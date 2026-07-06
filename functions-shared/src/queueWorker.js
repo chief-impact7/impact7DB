@@ -2,6 +2,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { maskPhone } from './phoneMask.js';
 import { resolveChannelAddUrl, channelInviteSuffix, loadChannelInviteText } from './channelInvite.js';
 import { parseKstToDate } from './promoSchedule.js';
+import { recordNonFriendTarget, removeNonFriendTarget } from './nonFriendTargets.js';
 
 // 메시지 큐 워커 — 계약 정본(message-architect_api-contract §2.4, §4.1) 기준.
 // status 전이: pending → processing → sent | failed_retryable | failed_permanent.
@@ -341,10 +342,14 @@ async function finalizeBmsDelivered(db, ref, data, notifyResultCallback) {
   try {
     const phoneKey = onlyDigitsLocal(data.recipient_phone);
     if (phoneKey) {
-      await db.collection('kakao_channel_friends').doc(phoneKey).set(
-        { phone: phoneKey, updated_at: FieldValue.serverTimestamp() },
-        { merge: true },
-      );
+      // 친구 학습 + 가입 유도 명단 자동 제거(카톡 도달 = 가입 확인) — 독립 쓰기라 병렬 실행.
+      await Promise.all([
+        db.collection('kakao_channel_friends').doc(phoneKey).set(
+          { phone: phoneKey, updated_at: FieldValue.serverTimestamp() },
+          { merge: true },
+        ),
+        removeNonFriendTarget(db, phoneKey),
+      ]);
     }
   } catch (err) {
     console.error('[queueWorker] 친구 학습 실패(발송 영향 없음):', err?.message ?? err);
@@ -433,6 +438,20 @@ async function convertBmsToSms(db, ref, data, statusCode, attemptCount, now = ne
     updated_at: FieldValue.serverTimestamp(),
   });
   await batch.commit();
+  // 비친구 확정(3120)만 채널 가입 유도 대상으로 기록 — 야간차단(3108)·타임아웃은 비친구 확정이
+  // 아니므로(친구여도 못 받았을 수 있음) 제외. commit 이후에 기록해야 batch 실패 → sweeper 재처리
+  // 경로에서 convert_count가 중복 증가하지 않는다(전환 확정 1회 = 기록 1회).
+  if (statusCode === BMS_NOT_FRIEND_CODE) {
+    try {
+      await recordNonFriendTarget(db, {
+        phone: data.recipient_phone,
+        studentId: data.student_id ?? null,
+        kind: data.kind ?? null,
+      });
+    } catch (err) {
+      console.error('[queueWorker] 가입 유도 명단 기록 실패(전환은 완료됨):', err?.message ?? err);
+    }
+  }
   await writeMessageLog(db, data, ref.id, {
     status: 'converted_to_sms',
     channel: null,
