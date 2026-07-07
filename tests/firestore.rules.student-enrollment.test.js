@@ -101,7 +101,15 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
     }));
   });
 
-  test('50개 전 클라 필드 문서 생성 허용 (한도 50)', async () => {
+  test('클라가 parent_message_recipient_fields 수정 → 허용', async () => {
+    await seed('s1', base);
+    const db = authedCtx(env, 't1');
+    await assertSucceeds(updateDoc(doc(db, 'students/s1'), {
+      parent_message_recipient_fields: ['parent_1', 'parent_2'],
+    }));
+  });
+
+  test('51개 전 클라 필드 문서 생성 허용 (한도 51)', async () => {
     const db = authedCtx(env, 't1');
     const full = {
       name: '홍길동', level: '중등', grade: 1,
@@ -123,8 +131,9 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
       nameNormalized: 'hgd', studentNumber: 1, studentNumberSource: 'manual', studentNumberIssuedAt: '',
       studentNumberHistory: [],
       message_recipient_settings: { alimtalk: ['parent_1'], bms: ['parent_1'] },
+      parent_message_recipient_fields: ['parent_1'],
     };
-    await assertSucceeds(setDoc(doc(db, 'students/full1'), full)); // 정확히 50 fields
+    await assertSucceeds(setDoc(doc(db, 'students/full1'), full)); // 정확히 51 fields
   });
 
   test('클라가 허용 외 임의 필드 추가 update → 거부 (diff 전환 후에도 주입 차단 유지)', async () => {
