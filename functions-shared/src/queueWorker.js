@@ -6,14 +6,12 @@ import { recordNonFriendTarget, removeNonFriendTarget } from './nonFriendTargets
 
 // 메시지 큐 워커 — 계약 정본(message-architect_api-contract §2.4, §4.1) 기준.
 // status 전이: pending → processing → sent | failed_retryable | failed_permanent.
-// fallback(SMS/LMS)은 솔라피 내장 대체발송이므로 워커는 SMS를 따로 보내지 않고
-// 솔라피 최종 채널(message_logs.channel)만 기록한다.
+// 자유 본문은 BMS_FREE를 쓰지 않는다. 알림톡 외 자유 발송은 SMS/LMS provider로 통일한다.
 
-// BMS 발송결과 "수신 완료"(친구 도달) 코드 — message_logs 기록용. 접수(2000)는 카톡 도달이
-// 아니므로 비친구(3120)·야간(3108)은 발송결과 폴링에서 판정한다(코드 정본은 solapiProvider.js).
+// 과거 BMS 발송결과 "수신 완료"(친구 도달) 코드 — 기존 awaiting 큐 종결용.
 const BMS_DELIVERED_CODE = '4000';
 const SMS_DELIVERED_CODE = '4000'; // SMS/LMS 수신 완료 — direct/promo_sms 발송결과 확정용
-// 발송결과 폴링 파라미터: parent_bms 접수 후 도달/비친구가 확정되기까지 사후 조회한다.
+// 발송결과 폴링 파라미터: SMS/LMS 접수 후 통신사 도달이 확정되기까지 사후 조회한다.
 const DELIVERY_FIRST_DELAY_MS = 2 * 60_000; // 접수 후 첫 결과 조회까지 대기(2분)
 const DELIVERY_RECHECK_MS = 2 * 60_000; // 미확정 시 재조회 간격(2분)
 const DELIVERY_LEASE_MS = 3 * 60_000; // 폴링 클레임 리스(중복 조회 방지) — 스케줄 주기(1분)보다 크게
@@ -29,14 +27,12 @@ const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000]; // 1m, 5m, 15m
 const LEASE_MS = 10 * 60_000; // processing 리스(10분) — 크래시로 고착된 doc을 sweeper가 회수
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 종결 doc 평문 PII 보존기간(7일) — 이후 purge(T8 항목1)
 const PURGE_LIMIT = 500; // purge 1회 처리 상한(폭주 방지)
-// 정보성(attendance/parent_notice)은 알림톡, 홍보(promo)는 브랜드 메시지로 발송.
-// promo는 P3 캠페인 callable이 동의 게이트·야간 보정을 통과시킨 뒤에만 enqueue되므로,
-// 워커는 큐 doc의 disable_sms/scheduled_date를 그대로 provider에 전달한다(여기서 재검증 안 함).
+// attendance/parent_notice는 알림톡, 자유 본문(direct/promo_sms 및 구형 promo/report/parent_bms)은 문자로 발송.
 const ALLOWED_KINDS = new Set(['attendance', 'parent_notice', 'promo', 'direct', 'report', 'promo_sms', 'parent_bms']);
 const PROMO_KIND = 'promo';
-const REPORT_KIND = 'report'; // 일일 학습 리포트 — 정보형 BMS(친구만 수신, 비친구는 발송 단계에서 가입안내로 분기)
-const PARENT_BMS_KIND = 'parent_bms'; // 학부모 안내(진단평가 등) — 정보형 BMS, report와 동일 동작
-const PROMO_SMS_KIND = 'promo_sms'; // 비친구 광고동의자 → 광고 SMS 직접 발송(BMS 대체 비활성 우회)
+const REPORT_KIND = 'report'; // 구형 자유 안내 kind — 현재는 문자로 라우팅
+const PARENT_BMS_KIND = 'parent_bms'; // 구형 학부모 안내 kind — 현재는 문자로 라우팅
+const PROMO_SMS_KIND = 'promo_sms'; // 광고 SMS/LMS 직접 발송
 // 종결 후 purge 대상 평문 필드(번호·대체발송 본문·학생명 포함 변수맵).
 const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
 
@@ -47,17 +43,16 @@ const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
 async function defaultSender(payload) {
   const mod = await import('./solapiProvider.js');
   const config = mod.getSolapiConfig();
-  if (payload.kind === PROMO_KIND || payload.kind === REPORT_KIND || payload.kind === PARENT_BMS_KIND) return mod.sendKakaoBrandMessage(payload, config);
-  if (payload.kind === 'direct' || payload.kind === PROMO_SMS_KIND) return mod.sendSms(payload, config);
+  if (payload.kind === 'direct' || payload.kind === PROMO_SMS_KIND || payload.kind === PROMO_KIND || payload.kind === REPORT_KIND || payload.kind === PARENT_BMS_KIND) return mod.sendSms(payload, config);
   return mod.sendKakaoAlimtalk(payload, config);
 }
 
 // 발송결과 사후 조회기(폴링). 접수≠도달이므로 groupId로 최종 발송결과를 조회한다.
-// SMS(direct/promo_sms)와 BMS는 결과 코드 의미가 달라 조회 함수를 kind로 분기한다.
+// 새 자유 발송은 모두 SMS/LMS 결과 조회를 쓴다. 기존 awaiting BMS doc만 브랜드 결과 조회를 유지한다.
 async function defaultResultFetcher(groupId, kind) {
   const mod = await import('./solapiProvider.js');
   const config = mod.getSolapiConfig();
-  if (kind === 'direct' || kind === PROMO_SMS_KIND) return mod.fetchSmsResult(groupId, config);
+  if (kind === 'direct' || kind === PROMO_SMS_KIND || kind === PROMO_KIND || kind === REPORT_KIND || kind === PARENT_BMS_KIND) return mod.fetchSmsResult(groupId, config);
   return mod.fetchBrandMessageResult(groupId, config);
 }
 
@@ -90,37 +85,18 @@ async function fireResultCallback(notify, ref, data, { status, channel }) {
 
 // 로그 저장용 마스킹 — 평문 번호 저장 금지(계약 §2.5). 공용 maskPhone(src/phoneMask.js) 사용.
 
-// 큐 doc → provider payload. kind별로 provider 입력이 다르다(알림톡=템플릿, promo=자유 본문).
+function smsTextFor(data) {
+  const base = data.content ?? '';
+  return data.sms_suffix ? `${base}\n\n${data.sms_suffix}` : base;
+}
+
+// 큐 doc → provider payload. kind별로 provider 입력이 다르다(알림톡=템플릿, 자유본문=문자).
 function buildSendPayload(data) {
-  if (data.kind === 'direct' || data.kind === PROMO_SMS_KIND) {
+  if (data.kind === 'direct' || data.kind === PROMO_SMS_KIND || data.kind === PROMO_KIND || data.kind === REPORT_KIND || data.kind === PARENT_BMS_KIND) {
     return {
       to: data.recipient_phone,
-      text: data.content ?? '',
+      text: smsTextFor(data),
       scheduledDate: data.scheduled_date ?? undefined,
-      kind: data.kind,
-    };
-  }
-  if (data.kind === PROMO_KIND) {
-    return {
-      to: data.recipient_phone,
-      content: data.content ?? '',
-      buttons: data.buttons ?? undefined,
-      imageId: data.image_id ?? undefined,
-      adFlag: data.ad_flag !== false, // 광고 기본 true
-      disableSms: data.disable_sms !== false, // 동의자만 P3가 false로 세팅(미동의면 BMS만)
-      targeting: data.targeting ?? 'M',
-      scheduledDate: data.scheduled_date ?? undefined, // 야간 보정된 예약시각(있으면)
-      kind: data.kind,
-    };
-  }
-  if (data.kind === REPORT_KIND || data.kind === PARENT_BMS_KIND) {
-    return {
-      to: data.recipient_phone,
-      content: data.content ?? '',
-      adFlag: data.ad_flag === true, // 정보형 기본 false
-      disableSms: true, // 비친구는 발송결과 폴링이 문자로 전환 — 솔라피 내장 대체는 BMS에서 비활성
-      targeting: data.targeting ?? 'I',
-      scheduledDate: data.scheduled_date ?? undefined, // 예약시각 있으면 전달(parent_bms는 야간 시 dispatch가 08:00 보정)
       kind: data.kind,
     };
   }
@@ -247,18 +223,9 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
     return;
   }
 
-  // 정보형 BMS는 야간(20:50~08:00)엔 카카오가 발송을 차단(실측 3108)한다. parent_bms는 예약시각이
-  // 없으면 자동으로 다음 08:00로 보정해 솔라피 예약 발송에 맡긴다. report(교사 수동)는 자동 보정 대신
-  // 발송자가 명시 예약(scheduled_date, 야간 안내 시 UI에서 선택)한 경우에만 그 시각으로 예약하고,
-  // 예약이 없으면 즉시 시도해 야간차단(3108)이 나오면 발송결과 폴링이 문자로 전환한다.
+  // 구형 BMS 큐가 남아 있어도 지금은 SMS/LMS로 즉시 발송한다. 카카오 야간 보정은 적용하지 않는다.
   let scheduledSendAt = null;
-  if (data.kind === PARENT_BMS_KIND || data.kind === REPORT_KIND) {
-    const { isAdNightKST, resolveAdScheduledAt, parseKstToDate } = await import('./promoSchedule.js');
-    if (data.kind === PARENT_BMS_KIND && !data.scheduled_date && isAdNightKST(now)) {
-      data.scheduled_date = resolveAdScheduledAt(now);
-    }
-    if (data.scheduled_date) scheduledSendAt = parseKstToDate(data.scheduled_date);
-  }
+  if (data.scheduled_date) scheduledSendAt = parseKstToDate(data.scheduled_date);
 
   // 발송 직전 마커 — 이 이후 크래시하면 솔라피 접수 여부가 불확실하다. sweeper가 리스 회수 시
   // 이 마커를 보고 자동 재발송 대신 수동 검토(failed_permanent)로 종결해 중복 발송을 차단한다.
@@ -273,18 +240,7 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
   }
 
   if (result?.ok) {
-    // 정보형 BMS(parent_bms/report) 접수 성공(2000)은 카톡 도달을 보장하지 않는다 — 비친구(3120)·
-    // 야간(3108)은 비동기 발송결과에만 나타난다. 따라서 종결하지 않고 발송결과 폴링이 도달/비친구를
-    // 확정한다(친구 학습·문자 전환·콜백은 모두 폴링 단계로 미룬다). report도 친구명단이 실제 카톡
-    // 상태와 어긋날 수 있어(명단엔 있으나 미도달) 동일하게 폴링해 미도달 시 문자로 전환한다.
-    if (data.kind === PARENT_BMS_KIND || data.kind === REPORT_KIND) {
-      // 예약 발송이면 발송 시각 이후부터 결과를 조회한다(즉시 발송이면 접수 시각 기준). 예약 전
-      // 조기 폴링이 미발송을 'pending'으로 누적해 상한 타임아웃으로 오전환되는 것을 막는다.
-      const base = scheduledSendAt && scheduledSendAt > now ? scheduledSendAt : now;
-      await markAwaitingDeliveryResult(db, ref, data, result, new Date(base.getTime() + DELIVERY_FIRST_DELAY_MS));
-      return;
-    }
-    if ((data.kind === 'direct' || data.kind === PROMO_SMS_KIND) && result.groupId) {
+    if ((data.kind === 'direct' || data.kind === PROMO_SMS_KIND || data.kind === PROMO_KIND || data.kind === REPORT_KIND || data.kind === PARENT_BMS_KIND) && result.groupId) {
       // SMS/LMS 접수 성공(2000)도 통신사 도달을 보장하지 않는다(예: 3058 "전송경로 없음"은
       // 비동기 발송결과에만 나타남). 종결하지 않고 발송결과 폴링이 도달/실패를 확정한다.
       // groupId가 없으면 사후조회가 불가능(매번 missing_group_id로 읽혀 중복 재발송 유발)하므로
@@ -313,7 +269,7 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
   }
 }
 
-// parent_bms 접수 성공 → 발송결과 대기. 도달/비친구는 발송결과 폴링이 확정한다.
+// SMS/LMS 접수 성공 → 발송결과 대기.
 async function markAwaitingDeliveryResult(db, ref, data, result, checkAt) {
   await ref.update({
     status: 'awaiting_delivery_result',
@@ -481,7 +437,7 @@ async function processDeliveryResult(db, ref, data, resultFetcher, notifyResultC
   const result = await resultFetcher(data.solapi_group_id, data.kind);
   const count = (data.delivery_check_count ?? 0) + 1;
   const attemptCount = data.attempt_count ?? 0;
-  const isSms = data.kind === 'direct' || data.kind === PROMO_SMS_KIND;
+  const isSms = data.kind === 'direct' || data.kind === PROMO_SMS_KIND || data.kind === PROMO_KIND || data.kind === REPORT_KIND || data.kind === PARENT_BMS_KIND;
 
   switch (result?.outcome) {
     case 'delivered':
@@ -536,9 +492,8 @@ export async function processQueueDoc(event, deps = {}) {
   return null;
 }
 
-// onSchedule(짧은 주기, 예 1분) 발송결과 폴링 — parent_bms 접수 후 도달/비친구를 확정한다.
-// awaiting_delivery_result & delivery_check_at<=now 대상: getGroupMessages로 결과 조회 →
-// 도달(4000) 종결+친구학습, 비친구(3120)/야간(3108) 문자 전환, 미확정 재연장(상한 후 문자).
+// onSchedule(짧은 주기, 예 1분) 발송결과 폴링.
+// 새 자유 발송은 SMS/LMS 결과를 확정하고, 과거 BMS awaiting 문서만 비친구/야간 결과를 문자로 전환한다.
 export async function runDeliveryResultSweep(deps = {}) {
   const db = deps.db ?? getFirestore();
   const resultFetcher = deps.resultFetcher ?? defaultResultFetcher;

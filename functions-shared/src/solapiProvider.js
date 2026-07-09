@@ -73,51 +73,12 @@ export async function sendKakaoAlimtalk(payload, config, { serviceFactory = defa
   }
 }
 
-// 카카오 브랜드 메시지(BMS) 발송 — 광고성 홍보. 친구톡은 2025-12-31 종료되어 BMS 자유형으로 통합됐다.
-// 자유형(BMS_FREE)은 템플릿 검수가 없고 본문이 자유다. 기본 발송은 채널 친구 추가 고객 대상이며,
-// 마케팅 동의자(비친구)까지 보내는 확장 발송은 채널 친구 5만 이상 등 카카오 승인 필요(학원 규모 불가).
-// sendKakaoAlimtalk과 동일하게 예외를 던지지 않고 정규화 결과를 반환한다(워커가 큐/로그에 매핑).
-//
-// payload: { to, content, imageId?, buttons?, adFlag?, disableSms?, targeting?, chatBubbleType? }
-//   - content: 본문. 대체발송 시 그대로 SMS 본문이 되므로 (광고)·학원명·무료거부 포함은 호출자 책임.
-//   - targeting: 'M'(마케팅, 기본) | 'I'(정보성) | 'N'. 광고 홍보는 'M'.
-//   - adFlag: 기본 true(광고 — 카카오가 '광고'/수신거부 자동 표기). 정보성만 false.
-//   - disableSms: 기본 true(BMS만). 광고 SMS 대체는 수신동의자에게만 허용해야 하므로,
-//                 호출자(캠페인)가 canReceivePromoSms로 동의 확인 후에만 false로 명시한다.
-//   - buttons: [{ buttonType:'WL', buttonName, linkMo, linkPc }] 등 웹링크 버튼(블로그/신청 링크).
+// BMS_FREE는 운영에서 사용하지 않는다. 자유 본문은 SMS/LMS 또는 승인된 알림톡 템플릿만 허용한다.
 export async function sendKakaoBrandMessage(payload, config, { serviceFactory = defaultServiceFactory } = {}) {
-  const cfg = config ?? getSolapiConfig();
-  const to = onlyDigits(payload?.to);
-  if (!to) return permanentResult('invalid_recipient', '수신번호가 비어 있습니다.');
-  if (!payload?.content) return permanentResult('missing_content', '브랜드 메시지 본문이 비어 있습니다.');
-
-  const kakaoOptions = {
-    pfId: cfg?.pfId,
-    adFlag: payload.adFlag !== false, // 광고 기본 true
-    disableSms: payload.disableSms === false ? false : true, // 기본 BMS만, 동의자에 한해 false
-    bms: {
-      targeting: payload.targeting ?? 'M', // 마케팅(광고) 기본
-      chatBubbleType: payload.chatBubbleType ?? (payload.imageId ? 'IMAGE' : 'TEXT'),
-    },
-  };
-  if (payload.imageId) kakaoOptions.imageId = payload.imageId;
-  if (Array.isArray(payload.buttons) && payload.buttons.length) kakaoOptions.buttons = payload.buttons;
-
-  const message = {
-    to,
-    from: onlyDigits(cfg?.from),
-    type: 'BMS_FREE', // 자유형(검수 불요). 정형 템플릿형 도입 시 호출자가 type/templateId 확장
-    text: payload.content, // BMS 본문 = 대체발송 시 SMS 본문
-    kakaoOptions,
-  };
-
-  try {
-    const service = serviceFactory(cfg.apiKey, cfg.apiSecret);
-    const res = await service.send(message, buildSendOptions(payload));
-    return normalizeSuccess(res);
-  } catch (err) {
-    return normalizeFailure(err);
-  }
+  void payload;
+  void config;
+  void serviceFactory;
+  return permanentResult('bms_free_disabled', 'BMS_FREE 발송은 비활성화되었습니다. 자유 본문은 SMS/LMS 또는 승인 알림톡 템플릿을 사용하세요.');
 }
 
 // 일반 SMS/LMS 발송(카카오 미경유) — 임의 번호 즉석 발송용. 본문 길이에 따라 솔라피가 SMS/LMS 자동 분류.

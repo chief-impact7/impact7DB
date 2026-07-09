@@ -228,14 +228,13 @@ describe('processQueueDoc', () => {
     expect(db._logs[0]).toMatchObject({ status: 'failed', status_code: 'kind_not_allowed' });
   });
 
-  it('report kind → 정보형 BMS payload(targeting I, adFlag false, disableSms) + 접수 후 발송결과 대기', async () => {
+  it('legacy report kind → SMS/LMS payload + 접수 후 발송결과 대기', async () => {
     const db = makeDb({ q1: baseQueueDoc({ kind: 'report', content: '[6/16] 수업 결과...', targeting: 'I', ad_flag: false }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', groupId: 'grp1', statusCode: '2000' });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm1', groupId: 'grp1', statusCode: '2000' });
     await processQueueDoc(eventFor(db, 'q1'), { db, sender });
     expect(sender).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'report', to: '01012345678', content: '[6/16] 수업 결과...', targeting: 'I', adFlag: false, disableSms: true,
+      kind: 'report', to: '01012345678', text: '[6/16] 수업 결과...',
     }));
-    // 접수 2000 ≠ 카톡 도달 — parent_bms처럼 폴링으로 도달/비친구를 확정한다(친구명단 오차 self-correct).
     const d = db._queue.get('q1');
     expect(d.status).toBe('awaiting_delivery_result');
     expect(d.solapi_group_id).toBe('grp1');
@@ -421,32 +420,31 @@ describe('purgeExpiredPii', () => {
   });
 });
 
-describe('kind=parent_bms 접수 → 발송결과 대기', () => {
-  it('sendKakaoBrandMessage로 라우팅 + 접수 성공 시 발송결과 대기(awaiting_delivery_result)', async () => {
+describe('legacy kind=parent_bms → SMS/LMS 발송결과 대기', () => {
+  it('SMS/LMS로 라우팅 + 접수 성공 시 발송결과 대기(awaiting_delivery_result)', async () => {
     const db = makeDb({ pb1: baseQueueDoc({ kind: 'parent_bms', content: '[진단평가] 6/25(수) 오후 2시 실시 예정입니다.', targeting: 'I', ad_flag: false }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm1', groupId: 'g1', statusCode: '2000' });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm1', groupId: 'g1', statusCode: '2000' });
     await processQueueDoc(eventFor(db, 'pb1'), { db, sender });
-    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'parent_bms' }));
-    // 접수 성공은 카톡 도달이 아님 — 폴링이 확정할 때까지 대기한다.
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'parent_bms', text: '[진단평가] 6/25(수) 오후 2시 실시 예정입니다.' }));
     const d = db._queue.get('pb1');
     expect(d.status).toBe('awaiting_delivery_result');
     expect(d.solapi_group_id).toBe('g1');
     expect(d.delivery_check_at).toBeInstanceOf(Date);
   });
 
-  it('payload: targeting I, adFlag false, disableSms true', async () => {
-    const db = makeDb({ pb2: baseQueueDoc({ kind: 'parent_bms', content: '안내', ad_flag: false, targeting: 'I' }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm2', groupId: 'g2', statusCode: '2000' });
+  it('payload: text와 sms_suffix를 합쳐 보낸다', async () => {
+    const db = makeDb({ pb2: baseQueueDoc({ kind: 'parent_bms', content: '안내', sms_suffix: '채널 추가 안내' }) });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm2', groupId: 'g2', statusCode: '2000' });
     await processQueueDoc(eventFor(db, 'pb2'), { db, sender });
     expect(sender).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'parent_bms', to: '01012345678', content: '안내', targeting: 'I', adFlag: false, disableSms: true,
+      kind: 'parent_bms', to: '01012345678', text: '안내\n\n채널 추가 안내',
     }));
   });
 
-  it('접수 성공 시 콜백 보류(폴링이 도달/전환 확정 후 1회 콜백)', async () => {
+  it('접수 성공 시 콜백 보류(폴링이 도달 확정 후 1회 콜백)', async () => {
     const resultCallback = { url: 'https://example.com/callback', applicationId: 'app_bms' };
     const db = makeDb({ pb3: baseQueueDoc({ kind: 'parent_bms', content: '안내', result_callback: resultCallback }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm3', groupId: 'g3', statusCode: '2000' });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm3', groupId: 'g3', statusCode: '2000' });
     const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
     await processQueueDoc(eventFor(db, 'pb3'), { db, sender, notifyResultCallback });
     expect(notifyResultCallback).not.toHaveBeenCalled();
@@ -465,16 +463,15 @@ describe('kind=parent_bms 접수 → 발송결과 대기', () => {
     expect(db._queue.get('pb4').status).toBe('failed_permanent');
   });
 
-  it('야간(21시 KST) 접수 시 scheduled_date를 다음 08:00로 보정해 예약 발송', async () => {
+  it('야간에도 카카오 예약 보정 없이 즉시 문자 접수한다', async () => {
     const db = makeDb({ pb5: baseQueueDoc({ kind: 'parent_bms', content: '안내', targeting: 'I', ad_flag: false }) });
-    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'kakao', messageId: 'm5', groupId: 'g5', statusCode: '2000' });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm5', groupId: 'g5', statusCode: '2000' });
     const night = new Date('2026-06-25T12:00:00Z'); // 21:00 KST
     await processQueueDoc(eventFor(db, 'pb5'), { db, sender, now: night });
-    expect(sender.mock.calls[0][0].scheduledDate).toBe('2026-06-26 08:00:00');
+    expect(sender.mock.calls[0][0].scheduledDate).toBeUndefined();
     const d = db._queue.get('pb5');
-    expect(d.scheduled_date).toBe('2026-06-26 08:00:00');
-    // 폴링 시작은 예약 발송(08:00 KST = 23:00Z) 이후여야 — 조기 타임아웃 오전환 방지(리뷰 HIGH).
-    expect(d.delivery_check_at.getTime()).toBeGreaterThanOrEqual(new Date('2026-06-25T23:00:00Z').getTime());
+    expect(d.scheduled_date).toBeNull();
+    expect(d.delivery_check_at.getTime()).toBeGreaterThan(night.getTime());
   });
 });
 
@@ -514,7 +511,7 @@ describe('parent_bms 접수 단계 실패(동기) — 친구명단·문자전환
   });
 });
 
-describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
+describe('legacy parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
   const PAST = new Date('2026-06-25T00:00:00Z');
   const NOW = new Date('2026-06-25T00:05:00Z');
   const awaitingDoc = (overrides = {}) => ({
@@ -530,7 +527,7 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     ...overrides,
   });
 
-  it('도달(4000) → sent + 친구 학습 + 콜백(channel=kakao)', async () => {
+  it('도달(4000) → sent + SMS 콜백(channel=sms)', async () => {
     const db = makeDb({ pb_ok: awaitingDoc() }, {}, { '01099887766': { phone: '01099887766' } });
     const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'delivered', statusCode: '4000' });
     const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
@@ -539,16 +536,15 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
 
     expect(resultFetcher).toHaveBeenCalledWith('grp1', 'parent_bms');
     expect(db._queue.get('pb_ok').status).toBe('sent');
-    expect(db._friends.has('01099887766')).toBe(true);
-    expect(db._friends.get('01099887766')).toMatchObject({ phone: '01099887766' });
-    expect(db._nonFriends.has('01099887766')).toBe(false); // 가입 확인 → 유도 명단 자동 제거
+    expect(db._friends.has('01099887766')).toBe(false);
+    expect(db._nonFriends.has('01099887766')).toBe(true);
     expect(notifyResultCallback).toHaveBeenCalledTimes(1);
     expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({
-      status: 'sent', channel: 'kakao', applicationId: 'app_bms',
+      status: 'sent', channel: 'sms', applicationId: 'app_bms',
     }));
   });
 
-  it('도달 → 친구 학습 실패해도 sent + 콜백', async () => {
+  it('도달 → 친구 학습을 시도하지 않고 sent + 콜백', async () => {
     const db = makeDb({ pb_ok2: awaitingDoc() });
     const orig = db.collection.bind(db);
     db.collection = (name) => {
@@ -561,7 +557,7 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
 
     expect(db._queue.get('pb_ok2').status).toBe('sent');
-    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'sent' }));
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'sent', channel: 'sms' }));
   });
 
   it('비친구(3120) → 친구명단 제거 + kind=direct 문자 doc + 원 doc converted_to_sms + 원 doc 콜백 없음', async () => {
@@ -644,15 +640,14 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(db._queue.has('pb_fail_sms')).toBe(false);
   });
 
-  it('발송 실패(failed) → failed_permanent + 콜백(failed)', async () => {
+  it('SMS 발송 실패(failed) → 재시도 대기', async () => {
     const db = makeDb({ pb_pf: awaitingDoc() });
     const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'failed', statusCode: '3014', statusMessage: '수신번호 오류' });
-    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
 
-    await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
 
-    expect(db._queue.get('pb_pf').status).toBe('failed_permanent');
-    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'failed' }));
+    expect(db._queue.get('pb_pf').status).toBe('failed_retryable');
+    expect(db._queue.get('pb_pf').last_error_code).toBe('3014');
   });
 
   it('미확정(pending) → 재조회 카운트 증가 + delivery_check_at 재연장(종결 안 함)', async () => {
@@ -665,12 +660,14 @@ describe('parent_bms 발송결과 폴링 (runDeliveryResultSweep)', () => {
     expect(d.delivery_check_at.getTime()).toBeGreaterThan(NOW.getTime());
   });
 
-  it('미확정 상한 초과 → 유실 방지로 문자 전환', async () => {
+  it('미확정 상한 초과 → SMS 미확정 실패로 종결', async () => {
     const db = makeDb({ pb_to: awaitingDoc({ delivery_check_count: 14 }) });
     const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'pending' });
-    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
-    expect(db._queue.get('pb_to').status).toBe('converted_to_sms');
+    const notifyResultCallback = vi.fn().mockResolvedValue(undefined);
+    await runDeliveryResultSweep({ db, resultFetcher, notifyResultCallback, now: NOW });
+    expect(db._queue.get('pb_to').status).toBe('failed_permanent');
     expect(db._queue.get('pb_to').last_error_code).toBe('delivery_result_timeout');
+    expect(notifyResultCallback).toHaveBeenCalledWith('https://example.com/cb', expect.objectContaining({ status: 'failed', channel: 'sms' }));
   });
 
   it('delivery_check_at 미도래 doc은 폴링하지 않는다', async () => {

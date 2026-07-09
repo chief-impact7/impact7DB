@@ -7,7 +7,7 @@ vi.mock('firebase-admin/firestore', () => ({
 vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn(), assertDirector: vi.fn() }));
 
 const {
-  buildPromoQueueDoc, buildPromoRecipients,
+  buildPromoSmsQueueDoc, buildPromoRecipients,
   assertAdContentCompliant, resolvePromoScheduledDate,
   handleCreatePromoCampaign,
 } = await import('../src/promoCampaignHandler.js');
@@ -16,30 +16,17 @@ const { recipientFingerprint } = await import('../src/campaignResume.js');
 const kst = (y, mo, d, h, mi = 0) => new Date(Date.UTC(y, mo - 1, d, h - 9, mi));
 const promoFp = (ids) => recipientFingerprint(ids, { recipientField: null, recipientFields: null });
 
-describe('buildPromoQueueDoc', () => {
-  it('opted-in → SMS fallback allowed, marketing ad_flag, consent snapshot with source/at', () => {
-    const d = buildPromoQueueDoc({
-      studentId: 's1', phone: '01011112222', smsAllowed: true,
+describe('buildPromoSmsQueueDoc', () => {
+  it('opted-in → promo_sms, marketing ad_flag, consent snapshot with source/at', () => {
+    const d = buildPromoSmsQueueDoc({
+      studentId: 's1', phone: '01011112222',
       consent: { source: 'diagnostic_form', at: '<ts>' },
-      campaignId: 'c1', content: '(광고)x', targeting: 'M', scheduledDate: '2026-06-18 08:00:00',
+      campaignId: 'c1', content: '(광고)x', scheduledDate: '2026-06-18 08:00:00',
     });
-    expect(d.kind).toBe('promo');
-    expect(d.disable_sms).toBe(false);
+    expect(d.kind).toBe('promo_sms');
     expect(d.ad_flag).toBe(true);
     expect(d.scheduled_date).toBe('2026-06-18 08:00:00');
     expect(d.consent_snapshot).toEqual({ sms: true, source: 'diagnostic_form', at: '<ts>' });
-  });
-
-  it('no consent → BMS only, snapshot nulls', () => {
-    const d = buildPromoQueueDoc({ studentId: 's1', phone: '010', smsAllowed: false, campaignId: 'c1', content: 'x' });
-    expect(d.disable_sms).toBe(true);
-    expect(d.consent_snapshot).toEqual({ sms: false, source: null, at: null });
-  });
-
-  it('informational targeting → ad_flag false', () => {
-    const d = buildPromoQueueDoc({ studentId: 's1', phone: '010', smsAllowed: true, campaignId: 'c1', content: 'x', targeting: 'I' });
-    expect(d.targeting).toBe('I');
-    expect(d.ad_flag).toBe(false);
   });
 });
 
@@ -47,23 +34,23 @@ describe('buildPromoRecipients (phone + opt-out + consent gating)', () => {
   it('excludes no-phone and revoked; counts SMS-eligible', () => {
     const entries = [
       { id: 's1', student: { parent_phone_1: '010-1111-2222', message_consent: { promo: { optedIn: true } } } }, // 동의+번호
-      { id: 's2', student: { parent_phone_1: '010-3333-4444' } }, // 번호만, 미동의 → BMS만
+      { id: 's2', student: { parent_phone_1: '010-3333-4444' } }, // 번호만, 미동의 → 제외
       { id: 's3', student: { name: '무번호' } }, // 번호 없음 → skip
       { id: 's4', student: { parent_phone_1: '010-5555-6666', message_consent: { promo: { optedIn: true, revokedAt: 1 } } } }, // 철회 → 전면 제외
     ];
     const { docs, stats } = buildPromoRecipients(entries, { campaignId: 'c1', content: '(광고)x', targeting: 'M' });
     expect(stats.total).toBe(4);
-    expect(stats.queued).toBe(2); // s1, s2
+    expect(stats.queued).toBe(1); // s1
     expect(stats.skipped_no_phone).toBe(1); // s3
     expect(stats.skipped_revoked).toBe(1); // s4
     expect(stats.sms_allowed).toBe(1); // s1
-    expect(docs.find((d) => d.student_id === 's1').disable_sms).toBe(false);
-    expect(docs.find((d) => d.student_id === 's2').disable_sms).toBe(true);
+    expect(docs.find((d) => d.student_id === 's1').kind).toBe('promo_sms');
+    expect(docs.find((d) => d.student_id === 's2')).toBeUndefined();
     expect(docs.find((d) => d.student_id === 's4')).toBeUndefined(); // 옵트아웃 → 큐에 없음
   });
 });
 
-describe('buildPromoRecipients — 친구/비친구 분기(friendPhones 주입)', () => {
+describe('buildPromoRecipients — BMS 없이 광고 문자만 큐잉', () => {
   const entries = [
     { id: 's1', student: { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } } }, // 친구 + 동의
     { id: 's2', student: { parent_phone_1: '01033334444', message_consent: { promo: { optedIn: true } } } }, // 비친구 + 동의 → promo_sms
@@ -71,21 +58,20 @@ describe('buildPromoRecipients — 친구/비친구 분기(friendPhones 주입)'
     { id: 's4', student: { parent_phone_1: '01077778888', message_consent: { promo: { optedIn: true, revokedAt: 1 } } } }, // revoked → skip
     { id: 's5', student: {} }, // 번호 없음 → skip
   ];
-  const friendPhones = new Set(['01011112222']); // s1만 친구
 
-  it('친구 → kind=promo(BMS), 비친구+동의 → kind=promo_sms, 비친구+미동의 → skip', () => {
+  it('친구 여부와 무관하게 동의자만 kind=promo_sms, 미동의자는 skip', () => {
     const { docs, stats } = buildPromoRecipients(entries, {
       campaignId: 'c1', content: '(광고)x 무료거부 080-000-0000', targeting: 'M',
-      scheduledDate: null, friendPhones,
+      scheduledDate: null, friendPhones: new Set(['01011112222']),
     });
     expect(stats.total).toBe(5);
     expect(stats.queued).toBe(2);
-    expect(stats.friend_bms).toBe(1);
-    expect(stats.ad_sms).toBe(1);
+    expect(stats.friend_bms).toBe(0);
+    expect(stats.ad_sms).toBe(2);
     expect(stats.skipped_no_consent).toBe(1); // s3
     expect(stats.skipped_revoked).toBe(1);    // s4
     expect(stats.skipped_no_phone).toBe(1);   // s5
-    expect(docs.find((d) => d.student_id === 's1').kind).toBe('promo');
+    expect(docs.find((d) => d.student_id === 's1').kind).toBe('promo_sms');
     expect(docs.find((d) => d.student_id === 's2').kind).toBe('promo_sms');
     expect(docs.find((d) => d.student_id === 's3')).toBeUndefined();
   });
@@ -103,15 +89,15 @@ describe('buildPromoRecipients — 친구/비친구 분기(friendPhones 주입)'
     expect(d.consent_snapshot).toMatchObject({ sms: true, source: 'diagnostic_form' });
   });
 
-  it('friendPhones 미제공 시 하위호환 — 전원 BMS 경로, 미동의자는 disable_sms=true', () => {
+  it('friendPhones 미제공 시에도 미동의자는 제외하고 동의자만 promo_sms', () => {
     const twoEntries = [
       { id: 's1', student: { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } } },
       { id: 's2', student: { parent_phone_1: '01033334444' } },
     ];
     const { docs, stats } = buildPromoRecipients(twoEntries, { campaignId: 'c1', content: 'x', targeting: 'M', scheduledDate: null });
-    expect(stats.queued).toBe(2);
-    expect(docs.every((d) => d.kind === 'promo')).toBe(true);
-    expect(docs.find((d) => d.student_id === 's2').disable_sms).toBe(true);
+    expect(stats.queued).toBe(1);
+    expect(docs.every((d) => d.kind === 'promo_sms')).toBe(true);
+    expect(docs.find((d) => d.student_id === 's2')).toBeUndefined();
   });
 
   it('recipientFields 다중 선택 시 역할별 큐를 만들고 같은 번호는 dedup한다', () => {
@@ -139,8 +125,8 @@ describe('buildPromoRecipients — 친구/비친구 분기(friendPhones 주입)'
     );
     expect(stats.queued).toBe(2);
     expect(docs.map((d) => [d.recipient_role, d.recipient_phone, d.kind])).toEqual([
-      ['student', '01011112222', 'promo'],
-      ['parent_2', '01033334444', 'promo'],
+      ['student', '01011112222', 'promo_sms'],
+      ['parent_2', '01033334444', 'promo_sms'],
     ]);
   });
 });

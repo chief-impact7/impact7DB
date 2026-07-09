@@ -13,7 +13,7 @@ describe('queueWorker promo routing (P4)', () => {
     expect(__testing.ALLOWED_KINDS.has('attendance')).toBe(true);
   });
 
-  it('maps a promo queue doc to a brand-message payload', () => {
+  it('maps a legacy promo queue doc to an SMS/LMS payload', () => {
     const p = __testing.buildSendPayload({
       kind: 'promo',
       recipient_phone: '01011112222',
@@ -25,21 +25,22 @@ describe('queueWorker promo routing (P4)', () => {
       targeting: 'M',
       scheduled_date: '2026-06-18 08:00:00',
     });
-    expect(p.content).toContain('광고');
-    expect(p.buttons).toHaveLength(1);
-    expect(p.imageId).toBe('IMG1');
-    expect(p.adFlag).toBe(true);
-    expect(p.disableSms).toBe(false);
-    expect(p.targeting).toBe('M');
+    expect(p.text).toContain('광고');
+    expect(p.content).toBeUndefined();
+    expect(p.buttons).toBeUndefined();
+    expect(p.imageId).toBeUndefined();
+    expect(p.adFlag).toBeUndefined();
+    expect(p.disableSms).toBeUndefined();
+    expect(p.targeting).toBeUndefined();
     expect(p.scheduledDate).toBe('2026-06-18 08:00:00');
     expect(p.templateCode).toBeUndefined();
   });
 
-  it('defaults promo disable_sms to true (BMS-only) when not opted in', () => {
+  it('maps legacy promo without consent fields to SMS/LMS text', () => {
     const p = __testing.buildSendPayload({ kind: 'promo', recipient_phone: '010', content: 'x' });
-    expect(p.disableSms).toBe(true); // 미동의 기본 → SMS 대체 안 함
-    expect(p.adFlag).toBe(true);
-    expect(p.targeting).toBe('M');
+    expect(p.text).toBe('x');
+    expect(p.disableSms).toBeUndefined();
+    expect(p.adFlag).toBeUndefined();
   });
 
   it('still maps non-promo kinds to the template payload', () => {

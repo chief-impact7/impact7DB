@@ -12,7 +12,7 @@ const bulkFp = (ids) => recipientFingerprint(ids, { recipientField: null, recipi
 const auth = { token: { email: 'staff@impact7.kr' }, uid: 'u1' };
 
 describe('buildBulkRecipients (정보성: 전원, 동의 무관)', () => {
-  it('queues everyone with a phone, disable_sms=false, targeting=I', () => {
+  it('queues everyone with a phone as direct SMS/LMS', () => {
     const entries = [
       { id: 's1', student: { parent_phone_1: '01011112222' } },
       { id: 's2', student: { parent_phone_1: '', parent_phone_2: '01033334444' } },
@@ -22,7 +22,8 @@ describe('buildBulkRecipients (정보성: 전원, 동의 무관)', () => {
     ];
     const { docs, stats } = buildBulkRecipients(entries, { campaignId: 'c1', content: '안내', recipientField: undefined, scheduledDate: null });
     expect(stats).toMatchObject({ total: 4, queued: 3, skipped_no_phone: 1 });
-    expect(docs.every((d) => d.disable_sms === false && d.targeting === 'I' && d.ad_flag === false && d.kind === 'promo')).toBe(true);
+    expect(docs.every((d) => d.kind === 'direct' && d.content === '안내')).toBe(true);
+    expect(docs.every((d) => d.disable_sms == null && d.targeting == null && d.ad_flag == null)).toBe(true);
     expect(docs.map((d) => d.recipient_phone)).toEqual(['01011112222', '01033334444', '01055556666']);
   });
 });
@@ -248,12 +249,12 @@ describe('handleCreateBulkMessage', () => {
     db._docs['students/s2'] = { parent_phone_1: '01033334444' };
   });
 
-  it('enqueues promo(kind) docs with targeting=I for all valid students', async () => {
+  it('enqueues direct SMS/LMS docs for all valid students', async () => {
     const res = await handleCreateBulkMessage({ auth, data: { title: '개강', content: '여름학기 개강 안내', studentIds: ['s1', 's2'] } }, { db });
     expect(res.stats).toMatchObject({ total: 2, queued: 2 });
     const queue = Object.entries(db._docs).filter(([k]) => k.startsWith('message_queue/')).map(([, v]) => v);
     expect(queue).toHaveLength(2);
-    expect(queue.every((d) => d.kind === 'promo' && d.targeting === 'I' && d.disable_sms === false && d.ad_flag === false)).toBe(true);
+    expect(queue.every((d) => d.kind === 'direct' && d.content === '여름학기 개강 안내')).toBe(true);
   });
 
   it('rejects empty content / empty studentIds', async () => {
@@ -288,7 +289,7 @@ describe('handleCreateBulkMessage', () => {
       enqueue_started_at: now.getTime() - 20 * 60 * 1000,
       request_fingerprint: bulkFp(['s1', 's2']),
     };
-    db._docs['message_queue/q1'] = { kind: 'promo', campaign_id: 'b-stuck', student_id: 's1' };
+    db._docs['message_queue/q1'] = { kind: 'direct', campaign_id: 'b-stuck', student_id: 's1' };
     const res = await handleCreateBulkMessage(
       { auth, data: { title: 't', content: 'x', studentIds: ['s1', 's2'], requestId: 'b-stuck' } },
       { db, now },

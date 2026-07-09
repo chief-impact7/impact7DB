@@ -1,6 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
+import { buildSmsQueueDoc } from './smsQueueDoc.js';
 
 const MAX_RECIPIENTS = 100;
 
@@ -47,13 +48,7 @@ export async function handleSendDirectMessage(request, deps = {}) {
   }
   for (const phone of valid) {
     batch.set(db.collection('message_queue').doc(), {
-      kind: 'direct',
-      status: 'pending',
-      recipient_phone: phone,
-      content: body,
-      scheduled_date: scheduledDate,
-      attempt_count: 0,
-      created_by: createdBy,
+      ...buildSmsQueueDoc({ phone, content: body, scheduledDate, createdBy }),
       created_at: FieldValue.serverTimestamp(),
     });
   }

@@ -1,7 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
-import { buildPromoQueueDoc } from './promoCampaignHandler.js';
+import { buildSmsQueueDoc } from './smsQueueDoc.js';
 import { resolveRecipientPhone, resolveRecipientPhones } from './recipientPhone.js';
 import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
 import { parseKstToDate } from './promoSchedule.js';
@@ -32,8 +32,7 @@ export function applyMessageVars(content, student) {
     .replaceAll('%반', allClassCodes(student)[0] ?? '');
 }
 
-// 정보성 대용량: 번호 있으면 전원 큐잉. 동의/옵트아웃 무관(광고 아님), SMS 자동대체 허용(전원 도달).
-// buildPromoQueueDoc을 targeting='I', smsAllowed=true, consent=null로 재사용 → ad_flag=false, disable_sms=false.
+// 정보성 대용량: 번호 있으면 전원 LMS/SMS 큐잉. 동의/옵트아웃 무관(광고 아님).
 // recipientFields(배열) 우선, 없으면 recipientField(단일)로 단일 번호, 둘 다 없으면 기존 폴백(parent_1→parent_2).
 // 캠페인 내 동일 전화번호는 1건만 enqueue(형제·같은 학부모 번호 중복 방지). 제외 수는 stats.deduped.
 // 본문에 변수 토큰(%이름/%학교/%학년/%반)이 있으면 학생별로 치환하고 dedup을 비활성화.
@@ -68,16 +67,12 @@ export function buildBulkRecipients(entries, opts) {
         continue;
       }
       if (!useVars) seenPhones.add(phone);
-      docs.push(buildPromoQueueDoc({
+      docs.push(buildSmsQueueDoc({
         studentId: id,
         phone,
-        smsAllowed: true,      // 정보성: 동의 무관 전원 SMS 대체 허용
-        consent: null,
         campaignId: opts.campaignId,
         content,
-        buttons: opts.buttons ?? null,
-        imageId: opts.imageId ?? null,
-        targeting: 'I',        // 정보성 → ad_flag=false
+        recipientRole: null,
         scheduledDate: opts.scheduledDate,
       }));
       stats.queued += 1;
@@ -87,7 +82,7 @@ export function buildBulkRecipients(entries, opts) {
   return { docs, stats };
 }
 
-// 정보성 대용량 발송 — 직원 권한. 동의·야간·광고검증 없음. message_queue(kind='promo', targeting='I')로 enqueue.
+// 정보성 대용량 발송 — 직원 권한. 동의·야간·광고검증 없음. message_queue(kind='direct')로 enqueue.
 export async function handleCreateBulkMessage(request, deps = {}) {
   const db = deps.db ?? getFirestore();
   assertAuthorizedStaff(request.auth);
