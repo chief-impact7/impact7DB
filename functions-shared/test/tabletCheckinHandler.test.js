@@ -2,7 +2,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('firebase-admin/firestore', () => ({
   getFirestore: vi.fn(),
-  FieldValue: { serverTimestamp: () => '__ts__' },
+  FieldValue: { serverTimestamp: () => '__ts__', delete: () => '__delete__' },
 }));
 
 import { handleTabletCheckin } from '../src/tabletCheckinHandler.js';
@@ -107,7 +107,11 @@ function makeTxFirestore({ students = {}, daily = {}, devices = {} } = {}) {
         async get(ref) { return ref.get(); },
         set(ref, value, opts) {
           const prev = opts?.merge ? (stores[ref._coll][ref.id] || {}) : {};
-          stores[ref._coll][ref.id] = { ...prev, ...value };
+          const next = { ...prev, ...value };
+          for (const [key, val] of Object.entries(next)) {
+            if (val === '__delete__') delete next[key];
+          }
+          stores[ref._coll][ref.id] = next;
           writes.push({ coll: ref._coll, id: ref.id, value, merge: !!opts?.merge });
         },
       };
@@ -262,6 +266,47 @@ describe('handleTabletCheckin 확정', () => {
     expect(daily.departure.status).toBe('하원');
     expect(daily.departure.source).toBe('tablet');
     expect(daily.day_state).toBe('하원');
+  });
+
+  test('하원 후 후보 조회 — 재등원 버튼만 노출', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const d = todayKST();
+    const firestore = makeFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status: '재원', enrollments: [] } },
+      daily: { [`s1_${d}`]: { day_state: '하원', checklist_complete: true } },
+      devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+    const res = await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', deviceId: 'tablet-1f' } },
+      { firestore },
+    );
+    expect(res.candidates[0].dayState).toBe('하원');
+    expect(res.candidates[0].allowedActions).toEqual(['재등원']);
+  });
+
+  test('재등원 확정 — 원내 복귀 + 재등원 알림톡, 첫 등원 대표값 보존', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const d = todayKST();
+    const fs = makeTxFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status: '재원', parent_phone_1: '01011112222' } },
+      daily: { [`s1_${d}`]: { day_state: '하원', checklist_complete: true, attendance: { status: '지각' }, arrival_time: '15:00', departure: { status: '하원', time: '17:00' } } },
+      devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+    const res = await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '재등원', deviceId: 'tablet-1f' } },
+      { firestore: fs },
+    );
+    expect(res.dayState).toBe('원내');
+    const daily = fs._stores.daily_records[`s1_${d}`];
+    expect(daily.day_state).toBe('원내');
+    expect(daily.attendance.status).toBe('지각');
+    expect(daily.arrival_time).toBe('15:00');
+    expect(daily.departure).toBeUndefined();
+    expect(Object.values(fs._stores.attendance_events)[0].type).toBe('재등원');
+    const queued = Object.values(fs._stores.message_queue);
+    expect(queued).toHaveLength(1);
+    expect(queued[0].template_code).toContain('REARRIVAL');
+    expect(queued[0].fallback_text).toContain('재등원');
   });
 
   test('외출중 학생의 귀원 확정 — day_state 원내 복귀', async () => {

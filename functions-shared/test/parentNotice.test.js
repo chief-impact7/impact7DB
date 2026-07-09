@@ -17,6 +17,11 @@ describe('buildParentNoticeVariables', () => {
       '#{학생명}': '김', '#{시험명}': '', '#{안내내용}': '',
     });
   });
+  it('maps approved report template vars', () => {
+    expect(buildParentNoticeVariables({ name: '김' }, 'report', { 날짜: '7/7(화)', 내용: '수업 결과' })).toEqual({
+      '#{학생명}': '김', '#{날짜}': '7/7(화)', '#{내용}': '수업 결과',
+    });
+  });
   it('returns null for an unknown template', () => {
     expect(buildParentNoticeVariables({}, 'bogus', {})).toBeNull();
   });
@@ -37,10 +42,13 @@ describe('handleSendParentNotice', () => {
       }),
     };
   }
-  const ORIG = process.env.COUNSEL_TEMPLATE_CODE;
+  const ORIG_COUNSEL = process.env.COUNSEL_TEMPLATE_CODE;
+  const ORIG_REPORT = process.env.REPORT_TEMPLATE_CODE;
   afterEach(() => {
-    if (ORIG === undefined) delete process.env.COUNSEL_TEMPLATE_CODE;
-    else process.env.COUNSEL_TEMPLATE_CODE = ORIG;
+    if (ORIG_COUNSEL === undefined) delete process.env.COUNSEL_TEMPLATE_CODE;
+    else process.env.COUNSEL_TEMPLATE_CODE = ORIG_COUNSEL;
+    if (ORIG_REPORT === undefined) delete process.env.REPORT_TEMPLATE_CODE;
+    else process.env.REPORT_TEMPLATE_CODE = ORIG_REPORT;
   });
 
   it('enqueues a parent_notice with template code + variables + fallback', async () => {
@@ -79,6 +87,27 @@ describe('handleSendParentNotice', () => {
     expect(db.queue).toHaveLength(2);
     expect(db.queue.map((d) => d.recipient_role)).toEqual(['student', 'parent_2']);
     expect(db.queue.map((d) => d.recipient_phone)).toEqual(['01011112222', '01033334444']);
+  });
+
+  it('enqueues approved report alimtalk with report template variables', async () => {
+    process.env.REPORT_TEMPLATE_CODE = 'KA01TP_REPORT';
+    const db = makeDb({ s1: { name: '김학생', parent_phone_1: '010-1111-2222' } });
+    const res = await handleSendParentNotice(
+      { auth, data: { studentId: 's1', templateKey: 'report', variables: { 날짜: '7/7(화)', 내용: '수업 결과입니다.' } } },
+      { db },
+    );
+    expect(res).toMatchObject({ queued: true, template: '수업 리포트' });
+    const doc = db.queue[0];
+    expect(doc.kind).toBe('parent_notice');
+    expect(doc.template_code).toBe('KA01TP_REPORT');
+    expect(doc.template_variables).toMatchObject({
+      '#{학생명}': '김학생',
+      '#{날짜}': '7/7(화)',
+      '#{내용}': '수업 결과입니다.',
+    });
+    expect(doc.fallback_text).toContain('수업 리포트');
+    expect(doc.fallback_text).toContain('7/7(화)');
+    expect(doc.fallback_text).toContain('수업 결과입니다.');
   });
 
   it('rejects when template code is not configured (not approved yet)', async () => {

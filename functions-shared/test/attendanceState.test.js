@@ -18,13 +18,15 @@ test('nextDayState — 정상 전이', () => {
   assert.equal(nextDayState(DAY_STATES.IN, ACTIONS.OUT), DAY_STATES.OUT);
   assert.equal(nextDayState(DAY_STATES.OUT, ACTIONS.RETURN), DAY_STATES.IN);
   assert.equal(nextDayState(DAY_STATES.IN, ACTIONS.DEPART), DAY_STATES.GONE);
+  assert.equal(nextDayState(DAY_STATES.GONE, ACTIONS.REARRIVE), DAY_STATES.IN);
 });
 
 test('nextDayState — 잘못된 전이는 null', () => {
   assert.equal(nextDayState(DAY_STATES.NONE, ACTIONS.OUT), null);      // 미등원에서 외출 불가
   assert.equal(nextDayState(DAY_STATES.OUT, ACTIONS.DEPART), null);    // 외출중 하원 불가
   assert.equal(nextDayState(DAY_STATES.OUT, ACTIONS.ARRIVE), null);    // 중복 등원 불가
-  assert.equal(nextDayState(DAY_STATES.GONE, ACTIONS.ARRIVE), null);   // 하원 후 액션 없음
+  assert.equal(nextDayState(DAY_STATES.GONE, ACTIONS.ARRIVE), null);   // 하원 후 첫 등원 라벨은 불가
+  assert.equal(nextDayState(DAY_STATES.IN, ACTIONS.REARRIVE), null);   // 원내에서 재등원 불가
 });
 
 test('canDepart — 정책별', () => {
@@ -38,7 +40,7 @@ test('canDepart — 정책별', () => {
 test('allowedActions — 상태·정책별 버튼', () => {
   assert.deepEqual(allowedActions(DAY_STATES.NONE, { checklistComplete: false, departurePolicy: 'block' }), ['등원']);
   assert.deepEqual(allowedActions(DAY_STATES.OUT, { checklistComplete: true, departurePolicy: 'block' }), ['귀원']);
-  assert.deepEqual(allowedActions(DAY_STATES.GONE, { checklistComplete: true, departurePolicy: 'block' }), []);
+  assert.deepEqual(allowedActions(DAY_STATES.GONE, { checklistComplete: true, departurePolicy: 'block' }), ['재등원']);
   // 원내 + 미완료 + block → 하원 버튼 숨김
   assert.deepEqual(allowedActions(DAY_STATES.IN, { checklistComplete: false, departurePolicy: 'block' }), ['외출']);
   // 원내 + 미완료 + warn → 하원 노출(클라 경고)
@@ -56,6 +58,7 @@ test('formatKstClock12h — KST 12시간제 한국어', () => {
 
 test('ACTION_TEMPLATE_KEY — 액션→알림톡 템플릿', () => {
   assert.equal(ACTION_TEMPLATE_KEY['등원'], 'arrival');
+  assert.equal(ACTION_TEMPLATE_KEY['재등원'], 'rearrival');
   assert.equal(ACTION_TEMPLATE_KEY['하원'], 'departure');
   assert.equal(ACTION_TEMPLATE_KEY['외출'], 'out');
   assert.equal(ACTION_TEMPLATE_KEY['귀원'], 'return');

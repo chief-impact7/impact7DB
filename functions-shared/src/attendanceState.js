@@ -10,6 +10,7 @@ export function isTabletEligibleStatus(status) {
 // 액션 라벨 표준은 shared(attendance-action)가 단일 소스. RETURN='귀원'(구 '복귀'는 정규화로 흡수).
 export const ACTIONS = {
   ARRIVE: ATTENDANCE_ACTIONS.arrival,
+  REARRIVE: '재등원',
   OUT: ATTENDANCE_ACTIONS.out,
   RETURN: ATTENDANCE_ACTIONS.return,
   DEPART: ATTENDANCE_ACTIONS.departure,
@@ -21,7 +22,7 @@ const TRANSITIONS = {
   [DAY_STATES.NONE]: { [ACTIONS.ARRIVE]: DAY_STATES.IN },
   [DAY_STATES.IN]: { [ACTIONS.OUT]: DAY_STATES.OUT, [ACTIONS.DEPART]: DAY_STATES.GONE },
   [DAY_STATES.OUT]: { [ACTIONS.RETURN]: DAY_STATES.IN },
-  [DAY_STATES.GONE]: {},
+  [DAY_STATES.GONE]: { [ACTIONS.REARRIVE]: DAY_STATES.IN },
 };
 
 export function nextDayState(current, action) {
@@ -44,7 +45,7 @@ export function allowedActions(dayState, { checklistComplete, departurePolicy } 
   const cur = dayState || DAY_STATES.NONE;
   if (cur === DAY_STATES.NONE) return [ACTIONS.ARRIVE];
   if (cur === DAY_STATES.OUT) return [ACTIONS.RETURN];
-  if (cur === DAY_STATES.GONE) return [];
+  if (cur === DAY_STATES.GONE) return [ACTIONS.REARRIVE];
   // 원내
   const actions = [ACTIONS.OUT];
   const showDepart = checklistComplete || departurePolicy === 'warn' || departurePolicy === 'allow';
@@ -55,6 +56,7 @@ export function allowedActions(dayState, { checklistComplete, departurePolicy } 
 // 알림톡 템플릿 키 매핑 (parentNoticeHandler의 PARENT_NOTICE_TEMPLATES와 동일 키).
 export const ACTION_TEMPLATE_KEY = {
   [ACTIONS.ARRIVE]: 'arrival',
+  [ACTIONS.REARRIVE]: 'rearrival',
   [ACTIONS.DEPART]: 'departure',
   [ACTIONS.OUT]: 'out',
   [ACTIONS.RETURN]: 'return',

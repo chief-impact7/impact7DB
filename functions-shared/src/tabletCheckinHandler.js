@@ -231,6 +231,10 @@ export async function handleTabletCheckin(request, deps = {}) {
       dailyUpdate.attendance = { status: late ? '지각' : '출석' };
       if (!daily?.arrival_time) dailyUpdate.arrival_time = arrivalTimeKST(occurredAt);
     }
+    if (action === ACTIONS.REARRIVE) {
+      dailyUpdate.departure = FieldValue.delete();
+      if (!daily?.arrival_time) dailyUpdate.arrival_time = arrivalTimeKST(occurredAt);
+    }
     if (action === ACTIONS.DEPART) {
       const departure = {
         status: ACTIONS.DEPART,
