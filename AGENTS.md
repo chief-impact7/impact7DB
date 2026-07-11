@@ -104,7 +104,7 @@ DB/DSC/HR/exam 공유 **횡단 백엔드 서비스**(카카오 알림톡·친구
 | codebase | 소스 | 용도 |
 |----------|------|------|
 | `leave-request` | `functions/` | 휴·퇴원 요청 자동화, 내신 기간 동기화, 클래스 정리 |
-| `shared` | `functions-shared/` | **AI 게이트웨이 `llmGenerate`(배포됨, DSC가 호출)** + 카카오/결제/출결 골격(미배포, 하반기) |
+| `shared` | `functions-shared/` | **배포됨**: AI 게이트웨이(`llmGenerate`·학생리포트), solapi 메시징(알림톡/SMS·프로모·080), 출결 체크인(`tabletCheckin`/`staffCheckin`), HR 업로드·서명. 골격만: `sendKakao`/`paymentHook`(결제, 하반기) |
 
 ### 배포 절차
 ```bash
@@ -133,11 +133,9 @@ firebase deploy --only functions:shared --project impact7db
 ### 향후 추가 함수 설계
 | 함수명 | 트리거 | 설명 |
 |--------|--------|------|
-| `sendKakao` | Callable / HTTP | 알림톡·친구톡 발송 |
-| `paymentHook` | HTTP 웹훅 | PG 결제 결과 수신·서명검증·멱등처리 |
-| `onAttendance` | `onDocumentWritten` | 출결 Firestore 변경 → 카톡 알림 |
+| `paymentHook` | HTTP 웹훅 | PG 결제 결과 수신·서명검증·멱등처리 (하반기) |
 
-**현재 배포 상태 (2026-05-22):** `llmGenerate`(AI 게이트웨이, Callable) **배포됨** — DSC 호출, exam은 자체 서버에서 Vertex 직접(`@google-cloud/vertexai`). 카카오/결제/출결(`sendKakao`/`paymentHook`/`onAttendance`)은 골격만, **미배포**(실 로직 시 배포). 상세: `.memory/project_shared_backend_foundation.md`.
+**현재 배포 상태 (2026-07-11):** functions-shared는 풀 프로덕션 백엔드 — AI(`llmGenerate`·학생리포트), solapi 메시징(알림톡/SMS·프로모·080 수신거부), 출결(`tabletCheckin`/`staffCheckin`), HR 업로드·서명 **배포됨**. 알림톡 발송은 별도 `sendKakao` 없이 queueWorker→solapiProvider 경로로 동작. 골격만 남은 것은 `sendKakao`/`paymentHook` 2개(결제 하반기). exam은 자체 서버에서 Vertex 직접(`@google-cloud/vertexai`). 상세: `.memory/project_shared_backend_foundation.md`.
 
 ## 에코시스템 차트 표준
 

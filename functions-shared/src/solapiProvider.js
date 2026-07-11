@@ -73,14 +73,6 @@ export async function sendKakaoAlimtalk(payload, config, { serviceFactory = defa
   }
 }
 
-// BMS_FREE는 운영에서 사용하지 않는다. 자유 본문은 SMS/LMS 또는 승인된 알림톡 템플릿만 허용한다.
-export async function sendKakaoBrandMessage(payload, config, { serviceFactory = defaultServiceFactory } = {}) {
-  void payload;
-  void config;
-  void serviceFactory;
-  return permanentResult('bms_free_disabled', 'BMS_FREE 발송은 비활성화되었습니다. 자유 본문은 SMS/LMS 또는 승인 알림톡 템플릿을 사용하세요.');
-}
-
 // 일반 SMS/LMS 발송(카카오 미경유) — 임의 번호 즉석 발송용. 본문 길이에 따라 솔라피가 SMS/LMS 자동 분류.
 // 예외 없이 정규화 결과를 반환(워커가 큐/로그에 매핑). 접수 성공 시 channel은 'sms'.
 // payload: { to, text, scheduledDate? }
