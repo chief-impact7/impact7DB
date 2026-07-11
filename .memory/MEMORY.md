@@ -1,53 +1,53 @@
 # Memory Index
 
-- **학년 승격 일괄 변경** 기능 추가됨 — 사용법 매뉴얼에 반영 필요
+- **학년 승격 일괄 변경** 추가 — 매뉴얼 반영 필요
 - 자동 +1 승격, 초6→중1/중3→고1 학부 자동 전환, 학교 입력(선택)
 - 전환 시 학교 비우면 빈칸 초기화
-- **필터링 기능** — 매뉴얼에 함께 정리 필요
+- **필터링 기능** — 매뉴얼 함께 정리 필요
 - `index.html` — 메인 UI (학생 목록, 상세 패널, 일괄 편집)
 - `app.js` — 메인 로직 (Firestore CRUD, 필터, 일괄 변경)
-- Vite 기반 빌드 (`npx vite build`)
+- Vite 빌드 (`npx vite build`)
 - Firebase/Firestore 백엔드
 - Vault: Jon (iCloud 동기화)
 - 경로: `/Users/jongsooyi/Library/Mobile Documents/iCloud~md~obsidian/Documents/Jon/`
-- 개발 문서 폴더: `impact7DEV/` 아래 서브폴더:
+- 개발 문서: `impact7DEV/` 서브폴더:
 - `impact7DEV/impact7DB/` — DB 작업일지
 - `impact7DEV/impact7newDSC/` — DSC 작업일지
 - `impact7DEV/impact7HR/` — HR 작업일지
 - 형식: `YYYY-MM-DD.md` (날짜별 세션 로그)
 - CLI: `/Applications/Obsidian.app/Contents/MacOS/Obsidian`
-- 매 세션 종료 시 작업 내용 정리하여 기록
-- 3개 앱이 같은 Firebase 프로젝트(impact7db)를 공유
+- 세션 종료 시 작업 내용 기록
+- 3개 앱 같은 Firebase 프로젝트(impact7db) 공유
 - **DB** (impact7db.web.app) — 학생 마스터 관리, Vanilla JS + Vite
 - **DSC** (impact7dsc.web.app) — 일일 출결·숙제·시험 체크, Vanilla JS + React 대시보드
 - **HR** (impact7hr.firebaseapp.com) — 인사·급여·계약, SvelteKit + TypeScript
-- "Director"는 옛 명칭 → 현재 **HR**로 통일
+- "Director" 옛 명칭 → 현재 **HR** 통일
 - 일괄 변경 패턴: UI 섹션(bulk-edit-section) + window 함수 + Firestore batch write(200건) + history_logs + 로컬 동기화
 - 학생 데이터 필드: level(초등/중등/고등), grade(숫자), school(학교명), status, enrollments[], branch
-- [No autonomous batch Firestore ops](feedback_no_autonomous_batch.md) — 대량 배치 실행 전 반드시 사용자 승인 필요 (2026-03-17 47M reads 사고)
-- [동일 시기 동일 반명 금지](project_unique_class_code.md) — 한 학생 enrollments에서 같은 level_symbol+class_number는 시기 겹치면 안 됨 (2026-04-08 11명 정리)
-- [contacts 컬렉션 폐기 Phase 5 완료](project_contacts_deprecation.md) — impact7DB app.js에서 contacts 읽기/쓰기 모두 제거, rules drop은 컬렉션 drop 이후
+- [No autonomous batch Firestore ops](feedback_no_autonomous_batch.md) — 대량 배치 실행 전 사용자 승인 필수 (2026-03-17 47M reads 사고)
+- [동일 시기 동일 반명 금지](project_unique_class_code.md) — 한 학생 enrollments 내 같은 level_symbol+class_number 시기 겹침 금지 (2026-04-08 11명 정리)
+- [contacts 컬렉션 폐기 Phase 5 완료](project_contacts_deprecation.md) — impact7DB app.js contacts 읽기/쓰기 전부 제거, rules drop은 컬렉션 drop 이후
 - [rules 동기화 후 4-repo 커밋 규율](feedback_rules_sync_commit.md) — firestore.rules 변경 시 4개 repo 모두 git status clean 확인 후 완료 (2026-04-09 사후 정리 사고)
-- [app.js 점진적 모듈 분리 규칙](feedback_module_separation.md) — 새 기능은 별도 모듈, 기존 코드는 수정 시 분리. 공유 상태 의존성 분석 포함 (2026-04-12)
-- [DSC 멀티페이지 entry 함정 + app.js 일원화](feedback_dsc_multipage_entry.md) — DSC는 *.html마다 독립 entry js. 전역 로직은 메인 entry app.js. 구 entry 안 지우면 헛다리. dataApp 권한 읽기 전 dataAuthReady() (2026-06-14)
-- [SA 키 단일화 정책](feedback_sa_key_management.md) — firebase-adminsdk 키는 단일 영구키, 새 키 발급 시 4곳(로컬 + DB/DSC/HR GH Secret) 동시 갱신 (2026-04-25 사고)
-- [내신 중 정규반 태그 빈칸은 의도](feedback_naesin_blank_class_tag.md) — 내신 기간엔 정규반 숨김(빈칸), naesin_class_override로 채우지 말 것. 버그 아님 (2026-05-26)
-- [수업이력 분류기 공유 모듈](feedback_history_classifier_sync.md) — 7종 분류기는 @impact7/shared/history 단일 소스, DB·DSC가 import. 로직 수정은 공유 repo에서만 (2026-05-26)
+- [app.js 점진적 모듈 분리 규칙](feedback_module_separation.md) — 새 기능 별도 모듈, 기존 코드 수정 시 분리. 공유 상태 의존성 분석 포함 (2026-04-12)
+- [DSC 멀티페이지 entry 함정 + app.js 일원화](feedback_dsc_multipage_entry.md) — DSC *.html마다 독립 entry js. 전역 로직은 메인 entry app.js. 구 entry 안 지우면 헛다리. dataApp 권한 읽기 전 dataAuthReady() (2026-06-14)
+- [SA 키 단일화 정책](feedback_sa_key_management.md) — firebase-adminsdk 키 단일 영구키, 새 키 발급 시 4곳(로컬 + DB/DSC/HR GH Secret) 동시 갱신 (2026-04-25 사고)
+- [내신 중 정규반 태그 빈칸은 의도](feedback_naesin_blank_class_tag.md) — 내신 기간 정규반 숨김(빈칸), naesin_class_override로 채우지 말 것. 버그 아님 (2026-05-26)
+- [수업이력 분류기 공유 모듈](feedback_history_classifier_sync.md) — 7종 분류기 @impact7/shared/history 단일 소스, DB·DSC import. 로직 수정은 공유 repo에서만 (2026-05-26)
 - [혼합 line ending 파일 Edit 함정](feedback_line_ending_edit.md) — CRLF/LF 혼합 파일(DSC daily-ops.css 등) Edit 시 대량 가짜 diff, 바이트 치환으로 보존 (2026-05-27)
 - [enrollment↔status 정합성 단일소스](feedback_enrollment_status_consistency.md) — 재원계열만 enrollment 보유. @impact7/shared/enrollment-status + firestore.rules 3겹 강제, 수정은 공유repo+Rules 동시 (2026-05-27)
 - [DB↔DSC 항상 동일](feedback_db_dsc_parity.md) — 한쪽 동작 변경 시 반대쪽도 맞춤. 공유(Cloud Function·shared·promote)는 한 곳, 분기 UI만 양쪽 (2026-05-28)
 - [내신/자유학기 파생 통일](project_naesin_free_derivation.md) — @impact7/shared/enrollment-derivation SSoT(DB·DSC 공유). 표시+수업이력 파생, 91명 override-only 정리 완료, 김시헌 예외 (2026-05-29)
 - [학생 표시 통일 이니셔티브](project_student_display_unification.md) — 공유모듈 v1.4.0(tone/계층/전이) 기반, DB/DSC 배지·2계층·색상 적용 완료 + 진단평가 등원/탭 버그 픽스 (2026-05-27)
-- [담당자 표시·KST 12시간제 SSoT](feedback_staff_label_datetime_ssot.md) — @impact7/shared staff-label(staffLabel)·datetime(Asia/Seoul+12시간제) 단일소스로 통일, split('@') 전 앱 0건. 배포는 GitHub 태그 v1.26.0 push 대기 (2026-06-07)
-- [⏳ qbank 에코시스템 편입 보류](project_qbank_ecosystem_pending.md) — 사용자가 나중에 다시 물어봐 달라고 함. 에코시스템/qbank 화제 시 재질문할 것 (2026-05-27)
-- [⏳ '신규' status 일원화 보류](project_new_status_deferred.md) — 신규현황은 이미 ENROLL 이벤트로 집계됨 → status 마이그레이션 불필요. 재논의 시 이 결론서 출발 (2026-05-28)
-- [⏳ 에코시스템 SSO 보류](project_ecosystem_sso.md) — 구글 1회 로그인. Auth 세션 origin별 격리가 원인. 권장 B(One Tap 자동로그인). 인증 화제 시 재제안 (2026-05-28)
+- [담당자 표시·KST 12시간제 SSoT](feedback_staff_label_datetime_ssot.md) — @impact7/shared staff-label(staffLabel)·datetime(Asia/Seoul+12시간제) 단일소스 통일, split('@') 전 앱 0건. 배포는 GitHub 태그 v1.26.0 push 대기 (2026-06-07)
+- [⏳ qbank 에코시스템 편입 보류](project_qbank_ecosystem_pending.md) — 사용자가 나중에 다시 묻기 요청. 에코시스템/qbank 화제 시 재질문 (2026-05-27)
+- [⏳ '신규' status 일원화 보류](project_new_status_deferred.md) — 신규현황 이미 ENROLL 이벤트로 집계 → status 마이그레이션 불필요. 재논의 시 이 결론서 출발 (2026-05-28)
+- [⏳ 에코시스템 SSO 보류](project_ecosystem_sso.md) — 구글 1회 로그인. Auth 세션 origin별 격리 원인. 권장 B(One Tap 자동로그인). 인증 화제 시 재제안 (2026-05-28)
 - [반 이동 안전화](project_class_move_unification.md) — moveClass 공유함수(v1.11.0) + 일괄 반 변경 학기 가드. 학기 ON이면 내신 숨김 정규 복원→합반 누락 해소. applyBulkDays 가드도 완료, DSC 미지원 확정 (2026-05-29)
-- [공용 필드 제거 시 인앱 보조 경로 전수+리뷰 필수](feedback_field_removal_inapp_paths.md) — 영향분석이 본선만 잡으면 보조 upsert(diagnostic)·admin import 스크립트·read 표시에서 깨짐. admin은 rules 우회라 미러 재기록 위험. 배포 전 code review 필수 (2026-05-30 school 미러 제거 사고)
-- [학생 필드 추가 시 rules 동기화 필수](feedback_student_field_rules_sync.md) — students에 새 필드를 쓰는 주체가 클라든 서버(admin)든 rules allowed+withinFieldLimit 갱신 필수. 누락 시 그 학생의 클라 편집 전부 조용히 reject (2026-05-30 school_*, 2026-07-04 message_consent 재발)
+- [공용 필드 제거 시 인앱 보조 경로 전수+리뷰 필수](feedback_field_removal_inapp_paths.md) — 영향분석 본선만 잡으면 보조 upsert(diagnostic)·admin import 스크립트·read 표시에서 깨짐. admin은 rules 우회라 미러 재기록 위험. 배포 전 code review 필수 (2026-05-30 school 미러 제거 사고)
+- [학생 필드 추가 시 rules 동기화 필수](feedback_student_field_rules_sync.md) — students 새 필드 쓰는 주체 클라든 서버(admin)든 rules allowed+withinFieldLimit 갱신 필수. 누락 시 해당 학생 클라 편집 전부 조용히 reject (2026-05-30 school_*, 2026-07-04 message_consent 재발)
 - [shared 버전 선점 충돌 주의](feedback_shared_version_conflict.md) — 크로스앱 실행 전 shared version·태그 확인, 점유됐으면 다음 번호로. npm link 사고 시 lock 미갱신 배포 깨짐 (2026-05-29)
-- [newtest cloudrun shared(ESM)+배포 함정](feedback_newtest_shared_cjs_deploy.md) — CJS라 @impact7/shared를 동적 import 프리로드+listen 게이팅으로 사용. 배포 시 README 전체명령은 env 키 덮어씀 → 코드만 배포는 env/secret 플래그 생략(상속). 배포처 gws-impact7-cli (2026-05-31)
-- 재원기간 기산일 = 첫 출석일로 변경(deriveTenure v1.12.0, attendances 인자). 상세: [내신/자유학기 파생](project_naesin_free_derivation.md) 재원기간 섹션
+- [newtest cloudrun shared(ESM)+배포 함정](feedback_newtest_shared_cjs_deploy.md) — CJS라 @impact7/shared 동적 import 프리로드+listen 게이팅 사용. 배포 시 README 전체명령은 env 키 덮어씀 → 코드만 배포는 env/secret 플래그 생략(상속). 배포처 gws-impact7-cli (2026-05-31)
+- 재원기간 기산일 = 첫 출석일(deriveTenure v1.12.0, attendances 인자). 상세: [내신/자유학기 파생](project_naesin_free_derivation.md) 재원기간 섹션
 - [DSC 유령 학생(활성 enrollment 0건)](project_dsc_ghost_enrollment.md) — 재원인데 모든 enrollment end_date 과거면 DSC 검색·출결 누락. 정규는 end_date 무기한이어야. naesin-cleanup이 닫고-후속 미생성. 이예원 1건 복구, 전수조사 동일사례 0 (2026-05-31)
 - [진단평가 라벨·검색·필터 버그 6종](project_diagnostic_label_filter_fixes.md) — 지역명(학교유형 예외+인천하늘 EXACT)·상담생 검색 폴백·temp_attendance "초6"(school 폴백)·진단평가 updated_at·**DB 표시 studentFullLabel 통일(abbreviateSchool 폐지)**·비숫자grade 학년추출('중2'→2). shared v1.18→**v1.22.0** 연쇄, DB·DSC·exam 표시 완전일치. C1 회귀를 code review가 잡음 (2026-05-31)
 - [심예율 핸드오프 3이슈 완료](project_simyeyul_handoff_fixes.md) — 소속 csKey 오인(branchFromClassNumber)·퇴원 수업추가 가드(RETURN 로그)·재원기간 무로그 재등원 보정(deriveTenure v1.17.0 isCurrentlyEnrolled). DB/DSC/shared 배포, 데이터 미수정 (2026-05-30)
@@ -63,5 +63,5 @@
 
 - [codegraph 활용 가이드](reference_codegraph_guide.md) — 인덱스 현황, 도메인별 탐색 쿼리, 주요 모듈 위치
 
-- [⛔ App Check 도입 보류 — 재제안 금지](project_appcheck_rollout.md) — 초기 속도 저하 대비 이득 0(서버 무강제)으로 사용자가 도입 안 하기로 결정(2026-07-05). DB·tablet init 추가했다 당일 제거. 사용자가 먼저 요청할 때만 로드맵 참조
-- [HR 깔끔한 루트 + 생태계 프록시 워커 + App Check 도메인](project_hr_cleanroot_appcheck_domains.md) — *.impact7.kr 라우팅은 Cloudflare Worker **impact7-proxy**(소스 impact7-hosting/proxy-worker, 구 newtest-proxy 개명; 옛 워커 계정 부재·11개 서브도메인 라이브 200 검증완료, forms 합류). 신규 서브도메인 함정: wrangler.toml custom_domain route 추가 후 첫 wrangler deploy에서 Custom Domain(DNS) 생성이 조용히 누락 가능 → 재배포로 해결, 직후 로컬 DNS negative 캐시로 잠시 000. hr는 SvelteKit base=/hr라 루트서 부팅 불가 → base='' 전용 impact7hr.web.app를 루트 프록시(완료, 검증됨). App Check enforce는 reCAPTCHA 키에 *.impact7.kr 등록 필수(app:MISSING 401 함정) (2026-06-22)
+- [⛔ App Check 도입 보류 — 재제안 금지](project_appcheck_rollout.md) — 초기 속도 저하 대비 이득 0(서버 무강제), 사용자가 도입 안 함(2026-07-05). DB·tablet init 추가했다 당일 제거. 사용자 먼저 요청할 때만 로드맵 참조
+- [HR 깔끔한 루트 + 생태계 프록시 워커 + App Check 도메인](project_hr_cleanroot_appcheck_domains.md) — *.impact7.kr 라우팅은 Cloudflare Worker **impact7-proxy**(소스 impact7-hosting/proxy-worker, 구 newtest-proxy 개명; 옛 워커 계정 부재·11개 서브도메인 라이브 200 검증완료, forms 합류). 신규 서브도메인 함정: wrangler.toml custom_domain route 추가 후 첫 wrangler deploy에서 Custom Domain(DNS) 생성 조용히 누락 가능 → 재배포로 해결, 직후 로컬 DNS negative 캐시로 잠시 000. hr는 SvelteKit base=/hr라 루트서 부팅 불가 → base='' 전용 impact7hr.web.app를 루트 프록시(완료, 검증됨). App Check enforce는 reCAPTCHA 키에 *.impact7.kr 등록 필수(app:MISSING 401 함정) (2026-06-22)
