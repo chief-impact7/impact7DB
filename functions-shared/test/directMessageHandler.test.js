@@ -89,6 +89,42 @@ describe('handleSendDirectMessage', () => {
     const doc = Object.values(db._docs).find((d) => d.kind === 'direct');
     expect(doc.scheduled_date).toBeNull();
   });
+
+  it('enqueues compliant promotional messages with a manual consent snapshot', async () => {
+    const now = new Date('2026-07-14T01:00:00.000Z');
+    await handleSendDirectMessage({
+      auth,
+      data: {
+        recipients: '01011112222',
+        text: '(광고) [임팩트세븐학원]\n여름 특강\n무료수신거부 080-500-4233',
+        messageKind: 'promo',
+        consentConfirmed: true,
+      },
+    }, { db, now });
+    const doc = Object.values(db._docs).find((d) => d.kind === 'promo_sms');
+    expect(doc).toMatchObject({
+      ad_flag: true,
+      consent_snapshot: { sms: true, source: 'manual_confirmation', at: now.toISOString() },
+    });
+  });
+
+  it('rejects promotional messages without consent confirmation or required labels', async () => {
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { recipients: '01011112222', text: '(광고) 안내\n수신거부 080', messageKind: 'promo' },
+    }, { db })).rejects.toMatchObject({ code: 'failed-precondition' });
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { recipients: '01011112222', text: '안내', messageKind: 'promo', consentConfirmed: true },
+    }, { db })).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  it('rejects an unknown message kind', async () => {
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { recipients: '01011112222', text: '안내', messageKind: 'unknown' },
+    }, { db })).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
 });
 
 describe('parseRecipients — invalid token coverage', () => {

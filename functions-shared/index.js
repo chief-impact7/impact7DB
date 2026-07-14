@@ -42,6 +42,8 @@ import {
 } from './src/hrUploadHandler.js';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './src/solapiSecrets.js';
 import { runOptOut080Sync } from './src/optOut080Sync.js';
+import { handleRegisterManualOptOut } from './src/manualOptOutHandler.js';
+import { handleGetAttendanceNotificationGaps, runAttendanceNotificationGapSnapshot } from './src/attendanceNotificationGap.js';
 import { computeLabelUpdate } from './src/studentLabelSync.js';
 import { handleStaffAutoClockout } from './src/staffAutoClockoutHandler.js';
 import { handleStaffAutoClockin } from './src/staffAutoClockinHandler.js';
@@ -178,6 +180,12 @@ export const sendAbsenceNotice = onCall({ enforceAppCheck: false }, handleSendAb
 // 임의 번호 정보성 SMS 즉석 발송 — 메시지 센터 ③블록. 직원 권한. 번호별 kind=direct enqueue.
 export const sendDirectMessage = onCall({ enforceAppCheck: false }, handleSendDirectMessage);
 
+// 직원이 요청받은 번호를 솔라피 발송 차단 목록에 직접 등록. 관리자 권한 + Secret 바인딩.
+export const registerManualOptOut = onCall(
+  { enforceAppCheck: false, secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
+  handleRegisterManualOptOut,
+);
+
 // 정보성 대용량 발송 — 메시지 센터 ②블록. 직원 권한. message_queue(kind=direct) 배치 enqueue.
 export const createBulkMessage = onCall({ enforceAppCheck: false }, handleCreateBulkMessage);
 
@@ -208,6 +216,16 @@ export const getRecipientMessageHistory = onCall({ enforceAppCheck: false }, han
 
 // 발송 현황 집계 — 큐 read를 차단(T11)하므로 대시보드는 이 callable로 카운트+마스킹 실패목록만 받는다.
 export const getMessageDeliveryStatus = onCall({ enforceAppCheck: false }, handleGetMessageDeliveryStatus);
+
+// 전날 출석·지각·조퇴 중 출결 알림이 발송 완료되지 않은 명단. 매일 KST 15:00 확정 스냅샷.
+export const attendanceNotificationGapSweeper = onSchedule(
+  { schedule: '0 15 * * *', timeZone: 'Asia/Seoul' },
+  () => runAttendanceNotificationGapSnapshot(),
+);
+export const getAttendanceNotificationGaps = onCall(
+  { enforceAppCheck: false },
+  handleGetAttendanceNotificationGaps,
+);
 
 // === 메시지 큐 워커 (T3) ===
 // 큐 등록 즉시 단발 발송. 솔라피 호출은 src/queueWorker.js → solapiProvider(T2)에 위임.
