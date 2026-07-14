@@ -45,6 +45,7 @@
 - [반 이동 안전화](project_class_move_unification.md) — moveClass 공유함수(v1.11.0) + 일괄 반 변경 학기 가드. 학기 ON이면 내신 숨김 정규 복원→합반 누락 해소. applyBulkDays 가드도 완료, DSC 미지원 확정 (2026-05-29)
 - [공용 필드 제거 시 인앱 보조 경로 전수+리뷰 필수](feedback_field_removal_inapp_paths.md) — 영향분석 본선만 잡으면 보조 upsert(diagnostic)·admin import 스크립트·read 표시에서 깨짐. admin은 rules 우회라 미러 재기록 위험. 배포 전 code review 필수 (2026-05-30 school 미러 제거 사고)
 - [학생 필드 추가 시 rules 동기화 필수](feedback_student_field_rules_sync.md) — students 새 필드 쓰는 주체 클라든 서버(admin)든 rules allowed+withinFieldLimit 갱신 필수. 누락 시 해당 학생 클라 편집 전부 조용히 reject (2026-05-30 school_*, 2026-07-04 message_consent 재발)
+- [응답 어투 반말 금지](feedback_speech_politeness.md) — caveman 압축 중에도 존댓말 유지 (2026-07-11)
 - [shared 버전 선점 충돌 주의](feedback_shared_version_conflict.md) — 크로스앱 실행 전 shared version·태그 확인, 점유됐으면 다음 번호로. npm link 사고 시 lock 미갱신 배포 깨짐 (2026-05-29)
 - [newtest cloudrun shared(ESM)+배포 함정](feedback_newtest_shared_cjs_deploy.md) — CJS라 @impact7/shared 동적 import 프리로드+listen 게이팅 사용. 배포 시 README 전체명령은 env 키 덮어씀 → 코드만 배포는 env/secret 플래그 생략(상속). 배포처 gws-impact7-cli (2026-05-31)
 - 재원기간 기산일 = 첫 출석일(deriveTenure v1.12.0, attendances 인자). 상세: [내신/자유학기 파생](project_naesin_free_derivation.md) 재원기간 섹션
