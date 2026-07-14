@@ -20,9 +20,10 @@ describe('buildBulkRecipients (정보성: 전원, 동의 무관)', () => {
       // 광고 옵트아웃이어도 정보성은 발송
       { id: 's4', student: { parent_phone_1: '01055556666', message_consent: { promo: { optedIn: true, revokedAt: new Date() } } } },
     ];
-    const { docs, stats } = buildBulkRecipients(entries, { campaignId: 'c1', content: '안내', recipientField: undefined, scheduledDate: null });
+    const { docs, stats } = buildBulkRecipients(entries, { campaignId: 'c1', content: '안내', recipientField: undefined, scheduledDate: null, imageId: 'mms-1' });
     expect(stats).toMatchObject({ total: 4, queued: 3, skipped_no_phone: 1 });
     expect(docs.every((d) => d.kind === 'direct' && d.content === '안내')).toBe(true);
+    expect(docs.every((d) => d.image_id === 'mms-1')).toBe(true);
     expect(docs.every((d) => d.disable_sms == null && d.targeting == null && d.ad_flag == null)).toBe(true);
     expect(docs.map((d) => d.recipient_phone)).toEqual(['01011112222', '01033334444', '01055556666']);
   });

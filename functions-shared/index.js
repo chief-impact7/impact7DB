@@ -166,7 +166,10 @@ export const deleteStaffAttendance = onCall({ enforceAppCheck: false }, handleDe
 
 // 홍보 문자 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo_sms) 배치 enqueue.
 // 야간(광고 제한)이면 익일 08:00 자동 예약. 발송은 워커(onMessageQueued)가 수행.
-export const createPromoCampaign = onCall({ enforceAppCheck: false }, handleCreatePromoCampaign);
+export const createPromoCampaign = onCall(
+  { enforceAppCheck: false, secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
+  handleCreatePromoCampaign,
+);
 
 // 홍보 광고 수신동의 설정/철회(옵트아웃). 직원 권한. 철회 시 이후 광고 문자에서 영구 제외.
 export const setPromoConsent = onCall({ enforceAppCheck: false }, handleSetPromoConsent);
@@ -194,7 +197,10 @@ export const getManualOptOuts = onCall(
 );
 
 // 정보성 대용량 발송 — 메시지 센터 ②블록. 직원 권한. message_queue(kind=direct) 배치 enqueue.
-export const createBulkMessage = onCall({ enforceAppCheck: false }, handleCreateBulkMessage);
+export const createBulkMessage = onCall(
+  { enforceAppCheck: false, secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
+  handleCreateBulkMessage,
+);
 
 // 일일 학습 리포트 문자 발송 — 직원 권한.
 export const sendDailyReport = onCall({ enforceAppCheck: false }, handleSendDailyReport);

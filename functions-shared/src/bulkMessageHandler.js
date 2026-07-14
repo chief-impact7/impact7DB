@@ -7,6 +7,7 @@ import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
 import { parseKstToDate } from './promoSchedule.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { enrollmentCode } from '@impact7/shared/enrollment-derivation';
+import { resolveMmsImageId } from './mmsImage.js';
 
 const MAX_RECIPIENTS = 1000;
 const BATCH_LIMIT = 400;
@@ -74,6 +75,7 @@ export function buildBulkRecipients(entries, opts) {
         content,
         recipientRole: null,
         scheduledDate: opts.scheduledDate,
+        imageId: opts.imageId,
       }));
       stats.queued += 1;
     }
@@ -106,6 +108,12 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   const campaignRef = data.requestId
     ? db.collection('bulk_campaigns').doc(String(data.requestId))
     : db.collection('bulk_campaigns').doc();
+  const campaignSnapshot = await campaignRef.get();
+  if (campaignSnapshot.exists) {
+    const existing = campaignSnapshot.data();
+    if (existing?.status !== 'enqueuing') return { campaignId: campaignRef.id, duplicate: true, stats: existing?.stats ?? null, scheduledDate: existing?.scheduled_date ?? null };
+  }
+  const imageId = await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage);
 
   const refs = studentIds.map((id) => db.collection('students').doc(id));
   const snaps = await db.getAll(...refs);
@@ -117,6 +125,7 @@ export async function handleCreateBulkMessage(request, deps = {}) {
     recipientField: data.recipientField,
     recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : undefined,
     scheduledDate,
+    imageId,
   });
   stats.skipped_missing = studentIds.length - entries.length;
 
@@ -133,7 +142,7 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   let resuming = false;
   try {
     await campaignRef.create({
-      title, content, targeting: 'I', kind: 'bulk_info',
+      title, content, targeting: 'I', kind: 'bulk_info', image_id: imageId,
       scheduled_date: scheduledDate ?? null, status: 'enqueuing', stats,
       created_by: request.auth?.uid ?? null, created_at: FieldValue.serverTimestamp(),
       enqueue_started_at: now.getTime(),

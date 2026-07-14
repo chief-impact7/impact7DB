@@ -6,6 +6,7 @@ import { resolveAdScheduledAt, isAdNightKST, parseKstToDate } from './promoSched
 import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
 import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
 import { buildSmsQueueDoc } from './smsQueueDoc.js';
+import { resolveMmsImageId } from './mmsImage.js';
 
 // 홍보 캠페인 생성 callable. 대상 학생을 동의/번호 게이트에 걸러
 // message_queue(kind=promo_sms)에 배치 enqueue한다. 발송 자체는 워커(onMessageQueued)가 수행한다.
@@ -18,7 +19,7 @@ import { buildSmsQueueDoc } from './smsQueueDoc.js';
 const MAX_RECIPIENTS = 1000; // 일일 한도 가드(솔라피 사업자 기본 1,000건)
 const BATCH_LIMIT = 400; // Firestore 배치 쓰기 상한(500) 여유
 
-export function buildPromoSmsQueueDoc({ studentId, phone, recipientRole, consent, campaignId, content, scheduledDate }) {
+export function buildPromoSmsQueueDoc({ studentId, phone, recipientRole, consent, campaignId, content, scheduledDate, imageId }) {
   return buildSmsQueueDoc({
     kind: 'promo_sms',
     campaignId,
@@ -29,6 +30,7 @@ export function buildPromoSmsQueueDoc({ studentId, phone, recipientRole, consent
     scheduledDate,
     adFlag: true,
     consent,
+    imageId,
   });
 }
 
@@ -66,7 +68,7 @@ export function buildPromoRecipients(entries, opts) {
         stats.skipped_no_consent += 1;
         continue;
       }
-      docs.push(buildPromoSmsQueueDoc({ studentId: id, phone: target.phone, recipientRole: target.field, consent: getPromoConsent(student, consentTarget), campaignId: opts.campaignId, content: opts.content, scheduledDate: opts.scheduledDate }));
+      docs.push(buildPromoSmsQueueDoc({ studentId: id, phone: target.phone, recipientRole: target.field, consent: getPromoConsent(student, consentTarget), campaignId: opts.campaignId, content: opts.content, scheduledDate: opts.scheduledDate, imageId: opts.imageId }));
       stats.ad_sms += 1;
       stats.queued += 1;
     }
@@ -127,14 +129,20 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
       }
     }
   }
-  const imageId = data.imageId ?? null;
-
   const scheduledDate = resolvePromoScheduledDate(data.scheduledAt, now);
   const nightDeferred = data.scheduledAt == null && !!resolveAdScheduledAt(now);
 
   const campaignRef = data.requestId
     ? db.collection('promo_campaigns').doc(String(data.requestId))
     : db.collection('promo_campaigns').doc();
+  const campaignSnapshot = await campaignRef.get();
+  if (campaignSnapshot.exists) {
+    const existing = campaignSnapshot.data();
+    if (existing?.status !== 'enqueuing') return { campaignId: campaignRef.id, duplicate: true, stats: existing?.stats ?? null, scheduledDate: existing?.scheduled_date ?? null };
+  }
+  const imageId = data.mmsImage
+    ? await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage)
+    : data.imageId ?? null;
 
   const refs = studentIds.map((id) => db.collection('students').doc(id));
   const snaps = await db.getAll(...refs);
@@ -149,6 +157,7 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
     scheduledDate,
     recipientField: data.recipientField,
     recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : undefined,
+    imageId,
   });
   stats.skipped_missing = studentIds.length - entries.length; // 존재하지 않는 학생 id
 

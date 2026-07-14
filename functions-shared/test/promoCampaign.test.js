@@ -22,10 +22,12 @@ describe('buildPromoSmsQueueDoc', () => {
       studentId: 's1', phone: '01011112222',
       consent: { source: 'diagnostic_form', at: '<ts>' },
       campaignId: 'c1', content: '(광고)x', scheduledDate: '2026-06-18 08:00:00',
+      imageId: 'mms-1',
     });
     expect(d.kind).toBe('promo_sms');
     expect(d.ad_flag).toBe(true);
     expect(d.scheduled_date).toBe('2026-06-18 08:00:00');
+    expect(d.image_id).toBe('mms-1');
     expect(d.consent_snapshot).toEqual({ sms: true, source: 'diagnostic_form', at: '<ts>' });
   });
 });
