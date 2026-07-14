@@ -28,15 +28,15 @@
 - 소스 코드(`.js`·`.ts`·`.tsx`·`.py`·`.svelte` 등) 추가·수정·삭제 커밋은 commit 전 `/simplify` → `/code-review` 순차 실행, 결과 반영.
 - 제외: 문서(`*.md`)·lock 파일·JSON 데이터·단순 설정만 바뀐 커밋.
 - skip: 사용자가 "이번엔 commit만"·"급해" 등 명시할 때만.
-- 로컬 git hook이 품질 확인 마커 없는 staged source/security diff 커밋 차단. simplify/review/fix 후 repo 루트에서 `node /Users/jongsooyi/projects/impact7DB/.agents/hooks/impact7-precommit-quality-guard.mjs --mark`로 현재 staged diff 표시.
+- 로컬 git hook이 품질 확인 마커 없는 staged source/security diff 커밋 차단. simplify/review/fix 후 repo 루트에서 `node /Users/jongsooyi/IMPACT7/impact7DB/.agents/hooks/impact7-precommit-quality-guard.mjs --mark`로 현재 staged diff 표시.
 - 푸시하면 Actions 자동 배포 — 푸시 전 점검이 마지막 안전장치.
 
 ## impact7 검색·생성 우선순위 — shared-first
 
-impact7 에코시스템에서 기능·함수·상태값·도메인 로직·코드 위치 검색·설명 시 현재 앱 로컬 구현보다 `/Users/jongsooyi/projects/impact7-shared`의 `@impact7/shared` 계약 표면 먼저 확인.
+impact7 에코시스템에서 기능·함수·상태값·도메인 로직·코드 위치 검색·설명 시 현재 앱 로컬 구현보다 `/Users/jongsooyi/IMPACT7/impact7-shared`의 `@impact7/shared` 계약 표면 먼저 확인.
 
 검색 순서:
-1. `/Users/jongsooyi/projects/impact7-shared/package.json` export map 확인
+1. `/Users/jongsooyi/IMPACT7/impact7-shared/package.json` export map 확인
 2. 관련 shared 모듈 검색
 3. 현재 앱 로컬 구현 검색
 4. shared 계약과 로컬 구현 다르면 drift로 보고, 원인 확인
@@ -184,7 +184,7 @@ firebase deploy --only functions:shared --project impact7db
 | 2026-05-27 | 에코시스템 범위 6→7개 앱 확장 (dashboard 편입) + DashBoard에 cross-ref 추가 | AGENTS.md(DB 목표), DashBoard AGENTS.md | DashBoard(academy-dashboard, React19+Vite8)가 impact7db Firestore 읽음 확인. consultation·newtest는 cross-ref 기보유. orchestrator 전담 개발자 에이전트는 여전히 DB/DSC/HR/exam 4개뿐 — consultation/newtest/dashboard는 자체 하네스 구현, DB는 조율만. firestore.rules 동기화 대상은 rules 보유 DB/DSC/HR/exam 4개 그대로 |
 | 2026-06-09 | store.js 동기화 취약점 4개 보완(leaveRequests 7곳·currentFilteredStudents·KST날짜·naesinHelpers drift) + 에이전트 하네스 정합성 업데이트 | app.js, promo-extractor.js, functions/src/naesinHelpers.js, agents/db-developer.md, agents/dsc-developer.md, agents/exam-developer.md, agents/impact-analyst.md | store.state stale 참조 alias drift 버그 수정; 에이전트 파일 차트 라이브러리(Recharts→echarts)·store.js 사용법·codegraph 탐색 원칙·consultation 컬렉션 맵 갱신 |
 | 2026-06-13 | functions-developer 에이전트 + student-report-ai 스킬 신설, 오케스트레이터 연결 | agents/functions-developer.md, skills/student-report-ai, skills/impact7-orchestrator, skills/firestore-rules-sync | functions-shared(Cloud Functions 백엔드: Gemini callable·secret·무중단 배포) 전담 부재 갭 해소(db-developer는 app.js 프론트). 학생 AI 리포트 도메인 지식(데이터모델 함정·통합 핸들러·Chat DWD 연동) student-report/PLAN.md에서 스킬로 이관. rules-sync에 CRLF 보존(cp) 교훈 추가 |
-| 2026-06-18 | tablet 앱(출결 키오스크) 하네스 편입 — tablet-developer 신설, impact-analyst/qa-validator 확장, 오케스트레이터 연결 | agents/tablet-developer.md, agents/impact-analyst.md, agents/qa-validator.md, skills/impact7-orchestrator | 신규 태블릿 출결/외출 키오스크 앱(/Users/jongsooyi/projects/tablet, Vanilla JS+Vite) 전담 부재 갭 해소. 태블릿은 Firestore 직접 접근 없이 tabletCheckin callable 경유 — 백엔드(functions-developer)·DSC 캐시(dsc-developer)와 크로스앱. 신규 컬렉션 attendance_events/kiosk_devices 맵 추가, callable shape 경계면 qa-validator에 추가 |
+| 2026-06-18 | tablet 앱(출결 키오스크) 하네스 편입 — tablet-developer 신설, impact-analyst/qa-validator 확장, 오케스트레이터 연결 | agents/tablet-developer.md, agents/impact-analyst.md, agents/qa-validator.md, skills/impact7-orchestrator | 신규 태블릿 출결/외출 키오스크 앱(/Users/jongsooyi/IMPACT7/tablet, Vanilla JS+Vite) 전담 부재 갭 해소. 태블릿은 Firestore 직접 접근 없이 tabletCheckin callable 경유 — 백엔드(functions-developer)·DSC 캐시(dsc-developer)와 크로스앱. 신규 컬렉션 attendance_events/kiosk_devices 맵 추가, callable shape 경계면 qa-validator에 추가 |
 
 ## 프론트엔드 수렴 정책 (impact7 에코시스템)
 

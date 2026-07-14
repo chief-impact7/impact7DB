@@ -26,12 +26,12 @@ description: "impact7 에코시스템(DB/DSC/HR/exam/tablet) 크로스앱 영향
 
 ```
 대상 경로:
-- /Users/jongsooyi/projects/impact7DB/        (Vanilla JS — app.js 직접 검색)
-- /Users/jongsooyi/projects/impact7newDSC/src/ (React 19)
-- /Users/jongsooyi/projects/impact7HR/src/     (SvelteKit + TS)
-- /Users/jongsooyi/projects/impact7exam/src/   (Next.js 16)
-- /Users/jongsooyi/projects/tablet/            (Vanilla JS — 키오스크, callable 경유)
-- /Users/jongsooyi/projects/impact7DB/functions-shared/src/ (Cloud Functions 백엔드 — callable/trigger)
+- /Users/jongsooyi/IMPACT7/impact7DB/        (Vanilla JS — app.js 직접 검색)
+- /Users/jongsooyi/IMPACT7/impact7newDSC/src/ (React 19)
+- /Users/jongsooyi/IMPACT7/impact7HR/src/     (SvelteKit + TS)
+- /Users/jongsooyi/IMPACT7/impact7exam/src/   (Next.js 16)
+- /Users/jongsooyi/IMPACT7/tablet/            (Vanilla JS — 키오스크, callable 경유)
+- /Users/jongsooyi/IMPACT7/impact7DB/functions-shared/src/ (Cloud Functions 백엔드 — callable/trigger)
 ```
 
 검색 시 컬렉션명의 변형도 확인: `"students"`, `'students'`, `collection("students")`, `doc(db, "students"` 등.
@@ -56,12 +56,12 @@ description: "impact7 에코시스템(DB/DSC/HR/exam/tablet) 크로스앱 영향
 
 | 앱 | 경로 | 기술 스택 |
 |----|------|----------|
-| DB | `/Users/jongsooyi/projects/impact7DB/` | Vanilla JS + Vite |
-| DSC | `/Users/jongsooyi/projects/impact7newDSC/` | React 19 + Vite |
-| HR | `/Users/jongsooyi/projects/impact7HR/` | SvelteKit + TypeScript |
-| exam | `/Users/jongsooyi/projects/impact7exam/` | Next.js 16 + React |
-| tablet | `/Users/jongsooyi/projects/tablet/` | Vanilla JS + Vite (키오스크, callable 경유) |
-| functions | `/Users/jongsooyi/projects/impact7DB/functions-shared/` | Cloud Functions v2 (백엔드) |
+| DB | `/Users/jongsooyi/IMPACT7/impact7DB/` | Vanilla JS + Vite |
+| DSC | `/Users/jongsooyi/IMPACT7/impact7newDSC/` | React 19 + Vite |
+| HR | `/Users/jongsooyi/IMPACT7/impact7HR/` | SvelteKit + TypeScript |
+| exam | `/Users/jongsooyi/IMPACT7/impact7exam/` | Next.js 16 + React |
+| tablet | `/Users/jongsooyi/IMPACT7/tablet/` | Vanilla JS + Vite (키오스크, callable 경유) |
+| functions | `/Users/jongsooyi/IMPACT7/impact7DB/functions-shared/` | Cloud Functions v2 (백엔드) |
 
 ## 공유 Firestore 컬렉션 맵
 

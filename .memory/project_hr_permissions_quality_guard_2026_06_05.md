@@ -12,21 +12,21 @@
 ## 주요 파일
 
 - DB SSoT:
-  - `/Users/jongsooyi/projects/impact7DB/firestore.rules`
-  - `/Users/jongsooyi/projects/impact7DB/.agents/hooks/impact7-precommit-quality-guard.mjs`
-  - `/Users/jongsooyi/projects/impact7DB/AGENTS.md`
+  - `/Users/jongsooyi/IMPACT7/impact7DB/firestore.rules`
+  - `/Users/jongsooyi/IMPACT7/impact7DB/.agents/hooks/impact7-precommit-quality-guard.mjs`
+  - `/Users/jongsooyi/IMPACT7/impact7DB/AGENTS.md`
 - HR:
-  - `/Users/jongsooyi/projects/impact7HR/src/routes/settings/permissions/+page.svelte`
-  - `/Users/jongsooyi/projects/impact7HR/src/lib/components/settings/SettingsNav.svelte`
-  - `/Users/jongsooyi/projects/impact7HR/src/lib/types/index.ts`
-  - `/Users/jongsooyi/projects/impact7HR/src/lib/firebase/auth.ts`
-  - `/Users/jongsooyi/projects/impact7HR/src/lib/components/layout/Sidebar.svelte`
-  - `/Users/jongsooyi/projects/impact7HR/src/lib/components/layout/TopNav.svelte`
-  - `/Users/jongsooyi/projects/impact7HR/src/lib/components/layout/BottomNav.svelte`
+  - `/Users/jongsooyi/IMPACT7/impact7HR/src/routes/settings/permissions/+page.svelte`
+  - `/Users/jongsooyi/IMPACT7/impact7HR/src/lib/components/settings/SettingsNav.svelte`
+  - `/Users/jongsooyi/IMPACT7/impact7HR/src/lib/types/index.ts`
+  - `/Users/jongsooyi/IMPACT7/impact7HR/src/lib/firebase/auth.ts`
+  - `/Users/jongsooyi/IMPACT7/impact7HR/src/lib/components/layout/Sidebar.svelte`
+  - `/Users/jongsooyi/IMPACT7/impact7HR/src/lib/components/layout/TopNav.svelte`
+  - `/Users/jongsooyi/IMPACT7/impact7HR/src/lib/components/layout/BottomNav.svelte`
 - Rules sync:
-  - `/Users/jongsooyi/projects/impact7HR/firestore.rules`
-  - `/Users/jongsooyi/projects/impact7newDSC/firestore.rules`
-  - `/Users/jongsooyi/projects/impact7exam/firestore.rules`
+  - `/Users/jongsooyi/IMPACT7/impact7HR/firestore.rules`
+  - `/Users/jongsooyi/IMPACT7/impact7newDSC/firestore.rules`
+  - `/Users/jongsooyi/IMPACT7/impact7exam/firestore.rules`
 
 ## 검증
 

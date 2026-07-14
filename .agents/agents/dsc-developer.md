@@ -14,7 +14,7 @@ description: "impact7newDSC 앱 전문 개발자. React 19 + Vite + Firebase 기
 
 ## 프로젝트 정보
 
-- **경로**: `/Users/jongsooyi/projects/impact7newDSC/`
+- **경로**: `/Users/jongsooyi/IMPACT7/impact7newDSC/`
 - **기술 스택**: React 19 + Vite, echarts + echarts-for-react, Firebase 12.9 (+ Vertex AI)
 - **핵심 파일**: `app.js` (메인 entry — 로그인·출결·숙제·시험·헤더·권한 등 전역 UI/로직, ~534KB), `excel.js` (excel.html 전용), `src/dashboard/` (React 대시보드)
 - **진입점(멀티페이지 — 각 *.html이 별도 entry js)**:

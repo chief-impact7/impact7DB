@@ -1186,7 +1186,7 @@ async function handleSheetExport() {
 `index.html`의 기존 `<script type="module" src="app.js">` (또는 비슷한 위치) 근처에서 동일 패턴으로 한 줄 추가. 정확한 위치는 기존 app.js 모듈 로드 라인 뒤:
 
 ```bash
-grep -n 'src="app.js"' /Users/jongsooyi/projects/impact7DB/index.html
+grep -n 'src="app.js"' /Users/jongsooyi/IMPACT7/impact7DB/index.html
 ```
 
 찾은 라인 다음에 추가:

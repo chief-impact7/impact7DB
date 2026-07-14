@@ -11,16 +11,16 @@
 **Scope:** shared + impact7DB만. DSC는 후속 별도 계획(DSC엔 일괄 반 변경 UI가 없어 신설이 필요).
 
 **작업 repo 2개:**
-- `/Users/jongsooyi/projects/impact7-shared` (공유 로직, 태그 배포)
-- `/Users/jongsooyi/projects/impact7DB` (현재 브랜치 `feat/class-move-semester-guard`)
+- `/Users/jongsooyi/IMPACT7/impact7-shared` (공유 로직, 태그 배포)
+- `/Users/jongsooyi/IMPACT7/impact7DB` (현재 브랜치 `feat/class-move-semester-guard`)
 
 ---
 
 ## Task 1: shared — `moveClass` 순수 함수 (TDD)
 
 **Files:**
-- Create: `/Users/jongsooyi/projects/impact7-shared/class-move.js`
-- Test: `/Users/jongsooyi/projects/impact7-shared/class-move.test.js`
+- Create: `/Users/jongsooyi/IMPACT7/impact7-shared/class-move.js`
+- Test: `/Users/jongsooyi/IMPACT7/impact7-shared/class-move.test.js`
 
 설계 메모:
 - 대상 = `student.enrollments` 중 `(class_type==='정규' 또는 미지정) && semester===대상학기` 첫 항목.
@@ -87,7 +87,7 @@ test('특강 enrollment는 대상 아님 (정규만 이동)', () => {
 
 - [ ] **Step 2: 테스트 실패 확인**
 
-Run: `cd /Users/jongsooyi/projects/impact7-shared && node --test class-move.test.js`
+Run: `cd /Users/jongsooyi/IMPACT7/impact7-shared && node --test class-move.test.js`
 Expected: FAIL — `Cannot find module './class-move.js'`
 
 - [ ] **Step 3: 최소 구현 작성** — `class-move.js`
@@ -131,13 +131,13 @@ export function moveClass(student, { semester, targetLevelSymbol, targetClassNum
 
 - [ ] **Step 4: 테스트 통과 확인**
 
-Run: `cd /Users/jongsooyi/projects/impact7-shared && node --test class-move.test.js`
+Run: `cd /Users/jongsooyi/IMPACT7/impact7-shared && node --test class-move.test.js`
 Expected: PASS — 6 tests
 
 - [ ] **Step 5: 커밋**
 
 ```bash
-cd /Users/jongsooyi/projects/impact7-shared
+cd /Users/jongsooyi/IMPACT7/impact7-shared
 git add class-move.js class-move.test.js
 git commit -m "feat: moveClass — 특정 학기 정규 enrollment in-place 반 이동 순수함수"
 ```
@@ -147,7 +147,7 @@ git commit -m "feat: moveClass — 특정 학기 정규 enrollment in-place 반 
 ## Task 2: shared — export 등록 + 버전 태그 배포
 
 **Files:**
-- Modify: `/Users/jongsooyi/projects/impact7-shared/package.json`
+- Modify: `/Users/jongsooyi/IMPACT7/impact7-shared/package.json`
 
 - [ ] **Step 1: package.json 수정** — `exports`·`files`에 class-move 추가, `version` → `1.11.0`
 
@@ -172,13 +172,13 @@ git commit -m "feat: moveClass — 특정 학기 정규 enrollment in-place 반 
 
 - [ ] **Step 2: 전체 테스트 실행**
 
-Run: `cd /Users/jongsooyi/projects/impact7-shared && node --test`
+Run: `cd /Users/jongsooyi/IMPACT7/impact7-shared && node --test`
 Expected: PASS — 기존 테스트 + class-move 6건 모두 통과
 
 - [ ] **Step 3: 커밋 + 태그 + 푸시**
 
 ```bash
-cd /Users/jongsooyi/projects/impact7-shared
+cd /Users/jongsooyi/IMPACT7/impact7-shared
 git add package.json
 git commit -m "chore: class-move export 등록, v1.11.0"
 git tag v1.11.0
@@ -191,7 +191,7 @@ Expected: 태그 `v1.11.0`가 origin에 푸시됨
 ## Task 3: DB — 의존성 v1.11.0으로 갱신
 
 **Files:**
-- Modify: `/Users/jongsooyi/projects/impact7DB/package.json:?` (`@impact7/shared` 줄)
+- Modify: `/Users/jongsooyi/IMPACT7/impact7DB/package.json:?` (`@impact7/shared` 줄)
 
 - [ ] **Step 1: package.json의 shared 버전 갱신**
 
@@ -204,7 +204,7 @@ Expected: 태그 `v1.11.0`가 origin에 푸시됨
 
 Run:
 ```bash
-cd /Users/jongsooyi/projects/impact7DB && npm install
+cd /Users/jongsooyi/IMPACT7/impact7DB && npm install
 node -e "import('@impact7/shared/class-move').then(m => console.log(typeof m.moveClass))"
 ```
 Expected: `function`
@@ -212,7 +212,7 @@ Expected: `function`
 - [ ] **Step 3: 커밋**
 
 ```bash
-cd /Users/jongsooyi/projects/impact7DB
+cd /Users/jongsooyi/IMPACT7/impact7DB
 git add package.json package-lock.json
 git commit -m "chore: @impact7/shared v1.11.0 (moveClass)"
 ```
@@ -222,7 +222,7 @@ git commit -m "chore: @impact7/shared v1.11.0 (moveClass)"
 ## Task 4: DB — `applyBulkClass`에 학기 가드 + moveClass 적용
 
 **Files:**
-- Modify: `/Users/jongsooyi/projects/impact7DB/app.js` (상단 import 영역, `applyBulkClass` 함수 `app.js:4589-4664`)
+- Modify: `/Users/jongsooyi/IMPACT7/impact7DB/app.js` (상단 import 영역, `applyBulkClass` 함수 `app.js:4589-4664`)
 
 현재 `applyBulkClass`는 학기 OFF면 `enrollments[0]`을 건드리고(4612), `semester` 없는 학생을 조용히 skip하며(4613), 충돌 검사가 없다. 아래로 교체한다.
 
@@ -331,12 +331,12 @@ window.applyBulkClass = async () => {
 
 - [ ] **Step 3: 빌드 확인**
 
-Run: `cd /Users/jongsooyi/projects/impact7DB && npx vite build`
+Run: `cd /Users/jongsooyi/IMPACT7/impact7DB && npx vite build`
 Expected: 빌드 성공, 신규 에러 없음 (기존 chunk-size 경고는 무방)
 
 - [ ] **Step 4: 수동 검증 (dev 서버)**
 
-Run: `cd /Users/jongsooyi/projects/impact7DB && npm run dev` 후 브라우저에서:
+Run: `cd /Users/jongsooyi/IMPACT7/impact7DB && npm run dev` 후 브라우저에서:
 1. 좌측 Semester에서 대상 학부 학기 선택(ON) → 내신 학생이 원래 반 그룹에 나타나는지 확인
 2. 벌크 모드 → 내신 학생 포함 다수 선택 → 일괄 반 변경에 `HX108` 입력
 3. 변경 후: 정규 class_number만 바뀌고 `naesin_class_override`·`start_date` 유지 확인 (학생 상세/Firestore)
@@ -352,7 +352,7 @@ Run: `/simplify` 후 `/code-review` (app.js 변경분 대상). 결과 반영.
 - [ ] **Step 6: 커밋**
 
 ```bash
-cd /Users/jongsooyi/projects/impact7DB
+cd /Users/jongsooyi/IMPACT7/impact7DB
 git add app.js
 git commit -m "feat: 일괄 반 변경에 학기 컨텍스트 가드 + moveClass 적용
 

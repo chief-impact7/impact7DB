@@ -6,11 +6,11 @@
 이 저장소의 검증·보완된 종합 리뷰 작업폴더를 읽고 수정 작업을 진행해줘.
 
 작업폴더 (절대경로 — 폴더명에 공백 없음):
-@/Users/jongsooyi/projects/impact7DB/docs/2026-06-21-impact7db-remediation/00-verification-log.md
-@/Users/jongsooyi/projects/impact7DB/docs/2026-06-21-impact7db-remediation/02-findings.md
-@/Users/jongsooyi/projects/impact7DB/docs/2026-06-21-impact7db-remediation/03-validation-evidence.md
-@/Users/jongsooyi/projects/impact7DB/docs/2026-06-21-impact7db-remediation/04-remediation-plan.md
-@/Users/jongsooyi/projects/impact7DB/docs/2026-06-21-impact7db-remediation/06-test-writing-guide.md
+@/Users/jongsooyi/IMPACT7/impact7DB/docs/2026-06-21-impact7db-remediation/00-verification-log.md
+@/Users/jongsooyi/IMPACT7/impact7DB/docs/2026-06-21-impact7db-remediation/02-findings.md
+@/Users/jongsooyi/IMPACT7/impact7DB/docs/2026-06-21-impact7db-remediation/03-validation-evidence.md
+@/Users/jongsooyi/IMPACT7/impact7DB/docs/2026-06-21-impact7db-remediation/04-remediation-plan.md
+@/Users/jongsooyi/IMPACT7/impact7DB/docs/2026-06-21-impact7db-remediation/06-test-writing-guide.md
 
 요구사항:
 1. 먼저 AGENTS.md와 .memory/MEMORY.md를 읽어라.

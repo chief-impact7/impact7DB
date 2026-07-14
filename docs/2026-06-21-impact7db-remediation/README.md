@@ -1,7 +1,7 @@
 # impact7DB 종합 리뷰 — 검증·보완 완성본 (작업폴더)
 
 - 작성일: 2026-06-21
-- 대상: `/Users/jongsooyi/projects/impact7DB`
+- 대상: `/Users/jongsooyi/IMPACT7/impact7DB`
 - 입력: `docs/codex review/2026-06-21-impact7db-comprehensive-review/` (Codex 1차 리뷰)
 - 이 폴더: Codex 발견사항을 **실제 코드와 전수 재검증**하고, 오류 수정·과대/과소평가 보정·누락 발견사항 추가로 만든 **실행용 작업폴더**
 - 최종 판정: **REQUEST CHANGES** (Codex 판정 유지 — 근거는 더 강해짐)

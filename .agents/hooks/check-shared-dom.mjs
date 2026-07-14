@@ -13,8 +13,8 @@ const masterPath = join(here, '..', 'shared-dom', 'a11y-dom.js');
 const master = readFileSync(masterPath, 'utf8');
 
 const apps = {
-  dsc: '/Users/jongsooyi/projects/impact7newDSC/a11y-dom.js',
-  db: '/Users/jongsooyi/projects/impact7DB/a11y-dom.js',
+  dsc: '/Users/jongsooyi/IMPACT7/impact7newDSC/a11y-dom.js',
+  db: '/Users/jongsooyi/IMPACT7/impact7DB/a11y-dom.js',
 };
 const onlyApp = process.argv.includes('--app') ? process.argv[process.argv.indexOf('--app') + 1] : null;
 // 잘못된 --app(오타·값 누락)이 "0건 검사 후 통과"하는 silent bypass를 막는다.

@@ -1,7 +1,7 @@
 # impact7DB Codex 종합 리뷰
 
 - 리뷰일: 2026-06-21
-- 대상: `/Users/jongsooyi/projects/impact7DB`
+- 대상: `/Users/jongsooyi/IMPACT7/impact7DB`
 - 최종 판정: **REQUEST CHANGES**
 - 중점: 정합성, 신뢰성, 안정성, 효율성, 운용 편의성
 - 변경 사항: 리뷰 과정에서는 소스 코드를 수정하지 않음
@@ -27,5 +27,5 @@
 경로의 공백 때문에 참조가 잘 안 되면 절대경로를 사용하거나 파일을 하나씩 지정한다.
 
 ```text
-@/Users/jongsooyi/projects/impact7DB/docs/codex review/2026-06-21-impact7db-comprehensive-review/05-claude-handoff-prompt.md
+@/Users/jongsooyi/IMPACT7/impact7DB/docs/codex review/2026-06-21-impact7db-comprehensive-review/05-claude-handoff-prompt.md
 ```

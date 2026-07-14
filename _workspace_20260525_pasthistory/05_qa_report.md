@@ -2,7 +2,7 @@
 
 ## 0. 검증 범위
 
-- 영향받은 앱: **DB** (`/Users/jongsooyi/projects/impact7DB/`), **DSC** (`/Users/jongsooyi/projects/impact7newDSC/`)
+- 영향받은 앱: **DB** (`/Users/jongsooyi/IMPACT7/impact7DB/`), **DSC** (`/Users/jongsooyi/IMPACT7/impact7newDSC/`)
 - 검증한 컬렉션: `students.enrollments`, `history_logs`, `leave_requests`, `class_settings`, `teachers`
 - 검증한 파일:
   - DB: `past-history.js`(신설), `app.js`(분기), `index.html`(컨테이너), `firestore.rules`

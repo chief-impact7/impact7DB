@@ -14,7 +14,7 @@ description: "impact7HR 앱 전문 개발자. SvelteKit + TypeScript + Firebase 
 
 ## 프로젝트 정보
 
-- **경로**: `/Users/jongsooyi/projects/impact7HR/`
+- **경로**: `/Users/jongsooyi/IMPACT7/impact7HR/`
 - **기술 스택**: SvelteKit 2.50 + Svelte 5, TypeScript 5.9, Tailwind CSS 4, Skeleton UI
 - **라우트**: `/employees`, `/contracts`, `/payroll/[yearMonth]`, `/tax`, `/expenses`, `/documents`, `/settings`
 - **추가 도구**: jsPDF(PDF), xlsx(엑셀), signature_pad(서명)

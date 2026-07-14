@@ -10,7 +10,7 @@ impact7db Firebase 프로젝트의 `firebase-adminsdk-fbsvc@impact7db.iam.gservi
 
 **How to apply:**
 - SA 키 발급 → 즉시 다음 4곳 모두 갱신: 로컬 `impact7DB/service-account.json`, GH Secret `FIREBASE_SERVICE_ACCOUNT` × 3 (chief-impact7/impact7DB, impact7newDSC, impact7HR)
-- 갱신 명령: `gh secret set FIREBASE_SERVICE_ACCOUNT -R chief-impact7/<repo> < /Users/jongsooyi/projects/impact7DB/service-account.json`
+- 갱신 명령: `gh secret set FIREBASE_SERVICE_ACCOUNT -R chief-impact7/<repo> < /Users/jongsooyi/IMPACT7/impact7DB/service-account.json`
 - 옛 키 폐기 전 반드시 3개 앱 모두 재배포 success 확인 (`gh run rerun <id>`)
 - exam/qbank는 SA 키 미사용(배포 방식 다름). 제외.
 - 평문 SA 백업 파일(`*.bak.*` 등) 만들지 말 것. `.gitignore`로 차단되어 있어도 디스크에 평문 private_key가 남는다. 키 교체는 GCP 발급 → 직접 덮어쓰기.

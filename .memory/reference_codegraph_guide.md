@@ -54,7 +54,7 @@ scripts/               — Firestore 관리 스크립트 (upsert, cleanup, oneof
 
 학생 상태·이력·반이동·승격·매칭 관련 작업 전, 로컬 구현보다 먼저 확인:
 ```
-/Users/jongsooyi/projects/impact7-shared/package.json  — export map
+/Users/jongsooyi/IMPACT7/impact7-shared/package.json  — export map
 ```
 핵심 shared 모듈: `history-classifier`, `enrollment-status`, `enrollment-derivation`,
 `class-move`, `promote-enroll`, `student-number`, `student-label`

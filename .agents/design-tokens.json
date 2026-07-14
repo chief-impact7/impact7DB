@@ -1,10 +1,10 @@
 {
   "_comment": "impact7 에코시스템 디자인 토큰 SSoT(단일 진실 원천). 토큰 값은 여기서만 바꾼다. check-design-tokens.mjs가 각 앱 CSS와 대조해 drift를 차단한다. 코어(그린·배경·본문)는 원래 일치, 상태색·border·보조텍스트는 2026-06-28 DSC 기준으로 통일. 변형(bg/strong/container)·다크모드는 SSoT 밖(각 앱 자유).",
   "files": {
-    "dsc": "/Users/jongsooyi/projects/impact7newDSC/daily-ops.css",
-    "db": "/Users/jongsooyi/projects/impact7DB/style.css",
-    "hr": "/Users/jongsooyi/projects/impact7HR/src/app.css",
-    "exam": "/Users/jongsooyi/projects/impact7exam/src/app/globals.css"
+    "dsc": "/Users/jongsooyi/IMPACT7/impact7newDSC/daily-ops.css",
+    "db": "/Users/jongsooyi/IMPACT7/impact7DB/style.css",
+    "hr": "/Users/jongsooyi/IMPACT7/impact7HR/src/app.css",
+    "exam": "/Users/jongsooyi/IMPACT7/impact7exam/src/app/globals.css"
   },
   "tokens": {
     "primary": {

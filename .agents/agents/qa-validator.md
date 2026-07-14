@@ -16,12 +16,12 @@ description: "impact7 에코시스템 크로스앱 정합성 검증 전문가. F
 
 | 앱 | 경로 |
 |----|------|
-| DB | `/Users/jongsooyi/projects/impact7DB/` |
-| DSC | `/Users/jongsooyi/projects/impact7newDSC/` |
-| HR | `/Users/jongsooyi/projects/impact7HR/` |
-| exam | `/Users/jongsooyi/projects/impact7exam/` |
-| tablet | `/Users/jongsooyi/projects/tablet/` |
-| functions | `/Users/jongsooyi/projects/impact7DB/functions-shared/` |
+| DB | `/Users/jongsooyi/IMPACT7/impact7DB/` |
+| DSC | `/Users/jongsooyi/IMPACT7/impact7newDSC/` |
+| HR | `/Users/jongsooyi/IMPACT7/impact7HR/` |
+| exam | `/Users/jongsooyi/IMPACT7/impact7exam/` |
+| tablet | `/Users/jongsooyi/IMPACT7/tablet/` |
+| functions | `/Users/jongsooyi/IMPACT7/impact7DB/functions-shared/` |
 
 ## 검증 우선순위
 

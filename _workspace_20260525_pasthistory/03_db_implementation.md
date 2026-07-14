@@ -76,7 +76,7 @@ const showPastHistoryPanel = (student) => { ... };
 + in ['ENROLL', 'UPDATE', 'WITHDRAW', 'DELETE', 'RETURN', 'STATUS_CHANGE', 'RESTORE', 'LR_AMEND']
 ```
 
-- 위치: `/Users/jongsooyi/projects/impact7DB/firestore.rules:132`
+- 위치: `/Users/jongsooyi/IMPACT7/impact7DB/firestore.rules:132`
 - 영향: `history_logs.create` 허용 enum 확장 — 4프로젝트 동기화 필요 (orchestrator 단계에서 `firestore-rules-sync` 스킬로 처리).
 
 ## 5. 빌드 결과

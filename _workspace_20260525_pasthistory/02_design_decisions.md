@@ -49,13 +49,13 @@ if (학생.status ∈ ACTIVE_STATES) {
 
 ## 모듈 분리 계획
 
-**DB (`/Users/jongsooyi/projects/impact7DB/`)**:
+**DB (`/Users/jongsooyi/IMPACT7/impact7DB/`)**:
 - 신설 `past-history.js` — 과거이력 데이터 페치·렌더링
 - `store.js`에서 `currentStudentId`, `allStudents` import
 - `index.html`에 `<div id="past-history-view">` 컨테이너 추가
 - `selectStudent`/`switchDetailTab`에 학생상태 분기 추가 (소규모 수정)
 
-**DSC (`/Users/jongsooyi/projects/impact7newDSC/`)**:
+**DSC (`/Users/jongsooyi/IMPACT7/impact7newDSC/`)**:
 - 신설 `past-history.js` — DB와 동일 패턴
 - `student-detail.js`(1365줄)에 추가하지 않고 분리
 

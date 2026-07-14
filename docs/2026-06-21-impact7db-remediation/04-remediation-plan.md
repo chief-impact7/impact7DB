@@ -103,7 +103,7 @@ C-02·C-03·H-01 수정(공개 토큰 read·직원/계약 get·Storage HR 경로
 6. `test: isolate integration tests, refresh contract fixtures, add rules coverage` [M-08,N-10]
 
 각 소스 코드 커밋 전 `simplify` → `code-review` 수행 후 staged quality marker 기록:
-`node /Users/jongsooyi/projects/impact7DB/.agents/hooks/impact7-precommit-quality-guard.mjs --mark`
+`node /Users/jongsooyi/IMPACT7/impact7DB/.agents/hooks/impact7-precommit-quality-guard.mjs --mark`
 
 ## 진행 원칙
 

@@ -167,14 +167,14 @@
 
 ## 8. 관련 파일 경로
 
-**DB (`/Users/jongsooyi/projects/impact7DB/`)**:
+**DB (`/Users/jongsooyi/IMPACT7/impact7DB/`)**:
 - `app.js`: line 122 `enrollmentCode`, 2486-2498/2715-2716 enrollment 스키마, 3906-3923 `switchDetailTab`, 3929-3955 `loadHistory`, 3960-3987 `_summarizeHistoryText`, 3989-4025 `_categorizeHistoryLog`, 4790-4898 leave_request 카드, 4919-4937 `fetchStudentLeaveRequests`
 - `index.html`: 397-517 detail tab + view 영역
 - `store.js`: 28-48 state 정의
 - `firestore.rules`: 124-152 history_logs, 481-518 leave_requests, 337-357 class_settings
 - `firestore.indexes.json`: 3-9 history_logs 복합 인덱스
 
-**DSC (`/Users/jongsooyi/projects/impact7newDSC/`)**:
+**DSC (`/Users/jongsooyi/IMPACT7/impact7newDSC/`)**:
 - `index.html`: 228-264 detail tabs
 - `student-detail.js`: 382-395 `switchDetailTab`
 - `class-detail.js`: 1164-1175 `saveTeacherAssign` (변경 이력 미기록 지점)

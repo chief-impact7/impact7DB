@@ -46,7 +46,7 @@ if (!isPromptHook && !isAntigravityPreInvocation) {
   process.exit(0);
 }
 
-if (!workspaceText(payload).includes("/Users/jongsooyi/projects/impact7")) {
+if (!workspaceText(payload).includes("/Users/jongsooyi/IMPACT7/impact7")) {
   process.exit(0);
 }
 
@@ -65,7 +65,7 @@ if (isPromptHook && (!hasSearchIntent || !hasImpact7Domain)) {
 
 const additionalContext = [
   "impact7 shared-first search rule:",
-  "Before searching or judging the current app, inspect `/Users/jongsooyi/projects/impact7-shared/package.json` exports and the relevant `@impact7/shared` module.",
+  "Before searching or judging the current app, inspect `/Users/jongsooyi/IMPACT7/impact7-shared/package.json` exports and the relevant `@impact7/shared` module.",
   "Search order: shared package export map -> relevant shared module -> current app local implementation -> drift comparison.",
   "Canonical shared surfaces: `history-classifier.js`, `enrollment-status.js`, `enrollment-derivation.js`, `class-move.js`, `promote-enroll.js`, `student-number.js`, `student-label.js`, `staff-label.js`, `datetime.js`, `ime-input.js`, `html-escape.js`, `phone.js`, `branch.js`.",
   "For student status/enrollment/history/label/number/class move/promotion/matching work, report the shared contract first and treat local mismatch as potential drift.",

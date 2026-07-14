@@ -151,7 +151,7 @@ Expected: 빌드 성공
 
 - [ ] **Step 1: 커밋**
 ```bash
-cd /Users/jongsooyi/projects/impact7DB
+cd /Users/jongsooyi/IMPACT7/impact7DB
 git add app.js
 git commit -m "feat: 신규 등록 폼에서 반 배정 제거 — 상담 상태로만 저장"
 ```

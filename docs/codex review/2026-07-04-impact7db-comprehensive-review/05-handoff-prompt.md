@@ -3,12 +3,12 @@
 아래 프롬프트를 다음 에이전트에게 그대로 전달하면 된다.
 
 ```text
-작업 위치: /Users/jongsooyi/projects/impact7DB
+작업 위치: /Users/jongsooyi/IMPACT7/impact7DB
 
 먼저 AGENTS.md, .memory/MEMORY.md, .memory/reference_codegraph_guide.md를 읽고, codegraph_explore를 먼저 사용해 현재 코드를 확인해라.
 
 이번 감사 문서:
-/Users/jongsooyi/projects/impact7DB/docs/codex review/2026-07-04-impact7db-comprehensive-review/README.md
+/Users/jongsooyi/IMPACT7/impact7DB/docs/codex review/2026-07-04-impact7db-comprehensive-review/README.md
 
 목표:
 01~04 문서의 findings 중 Phase 1부터 처리한다. 관련 없는 파일은 건드리지 않는다.

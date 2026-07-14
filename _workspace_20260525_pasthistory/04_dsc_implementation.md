@@ -4,9 +4,9 @@
 
 | 종류 | 경로 | 변경 내용 |
 |---|---|---|
-| 신설 | `/Users/jongsooyi/projects/impact7newDSC/past-history.js` | 과거이력 뷰 전용 모듈 (페치/집계/렌더) |
-| 수정 | `/Users/jongsooyi/projects/impact7newDSC/student-detail.js` | `import { isPastViewStudent, renderPastHistory }` 추가 + `renderStudentDetail` 진입부 분기 + 탭바 display 복원 1줄 |
-| 수정 | `/Users/jongsooyi/projects/impact7newDSC/daily-ops.css` | `.past-history` 계열 스타일 블록 추가 (~110줄) |
+| 신설 | `/Users/jongsooyi/IMPACT7/impact7newDSC/past-history.js` | 과거이력 뷰 전용 모듈 (페치/집계/렌더) |
+| 수정 | `/Users/jongsooyi/IMPACT7/impact7newDSC/student-detail.js` | `import { isPastViewStudent, renderPastHistory }` 추가 + `renderStudentDetail` 진입부 분기 + 탭바 display 복원 1줄 |
+| 수정 | `/Users/jongsooyi/IMPACT7/impact7newDSC/daily-ops.css` | `.past-history` 계열 스타일 블록 추가 (~110줄) |
 
 `index.html`은 변경 없음 — ES 모듈 의존 그래프(`daily-ops.js → student-detail.js → past-history.js`)로 자동 번들링되므로 별도 `<script>` 등록 불필요(중복 평가 위험 회피).
 
