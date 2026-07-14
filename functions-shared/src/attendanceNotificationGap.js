@@ -1,6 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { isAttendedStatus } from '@impact7/shared/history';
-import { ATTENDANCE_ACTIONS } from '@impact7/shared/attendance-action';
+import { applyNaesinFreeDerivation, enrollmentCode } from '@impact7/shared/enrollment-derivation';
+import { getDayName, normalizedDays, resolveNaesinCsKey } from '@impact7/shared/expected-arrival';
 import { formatDateKST } from '@impact7/shared/datetime';
 import { assertAuthorizedStaff } from './authGuards.js';
 
@@ -9,79 +10,112 @@ export function previousKstDate(now = new Date()) {
   return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
 }
 
-function queueIdsForStatus(studentId, status, checkins, events) {
-  const ids = [];
-  for (const item of checkins) {
-    if (item.student_id === studentId && item.status === status && item.queue_id) ids.push(item.queue_id);
-  }
-  const eventTypes = status === '조퇴'
-    ? new Set([ATTENDANCE_ACTIONS.departure])
-    : new Set([ATTENDANCE_ACTIONS.arrival, '재등원']);
-  for (const item of events) {
-    if (item.student_id !== studentId || !eventTypes.has(item.type)) continue;
-    ids.push(...(Array.isArray(item.queue_ids) ? item.queue_ids : [item.queue_id]).filter(Boolean));
-  }
-  return [...new Set(ids)];
+function activeEnrollmentsAt(enrollments, dateKST) {
+  return (enrollments ?? []).filter((enrollment) => {
+    if (!enrollment) return false;
+    if (/^\d{4}-/.test(enrollment.start_date ?? '') && enrollment.start_date > dateKST) return false;
+    if (/^\d{4}-/.test(enrollment.end_date ?? '') && enrollment.end_date < dateKST) return false;
+    return true;
+  });
+}
+
+export function isRegularStudentOnDate(student, classSettings, dateKST) {
+  const derived = applyNaesinFreeDerivation(activeEnrollmentsAt(student?.enrollments, dateKST), {
+    classSettings,
+    dateStr: dateKST,
+    resolveNaesinCsKey,
+    enrollmentCode,
+  });
+  const dayName = getDayName(dateKST);
+  const scheduled = derived.filter((enrollment) => normalizedDays(enrollment.day).includes(dayName));
+  if (!scheduled.length) return false;
+  const primaryType = scheduled[0]?.class_type;
+  if (primaryType === '내신' || primaryType === '자유학기') return false;
+  return !scheduled.every((enrollment) => enrollment.class_type === '특강');
+}
+
+function reportQueuesForStudent(studentId, queues) {
+  return queues.filter((queue) => {
+    if (queue.student_id !== studentId) return false;
+    if (queue.kind === 'parent_notice') return queue.template_key === 'report';
+    return queue.kind === 'direct' && queue.source === 'parent_report';
+  });
 }
 
 function notificationStatusOf(statuses) {
   if (statuses.length === 0) return 'not_queued';
-  if (statuses.some((value) => value === 'failed_permanent' || value === 'failed_retryable')) return 'failed';
+  if (statuses.includes('failed_permanent')) return 'retry_failed';
+  if (statuses.includes('failed_retryable')) return 'retrying';
   return 'pending';
 }
 
-export function buildAttendanceNotificationGaps({ daily, checkins, events, queueStatuses, studentNames }) {
+export function buildAttendanceNotificationGaps({ daily, students, classSettings, queues, dateKST }) {
+  const studentMap = new Map(students.map((student) => [student.id, student]));
+  const eligible = daily.filter((record) => {
+    const student = studentMap.get(record.student_id);
+    return record.student_id
+      && isAttendedStatus(record.attendance?.status)
+      && isRegularStudentOnDate(student, classSettings, dateKST);
+  });
   const items = [];
-  for (const record of daily) {
-    const status = record.attendance?.status;
-    if (!record.student_id || !isAttendedStatus(status)) continue;
-    const queueIds = queueIdsForStatus(record.student_id, status, checkins, events);
-    const statuses = [...new Set(queueIds.map((id) => queueStatuses.get(id)).filter(Boolean))];
+  for (const record of eligible) {
+    const student = studentMap.get(record.student_id);
+    const statuses = [...new Set(reportQueuesForStudent(record.student_id, queues).map((queue) => queue.status).filter(Boolean))];
     if (statuses.includes('sent')) continue;
     items.push({
       student_id: record.student_id,
-      student_name: studentNames.get(record.student_id) || record.student_name || '(이름 미확인)',
-      attendance_status: status,
+      student_name: student?.name || record.student_name || '(이름 미확인)',
+      attendance_status: record.attendance.status,
       notification_status: notificationStatusOf(statuses),
       queue_statuses: statuses,
     });
   }
-  return items.sort((a, b) => a.student_name.localeCompare(b.student_name, 'ko'));
+  return {
+    attendedCount: eligible.length,
+    items: items.sort((a, b) => a.student_name.localeCompare(b.student_name, 'ko')),
+  };
 }
 
 export async function runAttendanceNotificationGapSnapshot(deps = {}) {
   const db = deps.firestore ?? getFirestore();
   const dateKST = previousKstDate(deps.now ?? new Date());
-  const [dailySnap, checkinSnap, eventSnap] = await Promise.all([
+  const [dailySnap, queueSnap] = await Promise.all([
     db.collection('daily_records').where('date', '==', dateKST).get(),
-    db.collection('attendance_checkins').where('date_kst', '==', dateKST).get(),
-    db.collection('attendance_events').where('date_kst', '==', dateKST).get(),
+    db.collection('message_queue').where('report_date_kst', '==', dateKST).get(),
   ]);
   const daily = dailySnap.docs.map((doc) => doc.data());
-  const checkins = checkinSnap.docs.map((doc) => doc.data());
-  const events = eventSnap.docs.map((doc) => doc.data());
-  const queueIds = [...new Set([
-    ...checkins.map((item) => item.queue_id),
-    ...events.flatMap((item) => Array.isArray(item.queue_ids) ? item.queue_ids : [item.queue_id]),
-  ].filter(Boolean))];
-  const attendedIds = [...new Set(daily.filter((item) => isAttendedStatus(item.attendance?.status)).map((item) => item.student_id).filter(Boolean))];
-
-  const [queueSnaps, studentSnaps] = await Promise.all([
-    queueIds.length ? db.getAll(...queueIds.map((id) => db.collection('message_queue').doc(id))) : [],
-    attendedIds.length ? db.getAll(...attendedIds.map((id) => db.collection('students').doc(id))) : [],
-  ]);
-  const queueStatuses = new Map(queueSnaps.filter((snap) => snap.exists).map((snap) => [snap.id, snap.data().status]));
-  const studentNames = new Map(studentSnaps.filter((snap) => snap.exists).map((snap) => [snap.id, snap.data().name]));
-  const items = buildAttendanceNotificationGaps({ daily, checkins, events, queueStatuses, studentNames });
+  const attendedIds = [...new Set(daily
+    .filter((record) => isAttendedStatus(record.attendance?.status))
+    .map((record) => record.student_id)
+    .filter(Boolean))];
+  const studentSnaps = attendedIds.length
+    ? await db.getAll(...attendedIds.map((id) => db.collection('students').doc(id)))
+    : [];
+  const students = studentSnaps.filter((snap) => snap.exists).map((snap) => ({ id: snap.id, ...snap.data() }));
+  const classCodes = [...new Set(students.flatMap((student) => (student.enrollments ?? []).flatMap((enrollment) => [
+    enrollmentCode(enrollment),
+    enrollment.naesin_class_override,
+  ])).filter(Boolean))];
+  const classSnaps = classCodes.length
+    ? await db.getAll(...classCodes.map((code) => db.collection('class_settings').doc(code)))
+    : [];
+  const classSettings = Object.fromEntries(classSnaps.filter((snap) => snap.exists).map((snap) => [snap.id, snap.data()]));
+  const { attendedCount, items } = buildAttendanceNotificationGaps({
+    daily,
+    students,
+    classSettings,
+    queues: queueSnap.docs.map((doc) => doc.data()),
+    dateKST,
+  });
 
   await db.collection('attendance_notification_gaps').doc(dateKST).set({
     date_kst: dateKST,
     generated_at: FieldValue.serverTimestamp(),
-    attended_count: attendedIds.length,
+    attended_count: attendedCount,
     missing_count: items.length,
     items,
   });
-  return { dateKST, attendedCount: attendedIds.length, missingCount: items.length };
+  return { dateKST, attendedCount, missingCount: items.length };
 }
 
 export async function handleGetAttendanceNotificationGaps(request, deps = {}) {

@@ -42,7 +42,7 @@ import {
 } from './src/hrUploadHandler.js';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './src/solapiSecrets.js';
 import { runOptOut080Sync } from './src/optOut080Sync.js';
-import { handleRegisterManualOptOut } from './src/manualOptOutHandler.js';
+import { handleGetManualOptOuts, handleRegisterManualOptOut } from './src/manualOptOutHandler.js';
 import { handleGetAttendanceNotificationGaps, runAttendanceNotificationGapSnapshot } from './src/attendanceNotificationGap.js';
 import { computeLabelUpdate } from './src/studentLabelSync.js';
 import { handleStaffAutoClockout } from './src/staffAutoClockoutHandler.js';
@@ -185,6 +185,10 @@ export const registerManualOptOut = onCall(
   { enforceAppCheck: false, secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
   handleRegisterManualOptOut,
 );
+export const getManualOptOuts = onCall(
+  { enforceAppCheck: false, secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
+  handleGetManualOptOuts,
+);
 
 // 정보성 대용량 발송 — 메시지 센터 ②블록. 직원 권한. message_queue(kind=direct) 배치 enqueue.
 export const createBulkMessage = onCall({ enforceAppCheck: false }, handleCreateBulkMessage);
@@ -217,7 +221,7 @@ export const getRecipientMessageHistory = onCall({ enforceAppCheck: false }, han
 // 발송 현황 집계 — 큐 read를 차단(T11)하므로 대시보드는 이 callable로 카운트+마스킹 실패목록만 받는다.
 export const getMessageDeliveryStatus = onCall({ enforceAppCheck: false }, handleGetMessageDeliveryStatus);
 
-// 전날 출석·지각·조퇴 중 출결 알림이 발송 완료되지 않은 명단. 매일 KST 15:00 확정 스냅샷.
+// 전날 정규 출석·지각·조퇴 중 학부모 수업 리포트가 발송 완료되지 않은 명단. 매일 KST 15:00 확정 스냅샷.
 export const attendanceNotificationGapSweeper = onSchedule(
   { schedule: '0 15 * * *', timeZone: 'Asia/Seoul' },
   () => runAttendanceNotificationGapSnapshot(),

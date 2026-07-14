@@ -12,6 +12,7 @@ const QUEUE_STATUSES = ['pending', 'processing', 'awaiting_delivery_result', 'fa
 const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
 const CHANNELS = ['kakao', 'sms'];
 const MAX_FAILURES = 30;
+const MAX_DETAILS_PER_STATUS = 30;
 const SCAN_LIMIT = 500;
 const RANGED_SCAN_LIMIT = 2000; // 기간 지정 통계는 상한을 넉넉히(학원 규모에서 사실상 전수)
 
@@ -21,68 +22,89 @@ function recipientMaskedOf(d) {
   return d.recipient_masked ?? maskPhone(d.recipient_phone);
 }
 
+function queueDetail(doc) {
+  const d = doc.data();
+  return {
+    id: doc.id,
+    studentId: d.student_id ?? null,
+    status: d.status,
+    kind: d.kind ?? null,
+    lastErrorCode: d.last_error_code ?? null,
+    recipientMasked: recipientMaskedOf(d),
+    createdAt: d.created_at?.toMillis?.() ?? (d.created_at instanceof Date ? d.created_at.getTime() : null),
+    updatedAt: d.updated_at?.toMillis?.() ?? (d.updated_at instanceof Date ? d.updated_at.getTime() : null),
+  };
+}
+
+function failureDetail(doc) {
+  const d = doc.data();
+  return {
+    ...queueDetail(doc),
+    content: d.content || d.fallback_text || null,
+    piiPurged: d.pii_purged_at != null,
+  };
+}
+
 export async function handleGetMessageDeliveryStatus(request, deps = {}) {
   assertAuthorizedStaff(request.auth);
   const db = deps.firestore || getFirestore();
   const queueCol = db.collection('message_queue');
 
-  // 상태별 카운트는 aggregate count()로 — 큐 전수 스캔(최대 500건) 없이 정확한 카운트를 얻는다.
-  const queueCountPromises = QUEUE_STATUSES.map(async (s) => {
-    const agg = await queueCol.where('status', '==', s).count().get();
-    return [s, agg.data().count];
-  });
-
-  // 보관 처리된 실패 항목 수 — 실패 목록에서는 제외되고 개수만 표시한다.
-  const archivedCountPromise = queueCol.where('status', '==', 'archived').count().get();
-
-  // 실패 목록은 (status, updated_at) 복합 인덱스로 최신 30건만 — 전수 스캔 불필요.
-  const failuresPromise = queueCol
-    .where('status', 'in', FAILED_STATUSES)
-    .orderBy('updated_at', 'desc')
-    .limit(MAX_FAILURES)
-    .get();
-
-  // 기간 필터(선택) — fromMs/toMs epoch ms. 발송 통계(sent/failed/채널)에만 적용되고
-  // 큐 상태 카운트·실패 목록은 현재 스냅샷이므로 기간과 무관하다.
+  // 기간 필터(선택) — fromMs/toMs epoch ms. 큐 요약과 발송 로그에 함께 적용한다.
   const fromMs = Number(request.data?.fromMs);
   const toMs = Number(request.data?.toMs);
   if (Number.isFinite(fromMs) && Number.isFinite(toMs) && fromMs > toMs) {
     throw new HttpsError('invalid-argument', '기간이 올바르지 않습니다 (from > to).');
   }
   const hasRange = Number.isFinite(fromMs) || Number.isFinite(toMs);
+  const queueCountPromises = hasRange ? [] : QUEUE_STATUSES.map(async (s) => {
+    const agg = await queueCol.where('status', '==', s).count().get();
+    return [s, agg.data().count];
+  });
+  const archivedCountPromise = queueCol.where('status', '==', 'archived').count().get();
+  const failuresPromise = hasRange ? null : queueCol
+    .where('status', 'in', FAILED_STATUSES)
+    .orderBy('updated_at', 'desc')
+    .limit(MAX_FAILURES)
+    .get();
+  let queueQuery = queueCol.orderBy('created_at', 'desc');
+  if (Number.isFinite(fromMs)) queueQuery = queueQuery.where('created_at', '>=', new Date(fromMs));
+  if (Number.isFinite(toMs)) queueQuery = queueQuery.where('created_at', '<=', new Date(toMs));
+  const queueScanLimit = hasRange ? RANGED_SCAN_LIMIT : SCAN_LIMIT;
+  const queuePreviewPromise = queueQuery.limit(queueScanLimit).get();
   let logsQuery = db.collection('message_logs').orderBy('created_at', 'desc');
   if (Number.isFinite(fromMs)) logsQuery = logsQuery.where('created_at', '>=', new Date(fromMs));
   if (Number.isFinite(toMs)) logsQuery = logsQuery.where('created_at', '<=', new Date(toMs));
   const logScanLimit = hasRange ? RANGED_SCAN_LIMIT : SCAN_LIMIT;
   const logsPromise = logsQuery.limit(logScanLimit).get();
 
-  const [queueCountEntries, archivedAgg, failuresSnap, logSnap] = await Promise.all([
+  const [queueCountEntries, archivedAgg, failuresSnap, queuePreviewSnap, logSnap] = await Promise.all([
     Promise.all(queueCountPromises),
     archivedCountPromise,
     failuresPromise,
+    queuePreviewPromise,
     logsPromise,
   ]);
 
   const queueCounts = Object.fromEntries(QUEUE_STATUSES.map(s => [s, 0]));
-  for (const [s, c] of queueCountEntries) queueCounts[s] = c;
-
-  const failures = [];
-  failuresSnap.forEach(doc => {
-    const d = doc.data();
-    failures.push({
-      id: doc.id,
-      studentId: d.student_id ?? null,
-      status: d.status,
-      kind: d.kind ?? null,
-      lastErrorCode: d.last_error_code ?? null,
-      recipientMasked: recipientMaskedOf(d),
-      updatedAt: d.updated_at?.toMillis?.() ?? null,
-      // 실패한 메시지의 본문 — 알림톡은 fallback_text(렌더된 문안)에 있다. purge 후엔 null.
-      content: d.content || d.fallback_text || null,
-      // 보존기간 경과(평문 번호 purge) — 재발송 불가, 클라가 버튼을 비활성화한다.
-      piiPurged: d.pii_purged_at != null,
+  if (hasRange) {
+    queuePreviewSnap.forEach((doc) => {
+      const status = doc.data().status;
+      if (queueCounts[status] != null) queueCounts[status] += 1;
     });
+  } else {
+    for (const [s, c] of queueCountEntries) queueCounts[s] = c;
+  }
+
+  const queueDetails = Object.fromEntries(QUEUE_STATUSES.map((status) => [status, []]));
+  queuePreviewSnap.forEach((doc) => {
+    const status = doc.data().status;
+    if (queueDetails[status]?.length < MAX_DETAILS_PER_STATUS) queueDetails[status].push(queueDetail(doc));
   });
+  const failureDocs = hasRange
+    ? queuePreviewSnap.docs.filter((doc) => FAILED_STATUSES.includes(doc.data().status)).slice(0, MAX_FAILURES)
+    : failuresSnap.docs;
+  const failures = failureDocs.map(failureDetail);
 
   const channelCounts = Object.fromEntries(CHANNELS.map(c => [c, 0]));
   let sentCount = 0;
@@ -106,6 +128,8 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
     failedCount,
     // 스캔 상한 도달 = 기간 내 로그가 더 있음(통계가 하한값) — UI가 안내한다.
     logLimitReached: (logSnap.size ?? logSnap.docs?.length ?? 0) >= logScanLimit,
+    queueLimitReached: (queuePreviewSnap.size ?? queuePreviewSnap.docs?.length ?? 0) >= queueScanLimit,
+    queueDetails,
     failures,
     generatedAt: Date.now(),
   };

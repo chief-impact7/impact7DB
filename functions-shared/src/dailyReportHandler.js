@@ -23,6 +23,9 @@ export async function handleSendDailyReport(request, deps = {}) {
   const data = request.data ?? {};
   const studentId = String(data.studentId ?? '').trim();
   const content = String(data.content ?? '').trim();
+  const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(String(data.reportDate ?? ''))
+    ? String(data.reportDate)
+    : null;
   if (!studentId) throw new HttpsError('invalid-argument', 'studentId가 필요합니다.');
   if (!content) throw new HttpsError('invalid-argument', '리포트 본문이 비어 있습니다.');
 
@@ -45,6 +48,8 @@ export async function handleSendDailyReport(request, deps = {}) {
         createdBy,
       }),
       student_id: studentId,
+      source: 'parent_report',
+      ...(reportDate ? { report_date_kst: reportDate } : {}),
       created_at: FieldValue.serverTimestamp(),
     };
     const ref = data.requestId

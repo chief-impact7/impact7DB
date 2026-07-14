@@ -2,31 +2,36 @@ import { describe, expect, it } from 'vitest';
 
 const { buildAttendanceNotificationGaps, previousKstDate, runAttendanceNotificationGapSnapshot } = await import('../src/attendanceNotificationGap.js');
 
-describe('attendance notification gaps', () => {
+const REGULAR = { class_type: '정규', level_symbol: 'HA', class_number: '101', day: ['월'], start_date: '2026-01-01' };
+
+describe('parent report gaps for regular attendance', () => {
   it('uses the previous KST date', () => {
     expect(previousKstDate(new Date('2026-07-14T06:00:00.000Z'))).toBe('2026-07-13');
   });
 
-  it('keeps attended students without a matching sent notification', () => {
-    const items = buildAttendanceNotificationGaps({
+  it('keeps regular attendees without a sent parent report and excludes non-regular attendance', () => {
+    const result = buildAttendanceNotificationGaps({
+      dateKST: '2026-07-13',
       daily: [
         { student_id: 's1', attendance: { status: '출석' } },
         { student_id: 's2', attendance: { status: '지각' } },
         { student_id: 's3', attendance: { status: '조퇴' } },
-        { student_id: 's4', attendance: { status: '결석' } },
       ],
-      checkins: [
-        { student_id: 's1', status: '출석', queue_id: 'q1' },
-        { student_id: 's2', status: '지각', queue_id: 'q2' },
+      students: [
+        { id: 's1', name: '가학생', enrollments: [REGULAR] },
+        { id: 's2', name: '나학생', enrollments: [REGULAR] },
+        { id: 's3', name: '다학생', enrollments: [{ ...REGULAR, class_type: '특강' }] },
       ],
-      events: [{ student_id: 's3', type: '하원', queue_ids: ['q3'] }],
-      queueStatuses: new Map([['q1', 'sent'], ['q2', 'failed_permanent'], ['q3', 'awaiting_delivery_result']]),
-      studentNames: new Map([['s1', '가학생'], ['s2', '나학생'], ['s3', '다학생'], ['s4', '라학생']]),
+      classSettings: {},
+      queues: [
+        { student_id: 's1', kind: 'parent_notice', template_key: 'report', status: 'sent' },
+        { student_id: 's2', kind: 'direct', source: 'parent_report', status: 'failed_permanent' },
+      ],
     });
 
-    expect(items).toEqual([
-      expect.objectContaining({ student_id: 's2', attendance_status: '지각', notification_status: 'failed' }),
-      expect.objectContaining({ student_id: 's3', attendance_status: '조퇴', notification_status: 'pending' }),
+    expect(result.attendedCount).toBe(2);
+    expect(result.items).toEqual([
+      expect.objectContaining({ student_id: 's2', attendance_status: '지각', notification_status: 'retry_failed' }),
     ]);
   });
 
@@ -34,8 +39,7 @@ describe('attendance notification gaps', () => {
     const saved = {};
     const rows = {
       daily_records: [{ student_id: 's1', attendance: { status: '출석' } }],
-      attendance_checkins: [{ student_id: 's1', status: '출석', queue_id: 'q1' }],
-      attendance_events: [],
+      message_queue: [{ student_id: 's1', kind: 'parent_notice', template_key: 'report', status: 'failed_permanent' }],
     };
     const firestore = {
       collection(name) {
@@ -45,11 +49,12 @@ describe('attendance notification gaps', () => {
         };
       },
       async getAll(...refs) {
-        return refs.map((ref) => ({
-          id: ref.id,
-          exists: true,
-          data: () => ref.collectionName === 'message_queue' ? { status: 'failed_permanent' } : { name: '가학생' },
-        }));
+        return refs.map((ref) => {
+          if (ref.collectionName === 'students') {
+            return { id: ref.id, exists: true, data: () => ({ name: '가학생', enrollments: [REGULAR] }) };
+          }
+          return { id: ref.id, exists: false, data: () => ({}) };
+        });
       },
     };
 
@@ -59,6 +64,6 @@ describe('attendance notification gaps', () => {
     });
 
     expect(result).toEqual({ dateKST: '2026-07-13', attendedCount: 1, missingCount: 1 });
-    expect(saved['2026-07-13'].items[0]).toMatchObject({ student_name: '가학생', notification_status: 'failed' });
+    expect(saved['2026-07-13'].items[0]).toMatchObject({ student_name: '가학생', notification_status: 'retry_failed' });
   });
 });

@@ -83,10 +83,13 @@ describe('handleGetMessageDeliveryStatus', () => {
     expect(serialized).not.toContain('01077778888');
   });
 
-  it('filters log stats by fromMs/toMs range (queue counts stay snapshot)', async () => {
+  it('filters both queue summary and log stats by fromMs/toMs range', async () => {
     const day = (n) => new Date(Date.UTC(2026, 6, n)); // 2026-07-0n
     const firestore = makeFirestore({
-      queue: [{ id: 'q1', status: 'pending', recipient_phone: '01011112222' }],
+      queue: [
+        { id: 'q1', status: 'pending', recipient_phone: '01011112222', created_at: day(3) },
+        { id: 'q2', status: 'sent', recipient_phone: '01033334444', created_at: day(1) },
+      ],
       logs: [
         { id: 'l1', status: 'sent', channel: 'kakao', created_at: day(1) },
         { id: 'l2', status: 'sent', channel: 'sms', created_at: day(3) },
@@ -99,7 +102,9 @@ describe('handleGetMessageDeliveryStatus', () => {
     expect(res.sentCount).toBe(1);   // l2만 기간 내 sent
     expect(res.failedCount).toBe(1); // l3
     expect(res.channelCounts).toMatchObject({ kakao: 0, sms: 1 });
-    expect(res.queueCounts.pending).toBe(1); // 큐 스냅샷은 기간 무관
+    expect(res.queueCounts.pending).toBe(1);
+    expect(res.queueCounts.sent).toBe(0);
+    expect(res.queueDetails.pending[0]).toMatchObject({ id: 'q1', recipientMasked: '***-****-2222' });
     expect(res.logLimitReached).toBe(false);
   });
 

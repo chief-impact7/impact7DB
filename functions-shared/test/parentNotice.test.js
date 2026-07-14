@@ -93,12 +93,13 @@ describe('handleSendParentNotice', () => {
     process.env.REPORT_TEMPLATE_CODE = 'KA01TP_REPORT';
     const db = makeDb({ s1: { name: '김학생', parent_phone_1: '010-1111-2222' } });
     const res = await handleSendParentNotice(
-      { auth, data: { studentId: 's1', templateKey: 'report', variables: { 날짜: '7/7(화)', 내용: '수업 결과입니다.' } } },
+      { auth, data: { studentId: 's1', templateKey: 'report', reportDate: '2026-07-07', variables: { 날짜: '7/7(화)', 내용: '수업 결과입니다.' } } },
       { db },
     );
     expect(res).toMatchObject({ queued: true, template: '수업 리포트' });
     const doc = db.queue[0];
     expect(doc.kind).toBe('parent_notice');
+    expect(doc).toMatchObject({ template_key: 'report', report_date_kst: '2026-07-07' });
     expect(doc.template_code).toBe('KA01TP_REPORT');
     expect(doc.template_variables).toMatchObject({
       '#{학생명}': '김학생',

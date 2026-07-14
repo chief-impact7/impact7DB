@@ -37,10 +37,10 @@ const STUDENT = { name: '김동윤', parent_phone_1: '010-1111-2222' };
 describe('handleSendDailyReport', () => {
   it('LMS/SMS(kind=direct)로 enqueue', async () => {
     const db = makeDb({ students: { s1: STUDENT } });
-    const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: '[6/16] 수업 결과...' } }, { db });
+    const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: '[6/16] 수업 결과...', reportDate: '2026-06-16' } }, { db });
     expect(res).toMatchObject({ queued: true, channel: 'sms' });
     const q = Object.values(db._store.message_queue)[0];
-    expect(q).toMatchObject({ kind: 'direct', recipient_phone: '01011112222', recipient_role: 'parent_1', content: '[6/16] 수업 결과...' });
+    expect(q).toMatchObject({ kind: 'direct', source: 'parent_report', report_date_kst: '2026-06-16', recipient_phone: '01011112222', recipient_role: 'parent_1', content: '[6/16] 수업 결과...' });
     expect(q.targeting).toBeUndefined();
   });
 

@@ -128,6 +128,9 @@ export async function handleSendParentNotice(request, deps = {}) {
   const data = request.data ?? {};
   const studentId = String(data.studentId ?? '').trim();
   const templateKey = String(data.templateKey ?? '');
+  const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(String(data.reportDate ?? ''))
+    ? String(data.reportDate)
+    : null;
   const def = PARENT_NOTICE_TEMPLATES[templateKey];
   if (!studentId) throw new HttpsError('invalid-argument', 'studentId가 필요합니다.');
   if (!def) throw new HttpsError('invalid-argument', `알 수 없는 안내 템플릿입니다: ${templateKey}`);
@@ -162,6 +165,8 @@ export async function handleSendParentNotice(request, deps = {}) {
     await queueRef.set({
       kind: 'parent_notice',
       student_id: studentId,
+      template_key: templateKey,
+      ...(reportDate ? { report_date_kst: reportDate } : {}),
       recipient_role: target.field,
       recipient_phone: target.phone,
       template_code: templateCode,
