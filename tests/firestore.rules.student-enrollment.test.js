@@ -50,6 +50,53 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
     await assertSucceeds(setDoc(doc(db, 'students/s2'), { name: '김학생', enrollments: [], status: '종강' }));
   });
 
+  test('acquisition_source 문자열 생성과 레거시 빈 값 보완 허용', async () => {
+    const db = authedCtx(env, 't1');
+    await assertSucceeds(setDoc(doc(db, 'students/source1'), {
+      name: '김학생', enrollments: [], status: '상담', acquisition_source: '지인소개',
+    }));
+    await seed('source-legacy', { name: '이학생', enrollments: [], status: '상담' });
+    await assertSucceeds(updateDoc(doc(db, 'students/source-legacy'), { acquisition_source: '네이버검색' }));
+    await seed('source-empty-legacy', {
+      name: '최학생', enrollments: [], status: '상담', acquisition_source: '',
+    });
+    await assertSucceeds(updateDoc(doc(db, 'students/source-empty-legacy'), { acquisition_source: '블로그' }));
+  });
+
+  test('기존 acquisition_source 변경은 거부', async () => {
+    await seed('source-fixed', {
+      name: '박학생', enrollments: [], status: '상담', acquisition_source: '지인소개',
+    });
+    const db = authedCtx(env, 't1');
+    await assertFails(updateDoc(doc(db, 'students/source-fixed'), { acquisition_source: '블로그' }));
+  });
+
+  test('상담 관은 최초 입력 후 변경할 수 없다', async () => {
+    const db = authedCtx(env, 't1');
+    await assertSucceeds(setDoc(doc(db, 'students/branch-new'), {
+      name: '신규', enrollments: [], status: '상담', acquisition_branch: '2단지',
+    }));
+    await seed('branch-legacy', { name: '레거시', enrollments: [], status: '상담' });
+    await assertSucceeds(updateDoc(doc(db, 'students/branch-legacy'), { acquisition_branch: '10단지' }));
+    await assertFails(updateDoc(doc(db, 'students/branch-new'), { acquisition_branch: '10단지' }));
+    await assertFails(setDoc(doc(db, 'students/branch-invalid'), {
+      name: '오류', enrollments: [], status: '상담', acquisition_branch: '본원',
+    }));
+  });
+
+  test('acquisition_source 빈 값·비문자열·50자 초과 거부', async () => {
+    const db = authedCtx(env, 't1');
+    await assertFails(setDoc(doc(db, 'students/source-empty'), {
+      name: '빈값', enrollments: [], status: '상담', acquisition_source: '',
+    }));
+    await assertFails(setDoc(doc(db, 'students/source-type'), {
+      name: '타입', enrollments: [], status: '상담', acquisition_source: 1,
+    }));
+    await assertFails(setDoc(doc(db, 'students/source-long'), {
+      name: '장문', enrollments: [], status: '상담', acquisition_source: '가'.repeat(51),
+    }));
+  });
+
   test('40개 필드(>36) 정상 문서도 저장 허용 (O-04: 한도 36→48)', async () => {
     const db = authedCtx(env, 't1');
     const big = {
@@ -109,12 +156,13 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
     }));
   });
 
-  test('51개 전 클라 필드 문서 생성 허용 (한도 51)', async () => {
+  test('모든 허용 클라 필드 문서 생성 허용', async () => {
     const db = authedCtx(env, 't1');
     const full = {
       name: '홍길동', level: '중등', grade: 1,
       school_elementary: '', school_middle: '봉영여중', school_high: '', school_level_grade: '봉영여중1',
       student_phone: '010-2', parent_phone_1: '010-1111-2222', parent_phone_2: '010-3', other_phone: '010-4',
+      acquisition_source: '지인소개',
       guardian_name_1: '모', guardian_name_2: '부',
       branch: '본원', status: '재원', status2: '', enrollments: ENROLL,
       enrollments_cleared_at: '', enrollments_cleared_by: '',
@@ -130,10 +178,11 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
       status_changed_at: '', status_changed_by: '', status_previous: '',
       nameNormalized: 'hgd', studentNumber: 1, studentNumberSource: 'manual', studentNumberIssuedAt: '',
       studentNumberHistory: [],
+      school_history: [],
       message_recipient_settings: { alimtalk: ['parent_1'], bms: ['parent_1'] },
       parent_message_recipient_fields: ['parent_1'],
     };
-    await assertSucceeds(setDoc(doc(db, 'students/full1'), full)); // 정확히 51 fields
+    await assertSucceeds(setDoc(doc(db, 'students/full1'), full));
   });
 
   test('클라가 허용 외 임의 필드 추가 update → 거부 (diff 전환 후에도 주입 차단 유지)', async () => {

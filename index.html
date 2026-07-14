@@ -723,6 +723,26 @@
                                         <label class="field-label" for="f-grade">학년</label>
                                         <input class="field-input" id="f-grade" name="grade" type="number" min="1" max="6" placeholder="3">
                                     </div>
+                                    <div class="form-field">
+                                        <label class="field-label" for="f-acquisition-source">유입 채널 *</label>
+                                        <select class="field-select" id="f-acquisition-source" name="acquisition_source" required>
+                                            <option value="">-- 유입 채널 선택 --</option>
+                                            <option value="지인소개">지인소개</option>
+                                            <option value="네이버검색">네이버검색</option>
+                                            <option value="블로그">블로그</option>
+                                            <option value="인스타그램">인스타그램</option>
+                                            <option value="현수막">현수막</option>
+                                            <option value="기타">기타</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label class="field-label" for="f-branch">상담 관 *</label>
+                                        <select class="field-select" id="f-branch" name="acquisition_branch" required>
+                                            <option value="">-- 관 선택 --</option>
+                                            <option value="2단지">2단지</option>
+                                            <option value="10단지">10단지</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                             <!-- 연락처 -->

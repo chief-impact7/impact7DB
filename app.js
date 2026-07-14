@@ -2420,6 +2420,8 @@ window.showEditForm = () => {
     f.parent_phone_1.value = student.parent_phone_1 || '';
     f.parent_phone_2.value = student.parent_phone_2 || '';
     f.other_phone.value = student.other_phone || '';
+    f.acquisition_source.value = student.acquisition_source || '';
+    f.acquisition_branch.value = student.acquisition_branch || student.branch || branchFromClassNumber(student.enrollments?.[0]?.class_number) || '';
 
     // 신규등록 static 필드 숨기고 동적 enrollment 카드 표시
     const staticFields = document.getElementById('static-enrollment-fields');
@@ -2497,6 +2499,9 @@ window.submitNewStudent = async () => {
     const f = document.getElementById('new-student-form');
     const name = f.name.value.trim();
     const parentPhone1 = f.parent_phone_1.value.trim();
+    const acquisitionSource = f.acquisition_source.value.trim();
+    const selectedBranch = f.acquisition_branch.value;
+    const oldStudent = isEditMode ? (allStudents.find(s => s.id === currentStudentId) || {}) : null;
 
     const grade = f.grade.value.trim().replace(/[^0-9]/g, '');
     const level = f.level.value;
@@ -2523,11 +2528,17 @@ window.submitNewStudent = async () => {
     if (!school) { showToast('학교를 입력하세요.', 'warn'); f.school_current.focus(); return; }
     if (!grade) { showToast('학년을 입력하세요.', 'warn'); f.grade.focus(); return; }
     if (!level) { showToast('학부(초/중/고)를 선택하세요.', 'warn'); f.level.focus(); return; }
+    if (!acquisitionSource && !String(oldStudent?.acquisition_source || '').trim()) {
+        showToast('유입 채널을 선택하세요.', 'warn');
+        f.acquisition_source.focus();
+        return;
+    }
+    if (!selectedBranch) { showToast('상담 관을 선택하세요.', 'warn'); f.acquisition_branch.focus(); return; }
 
     // 이름 중복 체크 — 신규 등록, 또는 수정 모드에서 이름을 변경한 경우
     {
         const excludeId = isEditMode ? currentStudentId : null;
-        const oldName = isEditMode ? (allStudents.find(s => s.id === currentStudentId)?.name || '') : '';
+        const oldName = oldStudent?.name || '';
         const nameChanged = !isEditMode || name !== oldName;
         if (nameChanged) {
             const dup = _suggestUniqueActiveName(name, excludeId);
@@ -2543,7 +2554,6 @@ window.submitNewStudent = async () => {
 
     if (isEditMode) {
         // 수정 모드: 기본 정보 + 상태 + 동적 enrollment 카드에서 수집
-        const oldStudent = allStudents.find(s => s.id === currentStudentId) || {};
         const editedEnrollments = collectEditEnrollments();
 
         // 정합성 가드 — saveEnrollment(별도 모달)와 동일 규칙. 카드 직접 편집 경로도 통과 차단.
@@ -2575,7 +2585,7 @@ window.submitNewStudent = async () => {
         const updatedEnrollments = [...editedEnrollments, ...otherEnrollments];
         if (!blockOnEnrollmentConflicts(findEnrollmentConflicts(updatedEnrollments))) return;
         const firstClassNumber = updatedEnrollments[0]?.class_number || '';
-        const branch = branchFromClassNumber(firstClassNumber) || oldStudent.branch || '';
+        const branch = branchFromClassNumber(firstClassNumber) || oldStudent.branch || selectedBranch;
 
         studentData = {
             name,
@@ -2599,6 +2609,12 @@ window.submitNewStudent = async () => {
             special_start_date: deleteField(),
             special_end_date: deleteField(),
         };
+        if (!String(oldStudent.acquisition_source || '').trim()) {
+            studentData.acquisition_source = acquisitionSource;
+        }
+        if (!String(oldStudent.acquisition_branch || '').trim()) {
+            studentData.acquisition_branch = selectedBranch;
+        }
         // 휴원 상태일 때만 휴원 날짜 저장, 아니면 기존 값 유지
         const statusVal = f.status.value;
         if (statusVal === '실휴원' || statusVal === '가휴원') {
@@ -2633,6 +2649,9 @@ window.submitNewStudent = async () => {
             parent_phone_1: parentPhone1,
             parent_phone_2: f.parent_phone_2.value.trim(),
             other_phone: f.other_phone.value.trim(),
+            acquisition_source: acquisitionSource,
+            acquisition_branch: selectedBranch,
+            branch: selectedBranch,
         };
     }
 
@@ -2670,7 +2689,7 @@ window.submitNewStudent = async () => {
 
     // 상태↔반배정 정합성 (공유 모듈 @impact7/shared/enrollment-status SSoT)
     {
-        const finalStatus = isEditMode ? studentData.status : (f.status?.value || _newStatusForCreate);
+        const finalStatus = isEditMode ? studentData.status : _newStatusForCreate;
         const finalEnrolls = isEditMode ? (studentData.enrollments || []) : _newEnrollmentsForCreate;
         const { enrollments: reconciled, valid, reason } = reconcileEnrollments(finalStatus, finalEnrolls);
         if (!valid) { showToast(reason, 'warn'); return; }
@@ -2803,10 +2822,19 @@ window.submitNewStudent = async () => {
                 // 룰 안전망: enrollments/status는 항상 명시적으로 머지에 포함 — Firestore
                 // 룰의 hasRequiredStudentFields가 머지 후 키 존재를 요구하므로 보장.
                 const mergeData = { ...studentData };
+                mergeData.acquisition_source = String(existingStudent.acquisition_source || '').trim()
+                    ? existingStudent.acquisition_source
+                    : acquisitionSource;
+                mergeData.acquisition_branch = String(existingStudent.acquisition_branch || '').trim()
+                    ? existingStudent.acquisition_branch
+                    : selectedBranch;
                 mergeData.enrollments = _newEnrollmentsForCreate.length > 0
                     ? [...(existingStudent.enrollments || []), ..._newEnrollmentsForCreate]
                     : (existingStudent.enrollments || []);
                 mergeData.status = _newStatusForCreate || existingStudent.status || '상담';
+                mergeData.branch = _newEnrollmentsForCreate.length > 0
+                    ? (branchFromClassNumber(_newEnrollmentsForCreate[0].class_number) || selectedBranch)
+                    : (existingStudent.branch || selectedBranch);
                 syncSpecialStatus2(mergeData);
                 if (!existingStudent.studentNumber) {
                     const { studentNumber, source } = deriveStudentNumber(mergeData);
@@ -2833,6 +2861,7 @@ window.submitNewStudent = async () => {
                 // 비원생(퇴원/종강)에 수업이 붙어 재원계열로 전이되면 재등원 — RETURN으로 명시 기록.
                 // 무로그 전환 차단(재원기간 deriveTenure의 재등원 인식 위해서도 필요).
                 const prevStatus = existingStudent.status || '';
+                const isStatusChange = prevStatus !== mergeData.status;
                 const isReEnroll = NON_ENROLLABLE_STATUSES.has(prevStatus)
                     && ENROLLABLE_STATUSES.has(mergeData.status)
                     && _newEnrollmentsForCreate.length > 0;
@@ -2849,11 +2878,13 @@ window.submitNewStudent = async () => {
                 batch.set(doc(db, 'students', docId), mergeData, { merge: true });
                 batch.set(doc(collection(db, 'history_logs')), {
                     doc_id: docId,
-                    change_type: isReEnroll ? 'RETURN' : 'UPDATE',
+                    change_type: isReEnroll ? 'RETURN' : (isStatusChange ? 'STATUS_CHANGE' : 'UPDATE'),
                     before: `상태:${prevStatus}`,
                     after: isReEnroll
                         ? `상태:${mergeData.status}, 반:${reEnrollCodes} (재등원${appendNote})`
-                        : `첫데이터 재입력: ${name}${appendNote}`,
+                        : (isStatusChange
+                            ? `상태:${mergeData.status}, 첫데이터 재입력: ${name}${appendNote}`
+                            : `첫데이터 재입력: ${name}${appendNote}`),
                     google_login_id: currentUser?.email || 'system',
                     timestamp: serverTimestamp(),
                 });
@@ -2875,8 +2906,8 @@ window.submitNewStudent = async () => {
                 // 완전 신규 — 폼에 입력한 수업이 있으면 그 status·enrollments·branch로 생성,
                 // 없으면 기존처럼 '상담' 상태로만 생성.
                 const newBranch = _newEnrollmentsForCreate.length > 0
-                    ? (branchFromClassNumber(_newEnrollmentsForCreate[0].class_number) || '')
-                    : '';
+                    ? (branchFromClassNumber(_newEnrollmentsForCreate[0].class_number) || selectedBranch)
+                    : selectedBranch;
                 const newStudentData = {
                     ...studentData,
                     branch: newBranch,
@@ -2903,7 +2934,7 @@ window.submitNewStudent = async () => {
                     doc_id: docId,
                     change_type: 'ENROLL',
                     before: '—',
-                    after: `신규 등록: ${name} (${_newEnrollmentsForCreate.map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '수업없음'})`,
+                    after: `신규 등록: ${name} (${_newEnrollmentsForCreate.map(e => enrollmentCode(e)).filter(Boolean).join(', ') || '수업없음'}), 상태:${newStudentData.status}`,
                     google_login_id: currentUser?.email || 'system',
                     timestamp: serverTimestamp(),
                 });
