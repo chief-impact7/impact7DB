@@ -24,7 +24,7 @@ describe('queueWorker promo routing (P4)', () => {
       disable_sms: false, // 동의자 → SMS 대체 허용
       targeting: 'M',
       scheduled_date: '2026-06-18 08:00:00',
-    });
+    }, new Date('2026-06-17T22:00:00Z'));
     expect(p.text).toContain('광고');
     expect(p.content).toBeUndefined();
     expect(p.buttons).toBeUndefined();

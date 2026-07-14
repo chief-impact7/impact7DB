@@ -1,5 +1,6 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { maskPhone } from './phoneMask.js';
+import { parseKstToDate } from './promoSchedule.js';
 
 // 메시지 큐 워커 — 계약 정본(message-architect_api-contract §2.4, §4.1) 기준.
 // status 전이: pending → processing → sent | failed_retryable | failed_permanent.
@@ -78,12 +79,13 @@ function smsTextFor(data) {
 }
 
 // 큐 doc → provider payload. kind별로 provider 입력이 다르다(알림톡=템플릿, 자유본문=문자).
-function buildSendPayload(data) {
+function buildSendPayload(data, now = new Date()) {
   if (SMS_KINDS.has(data.kind)) {
+    const scheduledAt = scheduledAtFor(data);
     return {
       to: data.recipient_phone,
       text: smsTextFor(data),
-      scheduledDate: data.scheduled_date ?? undefined,
+      scheduledDate: scheduledAt && scheduledAt > now ? data.scheduled_date : undefined,
       kind: data.kind,
       ...((data.kind === 'direct' || data.kind === 'promo_sms') && data.image_id
         ? { imageId: data.image_id }
@@ -101,6 +103,11 @@ function buildSendPayload(data) {
 
 function smsChannelFor(data) {
   return data.image_id ? 'mms' : 'sms';
+}
+
+function scheduledAtFor(data) {
+  if (!SMS_KINDS.has(data?.kind) || !data?.scheduled_date) return null;
+  return parseKstToDate(data.scheduled_date);
 }
 
 // pending→processing(또는 failed_retryable/processing→processing) CAS 클레임.
@@ -224,7 +231,7 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
   // provider는 예외를 던지지 않지만, 방어적 catch 경로는 일시적 미상 오류로 재시도 취급한다.
   let result;
   try {
-    result = await sender(buildSendPayload(data));
+    result = await sender(buildSendPayload(data, now));
   } catch (err) {
     result = { ok: false, retryable: true, statusCode: null, channel: null, errorMessage: String(err?.message || err) };
   }
@@ -235,7 +242,9 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
       // 비동기 발송결과에만 나타남). 종결하지 않고 발송결과 폴링이 도달/실패를 확정한다.
       // groupId가 없으면 사후조회가 불가능(매번 missing_group_id로 읽혀 중복 재발송 유발)하므로
       // 폴링에 넣지 않고 아래에서 기존처럼 즉시 종결한다.
-      await markAwaitingDeliveryResult(db, ref, data, result, new Date(now.getTime() + DELIVERY_FIRST_DELAY_MS));
+      const scheduledAt = scheduledAtFor(data);
+      const resultCheckBase = scheduledAt && scheduledAt > now ? scheduledAt : now;
+      await markAwaitingDeliveryResult(db, ref, data, result, new Date(resultCheckBase.getTime() + DELIVERY_FIRST_DELAY_MS));
       return;
     }
     await markSent(db, ref, data, result);

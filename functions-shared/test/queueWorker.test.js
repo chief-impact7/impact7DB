@@ -138,6 +138,30 @@ beforeEach(() => {
 });
 
 describe('processQueueDoc', () => {
+  it('미래 예약 문자는 예약 시각 이후부터 발송결과를 확인한다', async () => {
+    const now = new Date('2026-07-15T12:00:00Z');
+    const db = makeDb({
+      q1: baseQueueDoc({
+        kind: 'promo_sms',
+        content: '(광고) 안내 무료거부 080',
+        scheduled_date: '2026-07-16 08:00:00',
+      }),
+    });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm', groupId: 'g', statusCode: '2000' });
+
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender, now });
+
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ scheduledDate: '2026-07-16 08:00:00' }));
+    expect(db._queue.get('q1')).toMatchObject({
+      status: 'awaiting_delivery_result',
+      delivery_check_at: new Date('2026-07-15T23:02:00Z'),
+    });
+    const resultFetcher = vi.fn();
+    const sweep = await runDeliveryResultSweep({ db, resultFetcher, now: new Date('2026-07-15T22:59:00Z') });
+    expect(sweep.processed).toBe(0);
+    expect(resultFetcher).not.toHaveBeenCalled();
+  });
+
   it('성공(알림톡) → status sent + message_logs(sent, channel kakao)', async () => {
     const db = makeDb({ q1: baseQueueDoc() });
     const sender = vi.fn().mockResolvedValue({
@@ -260,6 +284,25 @@ describe('processQueueDoc', () => {
 });
 
 describe('runRetrySweep', () => {
+  it('예약시각이 지난 문자 재시도는 과거 scheduledDate 없이 즉시 접수한다', async () => {
+    const now = new Date('2026-07-15T23:05:00Z');
+    const db = makeDb({
+      due: baseQueueDoc({
+        kind: 'promo_sms',
+        content: '(광고) 안내 무료거부 080',
+        status: 'failed_retryable',
+        attempt_count: 1,
+        scheduled_date: '2026-07-16 08:00:00',
+        next_attempt_at: new Date('2026-07-15T23:04:00Z'),
+      }),
+    });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm', groupId: 'g', statusCode: '2000' });
+
+    await runRetrySweep({ db, sender, now });
+
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ scheduledDate: undefined }));
+  });
+
   it('재시도 시각 도래분만 재투입하고 미도래/상한초과는 건너뛴다', async () => {
     const now = new Date('2026-06-12T10:00:00Z');
     const past = new Date(now.getTime() - 60_000);
