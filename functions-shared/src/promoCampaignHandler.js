@@ -10,10 +10,9 @@ import { buildSmsQueueDoc } from './smsQueueDoc.js';
 // 홍보 캠페인 생성 callable. 대상 학생을 동의/번호 게이트에 걸러
 // message_queue(kind=promo_sms)에 배치 enqueue한다. 발송 자체는 워커(onMessageQueued)가 수행한다.
 //
-// 핵심 규칙(설계 friendtalk-promo-design):
+// 핵심 규칙:
 //  - 광고이므로 야간(KST 20:50~08:00)이면 자동으로 익일 08:00 예약(scheduledDate)으로 보정.
-//  - 친구톡/BMS 도달은 채널 친구 여부로 결정(우리가 막지 않음). SMS 대체발송(disable_sms=false)은
-//    광고 수신동의자(canReceivePromoSms)에게만 허용한다(정보통신망법).
+//  - 광고 문자는 수신동의자(canReceivePromoSms)에게만 허용한다(정보통신망법).
 //  - 정보성 출결 경로와 데이터·권한·동의를 섞지 않는다.
 
 const MAX_RECIPIENTS = 1000; // 일일 한도 가드(솔라피 사업자 기본 1,000건)
@@ -38,12 +37,12 @@ export function buildPromoSmsQueueDoc({ studentId, phone, recipientRole, consent
 //  - 번호 없음 → 제외(skipped_no_phone)
 //  - 옵트아웃(revoked) → 광고 전면 제외(skipped_revoked). 채널 도달 여부와 무관하게 거부 의사 존중.
 //
-// BMS_FREE는 쓰지 않는다. 광고 수신동의자만 kind='promo_sms'로 큐잉하고, 미동의자는 제외한다.
+// 광고 수신동의자만 kind='promo_sms'로 큐잉하고, 미동의자는 제외한다.
 export function buildPromoRecipients(entries, opts) {
   const stats = {
     total: entries.length, queued: 0,
     skipped_no_phone: 0, skipped_revoked: 0, skipped_no_consent: 0,
-    sms_allowed: 0, friend_bms: 0, ad_sms: 0,
+    ad_sms: 0,
   };
   const docs = [];
 
@@ -67,7 +66,6 @@ export function buildPromoRecipients(entries, opts) {
         stats.skipped_no_consent += 1;
         continue;
       }
-      stats.sms_allowed += 1;
       docs.push(buildPromoSmsQueueDoc({ studentId: id, phone: target.phone, recipientRole: target.field, consent: getPromoConsent(student, consentTarget), campaignId: opts.campaignId, content: opts.content, scheduledDate: opts.scheduledDate }));
       stats.ad_sms += 1;
       stats.queued += 1;
@@ -76,8 +74,7 @@ export function buildPromoRecipients(entries, opts) {
   return { docs, stats };
 }
 
-// 광고 본문 규제 검증(정보통신망법 §50) — 광고는 (광고) 표기 + 무료 수신거부 안내가 필수.
-// BMS는 adFlag로 카카오가 자동 표기하지만 SMS 대체 본문(=content)엔 강제 주입이 없어 서버에서 검증.
+// 광고 본문 규제 검증(정보통신망법 §50) — (광고) 표기 + 무료 수신거부 안내가 필수.
 export function assertAdContentCompliant(content, targeting) {
   if (targeting === 'M' && (!/\(광고\)/.test(content) || !/(무료거부|수신거부|080)/.test(content))) {
     throw new HttpsError(

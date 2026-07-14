@@ -3,7 +3,7 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { maskPhone } from './phoneMask.js';
 
-// 수신자별 발송 이력 타임라인. 카카오 관리자센터는 API 발송(알림톡/BMS) 원문을 보여주지 않으므로
+// 수신자별 발송 이력 타임라인. 카카오 관리자센터는 API 발송 알림톡 원문을 보여주지 않으므로
 // 학부모 답장의 맥락(무엇을 보냈는지)은 message_queue의 본문으로 복원한다.
 // message_logs가 아닌 message_queue를 읽는 이유: 본문(content/fallback_text)은 큐 doc에만 있다.
 // 종결 7일 후 purgeExpiredPii가 recipient_phone·fallback_text·template_variables를 지우므로

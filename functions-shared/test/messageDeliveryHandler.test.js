@@ -62,14 +62,15 @@ describe('handleGetMessageDeliveryStatus', () => {
       logs: [
         { id: 'l1', status: 'sent', channel: 'kakao' },
         { id: 'l2', status: 'sent', channel: 'sms' },
-        { id: 'l3', status: 'failed', channel: 'kakao' },
+        { id: 'l3', status: 'sent', channel: 'lms' },
+        { id: 'l4', status: 'failed', channel: 'kakao' },
       ],
     });
     const res = await handleGetMessageDeliveryStatus({ auth, data: {} }, { firestore });
 
     expect(res.queueCounts).toMatchObject({ pending: 1, sent: 1, failed_permanent: 1, failed_retryable: 1, processing: 0 });
-    expect(res.channelCounts).toMatchObject({ kakao: 1, sms: 1, lms: 0 });
-    expect(res.sentCount).toBe(2);
+    expect(res.channelCounts).toEqual({ kakao: 1, sms: 2 });
+    expect(res.sentCount).toBe(3);
     expect(res.failedCount).toBe(1);
 
     expect(res.failures).toHaveLength(2);

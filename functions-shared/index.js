@@ -27,7 +27,6 @@ import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery, handleManageMessageFailure } from './src/messageRetryHandler.js';
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { handleGetRecipientMessageHistory } from './src/messageHistoryHandler.js';
-import { handleGetChannelInviteTargets, handleManageChannelInviteTarget } from './src/channelInviteTargetsHandler.js';
 import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii } from './src/queueWorker.js';
 import { runAbsenceNoticeSweep, handleSendAbsenceNotice, syncAbsenceNoticeDeliveryStatus } from './src/absenceNoticeSweep.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
@@ -128,7 +127,7 @@ export const healthCheck = onRequest(
 
 // === 카카오/결제/출결 (골격 — 본문은 2026 하반기) ===
 
-// 카카오 알림톡/친구톡 발송 (Callable). 실 API 연동은 나중.
+// 카카오 알림톡 발송 (Callable). 실 API 연동은 나중.
 export const sendKakao = onCall({ enforceAppCheck: false }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
   throw new HttpsError('unimplemented', 'sendKakao: not implemented (카카오 API 확정 후)');
@@ -163,11 +162,11 @@ export const editStaffAttendance = onCall({ enforceAppCheck: false }, handleEdit
 // 별도 저장소 impact7HR UI가 호출. region(asia-northeast3) 전역 상속.
 export const deleteStaffAttendance = onCall({ enforceAppCheck: false }, handleDeleteStaffAttendance);
 
-// 홍보(브랜드 메시지) 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo) 배치 enqueue.
+// 홍보 문자 캠페인 발송 — 원장 권한. 동의/번호 게이트 후 message_queue(kind=promo_sms) 배치 enqueue.
 // 야간(광고 제한)이면 익일 08:00 자동 예약. 발송은 워커(onMessageQueued)가 수행.
 export const createPromoCampaign = onCall({ enforceAppCheck: false }, handleCreatePromoCampaign);
 
-// 홍보 광고 수신동의 설정/철회(옵트아웃). 직원 권한. 철회 시 이후 캠페인 SMS 대체에서 영구 제외.
+// 홍보 광고 수신동의 설정/철회(옵트아웃). 직원 권한. 철회 시 이후 광고 문자에서 영구 제외.
 export const setPromoConsent = onCall({ enforceAppCheck: false }, handleSetPromoConsent);
 
 // 개별 학부모 정보성 안내(알림톡) 발송 — 학생 상세 '메시지' 탭. 직원 권한. 동의·야간 제한 없음.
@@ -179,10 +178,10 @@ export const sendAbsenceNotice = onCall({ enforceAppCheck: false }, handleSendAb
 // 임의 번호 정보성 SMS 즉석 발송 — 메시지 센터 ③블록. 직원 권한. 번호별 kind=direct enqueue.
 export const sendDirectMessage = onCall({ enforceAppCheck: false }, handleSendDirectMessage);
 
-// 정보성 대용량 발송 — 메시지 센터 ②블록. 직원 권한. message_queue(kind=promo, targeting=I) 배치 enqueue.
+// 정보성 대용량 발송 — 메시지 센터 ②블록. 직원 권한. message_queue(kind=direct) 배치 enqueue.
 export const createBulkMessage = onCall({ enforceAppCheck: false }, handleCreateBulkMessage);
 
-// 일일 학습 리포트 발송 — 직원 권한. 친구→정보형 BMS, 비친구→가입안내 SMS.
+// 일일 학습 리포트 문자 발송 — 직원 권한.
 export const sendDailyReport = onCall({ enforceAppCheck: false }, handleSendDailyReport);
 
 // 광고 수신동의 2년 주기 재확인(정보통신망법 §50의8) — 매일 KST 09:00. 골격: 대상 식별·집계.
@@ -204,12 +203,8 @@ export const retryMessageDelivery = onCall({ enforceAppCheck: false }, handleRet
 // 실패 항목 보관(직원)/삭제(원장) — 발송 현황 실패 목록 정리.
 export const manageMessageFailure = onCall({ enforceAppCheck: false }, handleManageMessageFailure);
 
-// 수신자별 발송 이력 타임라인 — 카카오 관리자센터에서 안 보이는 알림톡/BMS 원문 복원용.
+// 수신자별 발송 이력 타임라인 — 카카오 관리자센터에서 안 보이는 알림톡 원문 복원용.
 export const getRecipientMessageHistory = onCall({ enforceAppCheck: false }, handleGetRecipientMessageHistory);
-
-// 채널 가입 유도 대상(비친구 확정 명단) 조회/관리 — 문자 전환(3120) 증거 기반, 가입 확인 시 자동 제거.
-export const getChannelInviteTargets = onCall({ enforceAppCheck: false }, handleGetChannelInviteTargets);
-export const manageChannelInviteTarget = onCall({ enforceAppCheck: false }, handleManageChannelInviteTarget);
 
 // 발송 현황 집계 — 큐 read를 차단(T11)하므로 대시보드는 이 callable로 카운트+마스킹 실패목록만 받는다.
 export const getMessageDeliveryStatus = onCall({ enforceAppCheck: false }, handleGetMessageDeliveryStatus);
@@ -237,8 +232,7 @@ export const retrySweeper = onSchedule(
   },
 );
 
-// 발송결과 폴링(1분 주기) — parent_bms 접수(2000)는 카톡 도달이 아니므로(비친구 3120·야간 3108은
-// 비동기 결과에만 나타남), getGroupMessages로 최종 결과를 조회해 도달 종결·친구 학습·비친구 문자전환을 확정.
+// SMS/LMS 발송결과 폴링(1분 주기) — 접수(2000) 후 getGroupMessages로 최종 도달 여부를 확정.
 export const deliveryResultSweeper = onSchedule(
   { schedule: 'every 1 minutes', timeZone: 'Asia/Seoul', secrets: SOLAPI_SECRETS },
   () => runDeliveryResultSweep(),

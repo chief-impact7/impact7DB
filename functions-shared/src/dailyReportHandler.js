@@ -5,7 +5,7 @@ import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhon
 import { buildSmsQueueDoc } from './smsQueueDoc.js';
 
 // 일일 학습 리포트 발송. 학생별 수동 발송(직원 권한).
-// 자유 본문은 승인 템플릿이 아니므로 카카오 BMS_FREE를 쓰지 않고 LMS/SMS(kind='direct')로 보낸다.
+// 자유 본문은 승인 템플릿이 아니므로 LMS/SMS(kind='direct')로 보낸다.
 function reportTargets(student, data) {
   const fields = Array.isArray(data.recipientFields) && data.recipientFields.length
     ? data.recipientFields
@@ -33,7 +33,6 @@ export async function handleSendDailyReport(request, deps = {}) {
 
   const createdBy = request.auth?.token?.email ?? null;
   const queueIds = [];
-  const channels = new Set();
   let duplicateCount = 0;
 
   for (const target of targets) {
@@ -48,8 +47,6 @@ export async function handleSendDailyReport(request, deps = {}) {
       student_id: studentId,
       created_at: FieldValue.serverTimestamp(),
     };
-    channels.add('sms');
-
     const ref = data.requestId
       ? db.collection('message_queue').doc(targets.length === 1 ? String(data.requestId) : `${String(data.requestId)}_${target.field}`)
       : db.collection('message_queue').doc();
@@ -72,9 +69,7 @@ export async function handleSendDailyReport(request, deps = {}) {
     queueIds,
     queuedCount: targets.length - duplicateCount,
     duplicateCount,
-    channel: channels.size === 1 ? [...channels][0] : 'mixed',
-    joined: false,
-    joinedCount: 0,
+    channel: 'sms',
     scheduledDate: null,
   };
 }

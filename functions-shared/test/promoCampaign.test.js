@@ -43,30 +43,28 @@ describe('buildPromoRecipients (phone + opt-out + consent gating)', () => {
     expect(stats.queued).toBe(1); // s1
     expect(stats.skipped_no_phone).toBe(1); // s3
     expect(stats.skipped_revoked).toBe(1); // s4
-    expect(stats.sms_allowed).toBe(1); // s1
     expect(docs.find((d) => d.student_id === 's1').kind).toBe('promo_sms');
     expect(docs.find((d) => d.student_id === 's2')).toBeUndefined();
     expect(docs.find((d) => d.student_id === 's4')).toBeUndefined(); // 옵트아웃 → 큐에 없음
   });
 });
 
-describe('buildPromoRecipients — BMS 없이 광고 문자만 큐잉', () => {
+describe('buildPromoRecipients — 광고 문자 큐잉', () => {
   const entries = [
-    { id: 's1', student: { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } } }, // 친구 + 동의
-    { id: 's2', student: { parent_phone_1: '01033334444', message_consent: { promo: { optedIn: true } } } }, // 비친구 + 동의 → promo_sms
-    { id: 's3', student: { parent_phone_1: '01055556666' } }, // 비친구 + 미동의 → skip
+    { id: 's1', student: { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } } },
+    { id: 's2', student: { parent_phone_1: '01033334444', message_consent: { promo: { optedIn: true } } } },
+    { id: 's3', student: { parent_phone_1: '01055556666' } }, // 미동의 → skip
     { id: 's4', student: { parent_phone_1: '01077778888', message_consent: { promo: { optedIn: true, revokedAt: 1 } } } }, // revoked → skip
     { id: 's5', student: {} }, // 번호 없음 → skip
   ];
 
-  it('친구 여부와 무관하게 동의자만 kind=promo_sms, 미동의자는 skip', () => {
+  it('동의자만 kind=promo_sms, 미동의자는 skip', () => {
     const { docs, stats } = buildPromoRecipients(entries, {
       campaignId: 'c1', content: '(광고)x 무료거부 080-000-0000', targeting: 'M',
       scheduledDate: null, friendPhones: new Set(['01011112222']),
     });
     expect(stats.total).toBe(5);
     expect(stats.queued).toBe(2);
-    expect(stats.friend_bms).toBe(0);
     expect(stats.ad_sms).toBe(2);
     expect(stats.skipped_no_consent).toBe(1); // s3
     expect(stats.skipped_revoked).toBe(1);    // s4

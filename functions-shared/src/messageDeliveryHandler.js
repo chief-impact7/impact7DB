@@ -10,7 +10,7 @@ import { maskPhone } from './phoneMask.js';
 
 const QUEUE_STATUSES = ['pending', 'processing', 'awaiting_delivery_result', 'failed_retryable', 'failed_permanent', 'sent'];
 const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
-const CHANNELS = ['kakao', 'sms', 'lms'];
+const CHANNELS = ['kakao', 'sms'];
 const MAX_FAILURES = 30;
 const SCAN_LIMIT = 500;
 const RANGED_SCAN_LIMIT = 2000; // 기간 지정 통계는 상한을 넉넉히(학원 규모에서 사실상 전수)
@@ -91,7 +91,8 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
     const d = doc.data();
     if (d.status === 'sent') {
       sentCount++;
-      if (channelCounts[d.channel] != null) channelCounts[d.channel]++;
+      const channel = d.channel === 'lms' ? 'sms' : d.channel;
+      if (channelCounts[channel] != null) channelCounts[channel]++;
     } else if (d.status === 'failed') {
       failedCount++;
     }
