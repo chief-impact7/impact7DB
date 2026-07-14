@@ -5,7 +5,9 @@ vi.mock('firebase-admin/firestore', () => ({
 }));
 vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
 
-const { parseRecipients, handleSendDirectMessage } = await import('../src/directMessageHandler.js');
+const { parseRecipients, parseMmsImage, handleSendDirectMessage } = await import('../src/directMessageHandler.js');
+
+const JPEG_BASE64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2Q==';
 
 function makeDb() {
   const docs = {};
@@ -43,6 +45,21 @@ describe('parseRecipients', () => {
   });
 });
 
+describe('parseMmsImage', () => {
+  it('accepts a JPG image up to 200KB', () => {
+    expect(parseMmsImage({ name: '안내.jpg', dataBase64: JPEG_BASE64 })).toEqual({
+      name: '안내.jpg',
+      dataBase64: JPEG_BASE64,
+    });
+  });
+
+  it('rejects a non-JPG file and oversized payload', () => {
+    expect(() => parseMmsImage({ name: '안내.png', dataBase64: JPEG_BASE64 })).toThrow();
+    const oversized = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(200 * 1024)]).toString('base64');
+    expect(() => parseMmsImage({ name: '안내.jpg', dataBase64: oversized })).toThrow();
+  });
+});
+
 describe('handleSendDirectMessage', () => {
   let db;
   beforeEach(() => { db = makeDb(); });
@@ -55,6 +72,40 @@ describe('handleSendDirectMessage', () => {
     expect(directDocs).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'direct', status: 'pending', content: '안내', recipient_phone: '01011112222' }),
     ]));
+  });
+
+  it('uploads one image and shares its image_id across MMS queue docs', async () => {
+    const uploadMmsImage = vi.fn().mockResolvedValue('MMS_FILE_1');
+    const res = await handleSendDirectMessage({
+      auth,
+      data: {
+        recipients: '01011112222\n01033334444',
+        text: '사진 안내',
+        requestId: 'mms-1',
+        mmsImage: { name: '안내.jpg', dataBase64: JPEG_BASE64 },
+      },
+    }, { db, uploadMmsImage });
+
+    expect(res.queued).toBe(2);
+    expect(uploadMmsImage).toHaveBeenCalledOnce();
+    const directDocs = Object.values(db._docs).filter((d) => d.kind === 'direct');
+    expect(directDocs).toHaveLength(2);
+    expect(directDocs.every((d) => d.image_id === 'MMS_FILE_1')).toBe(true);
+  });
+
+  it('does not upload the image again for a duplicate requestId', async () => {
+    const uploadMmsImage = vi.fn().mockResolvedValue('MMS_FILE_1');
+    const data = {
+      recipients: '01011112222',
+      text: '사진 안내',
+      requestId: 'mms-duplicate',
+      mmsImage: { name: '안내.jpg', dataBase64: JPEG_BASE64 },
+    };
+    await handleSendDirectMessage({ auth, data }, { db, uploadMmsImage });
+    const second = await handleSendDirectMessage({ auth, data }, { db, uploadMmsImage });
+
+    expect(second.duplicate).toBe(true);
+    expect(uploadMmsImage).toHaveBeenCalledOnce();
   });
 
   it('rejects empty text', async () => {

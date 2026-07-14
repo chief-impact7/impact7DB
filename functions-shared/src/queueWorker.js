@@ -22,8 +22,8 @@ const PURGE_LIMIT = 500; // purge 1회 처리 상한(폭주 방지)
 const KAKAO_KINDS = new Set(['attendance', 'parent_notice']);
 const SMS_KINDS = new Set(['direct', 'promo_sms', 'promo', 'report', 'parent_bms']);
 const ALLOWED_KINDS = new Set([...KAKAO_KINDS, ...SMS_KINDS]);
-// 종결 후 purge 대상 평문 필드(번호·대체발송 본문·학생명 포함 변수맵).
-const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables'];
+// 종결 후 purge 대상 평문·외부 파일 참조 필드.
+const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables', 'image_id'];
 
 // 솔라피 호출은 T2(solapiProvider.js)에 위임. 정적 import를 피해 — 파일/시크릿 바인딩이
 // 준비되기 전에도 워커·테스트가 로드되게 하고, 실제 발송 시점에만 동적 로드한다.
@@ -85,6 +85,9 @@ function buildSendPayload(data) {
       text: smsTextFor(data),
       scheduledDate: data.scheduled_date ?? undefined,
       kind: data.kind,
+      ...((data.kind === 'direct' || data.kind === 'promo_sms') && data.image_id
+        ? { imageId: data.image_id }
+        : {}),
     };
   }
   return {
@@ -94,6 +97,10 @@ function buildSendPayload(data) {
     fallbackText: data.fallback_text ?? '',
     kind: data.kind,
   };
+}
+
+function smsChannelFor(data) {
+  return data.image_id ? 'mms' : 'sms';
 }
 
 // pending→processing(또는 failed_retryable/processing→processing) CAS 클레임.
@@ -270,16 +277,17 @@ async function markAwaitingDeliveryResult(db, ref, data, result, checkAt) {
   // 접수 단계 로그는 남기지 않는다 — 최종 결과 확정 시 message_logs 1건(sent/converted/failed).
 }
 
-// SMS/LMS 도달 확정(4000): 종결 + 로그(channel=sms).
+// SMS/LMS/MMS 도달 확정(4000): 종결 + 실제 문자 채널 로그.
 async function finalizeSmsDelivered(db, ref, data, notifyResultCallback) {
+  const channel = smsChannelFor(data);
   await ref.update({
     status: 'sent',
     delivery_check_at: null,
     purge_after: new Date(Date.now() + RETENTION_MS),
     updated_at: FieldValue.serverTimestamp(),
   });
-  await writeMessageLog(db, data, ref.id, { status: 'sent', channel: 'sms', statusCode: SMS_DELIVERED_CODE });
-  await fireResultCallback(notifyResultCallback, ref, data, { status: 'sent', channel: 'sms' });
+  await writeMessageLog(db, data, ref.id, { status: 'sent', channel, statusCode: SMS_DELIVERED_CODE });
+  await fireResultCallback(notifyResultCallback, ref, data, { status: 'sent', channel });
 }
 
 // SMS 통신사 미도달 → 같은 번호로 재발송 예약(failed_retryable). attempt_count는 awaiting 진입 시
@@ -327,16 +335,18 @@ async function processDeliveryResult(db, ref, data, resultFetcher, notifyResultC
       if (attemptCount < MAX_ATTEMPTS) {
         await markSmsRetry(db, ref, attemptCount, result.statusCode);
       } else {
-        await markPermanent(db, ref, data, attemptCount, { statusCode: result.statusCode, message: result.statusMessage, channel: 'sms' });
-        await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: 'sms' });
+        const channel = smsChannelFor(data);
+        await markPermanent(db, ref, data, attemptCount, { statusCode: result.statusCode, message: result.statusMessage, channel });
+        await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel });
       }
       return;
     default: // 'pending' 또는 미상 — 재조회. 상한 초과 시 중복 방지를 위해 미확정 실패로 종결.
       if (count >= MAX_DELIVERY_CHECKS) {
         // SMS 접수 성공분은 도달했을 공산이 크다(결과 미수신 ≠ 발송 실패). 재발송은 중복 위험이
         // 있으므로 재발송 없이 미확정으로 종결한다. (명시적 failed(예: 3058)만 재발송 대상.)
-        await markPermanent(db, ref, data, attemptCount, { statusCode: 'delivery_result_timeout', message: '발송결과 미확정', channel: 'sms' });
-        await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: 'sms' });
+        const channel = smsChannelFor(data);
+        await markPermanent(db, ref, data, attemptCount, { statusCode: 'delivery_result_timeout', message: '발송결과 미확정', channel });
+        await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel });
       } else {
         await ref.update({
           delivery_check_count: count,

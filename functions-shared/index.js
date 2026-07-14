@@ -177,8 +177,11 @@ export const sendParentNotice = onCall({ enforceAppCheck: false }, handleSendPar
 // 수동 미등원 안내 발송 — 로그북 '미도착(연락)'에서 직원이 확인 후 클릭. 자동 스윕과 멱등 컬렉션 공유.
 export const sendAbsenceNotice = onCall({ enforceAppCheck: false }, handleSendAbsenceNotice);
 
-// 임의 번호 정보성 SMS 즉석 발송 — 메시지 센터 ③블록. 직원 권한. 번호별 kind=direct enqueue.
-export const sendDirectMessage = onCall({ enforceAppCheck: false }, handleSendDirectMessage);
+// 임의 번호 정보성 SMS/LMS/MMS 발송 — 메시지 센터 휴대폰 문자 발송. 직원 권한.
+export const sendDirectMessage = onCall(
+  { enforceAppCheck: false, secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
+  handleSendDirectMessage,
+);
 
 // 직원이 요청받은 번호를 솔라피 발송 차단 목록에 직접 등록. 관리자 권한 + Secret 바인딩.
 export const registerManualOptOut = onCall(

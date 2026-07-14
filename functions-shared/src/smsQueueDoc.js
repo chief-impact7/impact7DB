@@ -10,6 +10,7 @@ export function buildSmsQueueDoc({
   adFlag = false,
   consent = null,
   resultCallback = null,
+  imageId = null,
 }) {
   const doc = {
     kind,
@@ -29,5 +30,6 @@ export function buildSmsQueueDoc({
     doc.consent_snapshot = { sms: true, source: consent?.source ?? null, at: consent?.at ?? null };
   }
   if (resultCallback != null) doc.result_callback = resultCallback;
+  if (imageId != null) doc.image_id = imageId;
   return doc;
 }

@@ -1,4 +1,8 @@
 import { SolapiMessageService } from 'solapi';
+import { randomUUID } from 'node:crypto';
+import { writeFile, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SOLAPI_API_KEY, SOLAPI_API_SECRET } from './solapiSecrets.js';
 import { parseKstToDate } from './promoSchedule.js';
 
@@ -33,6 +37,23 @@ export function getSolapiConfig() {
 
 function defaultServiceFactory(apiKey, apiSecret) {
   return new SolapiMessageService(apiKey, apiSecret);
+}
+
+export async function uploadMmsImage(
+  image,
+  config,
+  { serviceFactory = defaultServiceFactory, writeFileFn = writeFile, unlinkFn = unlink } = {},
+) {
+  const cfg = config ?? getSolapiConfig();
+  const path = join(tmpdir(), `impact7-mms-${randomUUID()}.jpg`);
+  try {
+    await writeFileFn(path, Buffer.from(image.dataBase64, 'base64'));
+    const service = serviceFactory(cfg.apiKey, cfg.apiSecret);
+    const response = await service.uploadFile(path, 'MMS', image.name || 'mms.jpg');
+    return response?.fileId ?? null;
+  } finally {
+    await unlinkFn(path).catch(() => {});
+  }
 }
 
 // 카카오 알림톡 발송(내장 SMS/LMS 대체발송 허용). 예외를 던지지 않고
@@ -75,7 +96,7 @@ export async function sendKakaoAlimtalk(payload, config, { serviceFactory = defa
 
 // 일반 SMS/LMS 발송(카카오 미경유) — 임의 번호 즉석 발송용. 본문 길이에 따라 솔라피가 SMS/LMS 자동 분류.
 // 예외 없이 정규화 결과를 반환(워커가 큐/로그에 매핑). 접수 성공 시 channel은 'sms'.
-// payload: { to, text, scheduledDate? }
+// payload: { to, text, scheduledDate?, imageId? }. imageId가 있으면 MMS로 발송한다.
 export async function sendSms(payload, config, { serviceFactory = defaultServiceFactory } = {}) {
   const cfg = config ?? getSolapiConfig();
   const to = onlyDigits(payload?.to);
@@ -83,13 +104,14 @@ export async function sendSms(payload, config, { serviceFactory = defaultService
   if (!payload?.text) return permanentResult('missing_text', 'SMS 본문이 비어 있습니다.');
 
   const message = { to, from: onlyDigits(cfg?.from), text: payload.text };
+  if (payload.imageId) message.imageId = payload.imageId;
   try {
     const service = serviceFactory(cfg.apiKey, cfg.apiSecret);
     const res = await service.send(message, buildSendOptions(payload));
     const result = normalizeSuccess(res);
-    return result.ok ? { ...result, channel: 'sms' } : result;
+    return result.ok ? { ...result, channel: payload.imageId ? 'mms' : 'sms' } : result;
   } catch (err) {
-    return normalizeFailure(err);
+    return { ...normalizeFailure(err), channel: payload.imageId ? 'mms' : 'sms' };
   }
 }
 

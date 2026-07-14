@@ -194,7 +194,7 @@ describe('sendKakaoAlimtalk', () => {
   });
 });
 
-import { sendSms } from '../src/solapiProvider.js';
+import { sendSms, uploadMmsImage } from '../src/solapiProvider.js';
 
 describe('sendSms', () => {
   const cfg = { apiKey: 'k', apiSecret: 's', pfId: 'pf', from: '0226490509' };
@@ -215,6 +215,21 @@ describe('sendSms', () => {
     expect(res).toMatchObject({ ok: true, channel: 'sms', messageId: 'm1', groupId: 'g1' });
   });
 
+  it('adds imageId and reports channel=mms when sending an MMS', async () => {
+    const send = vi.fn(async () => ({
+      groupInfo: { groupId: 'g1', count: { registeredSuccess: 1 } },
+      messageList: [{ messageId: 'm1', statusCode: '2000' }],
+    }));
+    const res = await sendSms(
+      { to: '01011112222', text: '사진 안내', imageId: 'MMS_FILE_1' },
+      cfg,
+      { serviceFactory: () => ({ send }) },
+    );
+
+    expect(send.mock.calls[0][0]).toMatchObject({ imageId: 'MMS_FILE_1' });
+    expect(res).toMatchObject({ ok: true, channel: 'mms' });
+  });
+
   it('converts KST scheduledDate to UTC ISO in send options (naive 문자열은 솔라피가 UTC로 오해석)', async () => {
     const send = vi.fn(async () => ({ groupInfo: { groupId: 'g', count: { registeredSuccess: 1 } }, messageList: [{ messageId: 'm' }] }));
     await sendSms({ to: '01011112222', text: 'x', scheduledDate: '2026-06-18 08:00:00' }, cfg, { serviceFactory: () => ({ send }) });
@@ -230,6 +245,41 @@ describe('sendSms', () => {
   it('returns permanent failure when recipient or text is empty', async () => {
     expect(await sendSms({ to: '', text: 'x' }, cfg, {})).toMatchObject({ ok: false, retryable: false, statusCode: 'invalid_recipient' });
     expect(await sendSms({ to: '01011112222', text: '' }, cfg, {})).toMatchObject({ ok: false, statusCode: 'missing_text' });
+  });
+});
+
+describe('uploadMmsImage', () => {
+  const cfg = { apiKey: 'k', apiSecret: 's', from: '0226490509' };
+
+  it('uploads a temporary JPG as MMS and always removes it', async () => {
+    const writeFileFn = vi.fn().mockResolvedValue(undefined);
+    const unlinkFn = vi.fn().mockResolvedValue(undefined);
+    const uploadFile = vi.fn().mockResolvedValue({ fileId: 'MMS_FILE_1' });
+    const result = await uploadMmsImage(
+      { name: '안내.jpg', dataBase64: '/9j/2Q==' },
+      cfg,
+      { serviceFactory: () => ({ uploadFile }), writeFileFn, unlinkFn },
+    );
+
+    expect(writeFileFn).toHaveBeenCalledWith(expect.stringMatching(/impact7-mms-.*\.jpg$/), expect.any(Buffer));
+    expect(uploadFile).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), 'MMS', '안내.jpg');
+    expect(unlinkFn).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/));
+    expect(result).toBe('MMS_FILE_1');
+  });
+
+  it('removes the temporary JPG when Solapi upload fails', async () => {
+    const unlinkFn = vi.fn().mockResolvedValue(undefined);
+    await expect(uploadMmsImage(
+      { name: '안내.jpg', dataBase64: '/9j/2Q==' },
+      cfg,
+      {
+        serviceFactory: () => ({ uploadFile: vi.fn().mockRejectedValue(new Error('upload failed')) }),
+        writeFileFn: vi.fn().mockResolvedValue(undefined),
+        unlinkFn,
+      },
+    )).rejects.toThrow('upload failed');
+
+    expect(unlinkFn).toHaveBeenCalledOnce();
   });
 });
 

@@ -10,7 +10,7 @@ import { maskPhone } from './phoneMask.js';
 
 const QUEUE_STATUSES = ['pending', 'processing', 'awaiting_delivery_result', 'failed_retryable', 'failed_permanent', 'sent'];
 const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
-const CHANNELS = ['kakao', 'sms'];
+const CHANNELS = ['kakao', 'sms', 'mms'];
 const MAX_FAILURES = 30;
 const MAX_DETAILS_PER_STATUS = 30;
 const SCAN_LIMIT = 500;

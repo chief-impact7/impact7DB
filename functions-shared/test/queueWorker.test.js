@@ -489,6 +489,14 @@ describe('kind=promo_sms 광고 SMS', () => {
     expect(sender).toHaveBeenCalledWith(expect.objectContaining({ kind: 'promo_sms', to: '01012345678', text: '(광고)안내 무료거부 080' }));
     expect(db._queue.get('ps1').status).toBe('awaiting_delivery_result');
   });
+
+  it('MMS image_id를 provider payload에 전달한다', async () => {
+    const sender = vi.fn(async () => ({ ok: true, retryable: false, channel: 'mms', messageId: 'm', groupId: 'g', statusCode: '2000' }));
+    const db = makeDb({ mms1: { kind: 'promo_sms', status: 'pending', recipient_phone: '01012345678', content: '(광고)안내 무료거부 080', image_id: 'MMS_FILE_1', attempt_count: 0 } });
+    await processQueueDoc(eventFor(db, 'mms1'), { db, sender });
+
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ imageId: 'MMS_FILE_1' }));
+  });
 });
 
 describe('SMS 발송결과 폴링 (runDeliveryResultSweep, kind=direct/promo_sms)', () => {
@@ -513,6 +521,15 @@ describe('SMS 발송결과 폴링 (runDeliveryResultSweep, kind=direct/promo_sms
     expect(resultFetcher).toHaveBeenCalledWith('grpS');
     expect(db._queue.get('s_ok').status).toBe('sent');
     expect(db._logs.at(-1)).toMatchObject({ status: 'sent', channel: 'sms' });
+  });
+
+  it('MMS 도달(4000) → sent + 로그(channel=mms)', async () => {
+    const db = makeDb({ mms_ok: smsAwaiting({ image_id: 'MMS_FILE_1' }) });
+    const resultFetcher = vi.fn().mockResolvedValue({ outcome: 'delivered', statusCode: '4000' });
+    await runDeliveryResultSweep({ db, resultFetcher, now: NOW });
+
+    expect(db._queue.get('mms_ok').status).toBe('sent');
+    expect(db._logs.at(-1)).toMatchObject({ status: 'sent', channel: 'mms' });
   });
 
   it('통신사 미도달(3058) + attempt<3 → 재발송 예약(failed_retryable, 로그 없음)', async () => {
@@ -637,6 +654,15 @@ describe('__testing helpers', () => {
       fallbackText: '출결 안내',
       kind: 'attendance',
     });
+  });
+
+  it('buildSendPayload: direct MMS 큐의 image_id를 imageId로 매핑한다', () => {
+    expect(__testing.buildSendPayload({
+      kind: 'direct',
+      recipient_phone: '01012345678',
+      content: '사진 안내',
+      image_id: 'MMS_FILE_1',
+    })).toMatchObject({ imageId: 'MMS_FILE_1' });
   });
 
   it('maskPhone: ***-****-뒤4자리 포맷(공용 phoneMask)', () => {
