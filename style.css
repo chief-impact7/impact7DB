@@ -81,7 +81,7 @@ body {
 /* Google Fonts Material Symbols 링크 제거(SVG 아이콘 전환) 후 기본 크기 복원 —
    원래 그 스택시트가 기본 제공하던 font-size:24px를 지역 규칙 없는 아이콘에도
    유지한다. 더 구체적인 선택자가 있으면 그쪽이 이긴다. */
-.material-symbols-outlined {
+.i7-icon {
     font-size: 24px;
     line-height: 1;
 }
@@ -156,7 +156,7 @@ body {
     box-shadow: 0 3px 8px rgba(0, 117, 74, 0.45);
     background: var(--primary-hover);
 }
-.action-chip-btn .material-symbols-outlined {
+.action-chip-btn .i7-icon {
     font-size: 18px;
 }
 .action-chip-btn:focus-visible {
@@ -336,7 +336,7 @@ body {
     box-shadow: 0 0 0.5px rgba(0,0,0,0.14), 0 1px 1px rgba(0,0,0,0.24);
 }
 
-.compose-btn .material-symbols-outlined {
+.compose-btn .i7-icon {
     color: rgba(255,255,255,0.9);
     font-size: 18px;
 }
@@ -516,7 +516,7 @@ summary:focus-visible {
 }
 
 /* L2 summary 안의 아이콘 크기 */
-summary.menu-l2 .material-symbols-outlined {
+summary.menu-l2 .i7-icon {
     font-size: 16px;
     flex-shrink: 0;
 }
@@ -992,7 +992,7 @@ summary.menu-l2 .material-symbols-outlined {
     margin-bottom: 16px;
 }
 
-.info-card-title .material-symbols-outlined {
+.info-card-title .i7-icon {
     font-size: 20px;
     color: var(--primary);
 }
@@ -1062,7 +1062,7 @@ summary.menu-l2 .material-symbols-outlined {
     background: var(--surface-hover);
     border-color: var(--primary);
 }
-.upload-method-btn .material-symbols-outlined {
+.upload-method-btn .i7-icon {
     font-size: 22px;
     color: var(--primary);
     flex-shrink: 0;
@@ -1476,7 +1476,7 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--text-main);
 }
 
-.modal-title .material-symbols-outlined {
+.modal-title .i7-icon {
     font-size: 20px;
     color: var(--primary);
 }
@@ -1975,7 +1975,7 @@ summary.menu-l2 .material-symbols-outlined {
     transition: background 0.15s;
 }
 
-.bulk-btn-close .material-symbols-outlined {
+.bulk-btn-close .i7-icon {
     font-size: 18px;
 }
 
@@ -2066,7 +2066,7 @@ summary.menu-l2 .material-symbols-outlined {
     margin-bottom: 12px;
 }
 
-.bulk-edit-section-title .material-symbols-outlined {
+.bulk-edit-section-title .i7-icon {
     font-size: 18px;
     color: var(--primary);
 }
@@ -2151,15 +2151,15 @@ summary.menu-l2 .material-symbols-outlined {
     cursor: default;
 }
 
-.item-icon .material-symbols-outlined {
+.item-icon .i7-icon {
     font-size: 14px;
 }
 
-.item-icon-sibling .material-symbols-outlined {
+.item-icon-sibling .i7-icon {
     color: var(--sbux-green);
 }
 
-.item-icon-memo .material-symbols-outlined {
+.item-icon-memo .i7-icon {
     color: #f9ab00;
 }
 
@@ -2272,7 +2272,7 @@ summary.menu-l2 .material-symbols-outlined {
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.home-shortcut-btn .material-symbols-outlined {
+.home-shortcut-btn .i7-icon {
     font-size: 18px;
 }
 
@@ -2351,7 +2351,7 @@ summary.menu-l2 .material-symbols-outlined {
     border-bottom: 1px solid var(--border);
 }
 
-.stats-section-title .material-symbols-outlined {
+.stats-section-title .i7-icon {
     font-size: 16px;
 }
 
@@ -2936,7 +2936,7 @@ summary.menu-l2 .material-symbols-outlined {
     transition: background 0.15s;
 }
 .sidebar-settings-btn:hover { background: var(--hover-bg, rgba(0,0,0,0.06)); }
-.sidebar-settings-btn .material-symbols-outlined { font-size: 18px; }
+.sidebar-settings-btn .i7-icon { font-size: 18px; }
 
 /* ─── 관리자 설정 모달 ───────────────────────────────────────────────────── */
 .admin-settings-card {
@@ -2963,7 +2963,7 @@ summary.menu-l2 .material-symbols-outlined {
     transition: background 0.15s;
 }
 .btn-icon:hover { background: var(--hover-bg, rgba(0,0,0,0.06)); }
-.btn-icon .material-symbols-outlined { font-size: 20px; }
+.btn-icon .i7-icon { font-size: 20px; }
 .admin-settings-tabs {
     display: flex;
     border-bottom: 1px solid var(--border, #e0e0e0);
@@ -3336,7 +3336,7 @@ summary.menu-l2 .material-symbols-outlined {
     color: var(--text-sec);
     font-size: 12px;
 }
-.search-scope-banner .material-symbols-outlined {
+.search-scope-banner .i7-icon {
     font-size: 16px;
 }
 .search-scope-btn {
@@ -3422,10 +3422,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     color: var(--text-sec);
 }
 
-/* material-symbols 크기 유틸 */
+/* 공용 아이콘 크기 유틸 */
 .icon-sm { font-size: 16px; }
 .icon-back { font-size: 18px; }
-.icon-danger, .modal-title .material-symbols-outlined.icon-danger { color: var(--danger); }
+.icon-danger, .modal-title .i7-icon.icon-danger { color: var(--danger); }
 
 /* 모달 헤더 h3 — modal-header 안의 제목 */
 .modal-header h3 {

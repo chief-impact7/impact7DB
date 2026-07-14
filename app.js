@@ -483,7 +483,7 @@ const normalizeEnrollments = (s) => {
 const setFormCardTitle = (el, text) => {
     if (!el) return;
     // 아이콘 span 유지하고 텍스트만 교체
-    const iconSpan = el.querySelector('.material-symbols-outlined');
+    const iconSpan = el.querySelector('.i7-icon');
     const btnHtml = el.querySelector('.memo-add-btn')?.outerHTML || '';
     el.innerHTML = '';
     if (iconSpan) el.appendChild(iconSpan);
