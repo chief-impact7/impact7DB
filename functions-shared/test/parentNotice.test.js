@@ -108,6 +108,8 @@ describe('handleSendParentNotice', () => {
     expect(doc.fallback_text).toContain('수업 리포트');
     expect(doc.fallback_text).toContain('7/7(화)');
     expect(doc.fallback_text).toContain('수업 결과입니다.');
+    expect(doc.fallback_text).not.toContain('함께 보내드린 자료도 확인해 주세요.');
+    expect(doc.fallback_text).not.toContain('감사합니다. 임팩트7');
   });
 
   it('rejects when template code is not configured (not approved yet)', async () => {

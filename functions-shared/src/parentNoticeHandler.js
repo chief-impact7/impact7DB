@@ -91,7 +91,7 @@ export const PARENT_NOTICE_TEMPLATES = {
     envKey: 'REPORT_TEMPLATE_CODE',
     label: '수업 리포트',
     vars: ['날짜', '내용'],
-    fallback: `${BRAND_PREFIX} 수업 리포트\n#{학생명} 학생의 #{날짜} 수업 결과를 안내드립니다.\n\n#{내용}\n\n함께 보내드린 자료도 확인해 주세요.\n감사합니다. 임팩트7\n\n재원생 학부모님께 수업 결과를 안내하는 정보성 메시지입니다.\n문의: 02-2649-0509`,
+    fallback: `${BRAND_PREFIX} 수업 리포트\n#{학생명} 학생의 #{날짜} 수업 결과를 안내드립니다.\n\n#{내용}\n\n재원생 학부모님께 수업 결과를 안내하는 정보성 메시지입니다.\n문의: 02-2649-0509`,
   },
   // 개별 보강 일정 — 메시지 탭 수동 발송.
   makeup: {
