@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { sendKakaoAlimtalk, onlyDigits, resolveSolapiSender } from '../src/solapiProvider.js';
+import { createSolapiSendLimiter, sendKakaoAlimtalk, onlyDigits, resolveSolapiSender } from '../src/solapiProvider.js';
 
 const config = { apiKey: 'k', apiSecret: 's', pfId: 'PF', from: '02-2649-0509' };
 const payload = {
@@ -36,6 +36,29 @@ describe('onlyDigits / resolveSolapiSender', () => {
     expect(resolveSolapiSender()).toBe('0226490509');
     if (prev === undefined) delete process.env.SOLAPI_SENDER;
     else process.env.SOLAPI_SENDER = prev;
+  });
+});
+
+describe('createSolapiSendLimiter', () => {
+  it('spaces consecutive API calls by the configured interval', async () => {
+    let current = 1_000;
+    const sleep = vi.fn(async (ms) => { current += ms; });
+    const limit = createSolapiSendLimiter({ intervalMs: 75, now: () => current, sleep });
+
+    await limit();
+    await limit();
+    await limit();
+
+    expect(sleep.mock.calls).toEqual([[75], [75]]);
+  });
+
+  it('reserves distinct slots for concurrent calls', async () => {
+    const sleep = vi.fn(async () => {});
+    const limit = createSolapiSendLimiter({ intervalMs: 75, now: () => 1_000, sleep });
+
+    await Promise.all([limit(), limit(), limit()]);
+
+    expect(sleep.mock.calls).toEqual([[75], [150]]);
   });
 });
 

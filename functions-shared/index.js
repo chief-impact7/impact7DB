@@ -246,7 +246,7 @@ export const getAttendanceNotificationGaps = onCall(
 const SOLAPI_SECRETS = [SOLAPI_API_KEY, SOLAPI_API_SECRET];
 
 export const onMessageQueued = onDocumentCreated(
-  { document: 'message_queue/{id}', secrets: SOLAPI_SECRETS },
+  { document: 'message_queue/{id}', secrets: SOLAPI_SECRETS, maxInstances: 1, concurrency: 5 },
   (event) => processQueueDoc(event),
 );
 

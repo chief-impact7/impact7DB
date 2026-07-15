@@ -39,6 +39,25 @@ function defaultServiceFactory(apiKey, apiSecret) {
   return new SolapiMessageService(apiKey, apiSecret);
 }
 
+const SOLAPI_SEND_INTERVAL_MS = 75;
+
+export function createSolapiSendLimiter({
+  intervalMs = SOLAPI_SEND_INTERVAL_MS,
+  now = Date.now,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  let nextSendAt = 0;
+  return async () => {
+    const current = now();
+    const scheduledAt = Math.max(current, nextSendAt);
+    nextSendAt = scheduledAt + intervalMs;
+    const waitMs = scheduledAt - current;
+    if (waitMs > 0) await sleep(waitMs);
+  };
+}
+
+const waitForSendSlot = createSolapiSendLimiter();
+
 export async function uploadMmsImage(
   image,
   config,
@@ -67,7 +86,11 @@ export async function uploadMmsImage(
 //                true → 네트워크/5xx/rate limit(sweeper 재시도), false → 영구 실패.
 //   - statusCode: ok:false면 항상 채워진다(솔라피 코드/HTTP 상태/오류 태그). 로그·last_error_code용.
 //   - channel: 접수 시점에는 'kakao'(ATA). 알림톡→SMS/LMS 최종 대체 여부는 발송 후 별도 조회로 확정
-export async function sendKakaoAlimtalk(payload, config, { serviceFactory = defaultServiceFactory } = {}) {
+export async function sendKakaoAlimtalk(
+  payload,
+  config,
+  { serviceFactory = defaultServiceFactory, sendLimiter = waitForSendSlot } = {},
+) {
   const cfg = config ?? getSolapiConfig();
   const to = onlyDigits(payload?.to);
   if (!to) return permanentResult('invalid_recipient', '수신번호가 비어 있습니다.');
@@ -86,6 +109,7 @@ export async function sendKakaoAlimtalk(payload, config, { serviceFactory = defa
   if (payload.fallbackText) message.text = payload.fallbackText; // 대체발송 본문
 
   try {
+    await sendLimiter();
     const service = serviceFactory(cfg.apiKey, cfg.apiSecret);
     const res = await service.send(message, buildSendOptions(payload));
     return normalizeSuccess(res);
@@ -97,7 +121,11 @@ export async function sendKakaoAlimtalk(payload, config, { serviceFactory = defa
 // 일반 SMS/LMS 발송(카카오 미경유) — 임의 번호 즉석 발송용. 본문 길이에 따라 솔라피가 SMS/LMS 자동 분류.
 // 예외 없이 정규화 결과를 반환(워커가 큐/로그에 매핑). 접수 성공 시 channel은 'sms'.
 // payload: { to, text, scheduledDate?, imageId? }. imageId가 있으면 MMS로 발송한다.
-export async function sendSms(payload, config, { serviceFactory = defaultServiceFactory } = {}) {
+export async function sendSms(
+  payload,
+  config,
+  { serviceFactory = defaultServiceFactory, sendLimiter = waitForSendSlot } = {},
+) {
   const cfg = config ?? getSolapiConfig();
   const to = onlyDigits(payload?.to);
   if (!to) return permanentResult('invalid_recipient', '수신번호가 비어 있습니다.');
@@ -106,6 +134,7 @@ export async function sendSms(payload, config, { serviceFactory = defaultService
   const message = { to, from: onlyDigits(cfg?.from), text: payload.text };
   if (payload.imageId) message.imageId = payload.imageId;
   try {
+    await sendLimiter();
     const service = serviceFactory(cfg.apiKey, cfg.apiSecret);
     const res = await service.send(message, buildSendOptions(payload));
     const result = normalizeSuccess(res);
