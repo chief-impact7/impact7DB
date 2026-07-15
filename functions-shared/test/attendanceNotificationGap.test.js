@@ -9,7 +9,7 @@ describe('parent report gaps for regular attendance', () => {
     expect(previousKstDate(new Date('2026-07-14T06:00:00.000Z'))).toBe('2026-07-13');
   });
 
-  it('keeps regular attendees without a sent parent report and excludes non-regular attendance', () => {
+  it('keeps regular and free-semester attendees without a sent parent report and excludes special classes', () => {
     const result = buildAttendanceNotificationGaps({
       dateKST: '2026-07-13',
       daily: [
@@ -19,7 +19,7 @@ describe('parent report gaps for regular attendance', () => {
       ],
       students: [
         { id: 's1', name: '가학생', enrollments: [REGULAR] },
-        { id: 's2', name: '나학생', enrollments: [REGULAR] },
+        { id: 's2', name: '나학생', enrollments: [{ ...REGULAR, class_type: '자유학기', class_number: '102' }] },
         { id: 's3', name: '다학생', enrollments: [{ ...REGULAR, class_type: '특강' }] },
       ],
       classSettings: {},
@@ -31,7 +31,12 @@ describe('parent report gaps for regular attendance', () => {
 
     expect(result.attendedCount).toBe(2);
     expect(result.items).toEqual([
-      expect.objectContaining({ student_id: 's2', attendance_status: '지각', notification_status: 'retry_failed' }),
+      expect.objectContaining({
+        student_id: 's2',
+        class_name: 'HA102',
+        attendance_status: '지각',
+        notification_status: 'retry_failed',
+      }),
     ]);
   });
 

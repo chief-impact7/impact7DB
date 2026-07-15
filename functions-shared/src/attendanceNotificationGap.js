@@ -19,7 +19,7 @@ function activeEnrollmentsAt(enrollments, dateKST) {
   });
 }
 
-export function isRegularStudentOnDate(student, classSettings, dateKST) {
+export function reportClassOnDate(student, classSettings, dateKST) {
   const derived = applyNaesinFreeDerivation(activeEnrollmentsAt(student?.enrollments, dateKST), {
     classSettings,
     dateStr: dateKST,
@@ -28,10 +28,9 @@ export function isRegularStudentOnDate(student, classSettings, dateKST) {
   });
   const dayName = getDayName(dateKST);
   const scheduled = derived.filter((enrollment) => normalizedDays(enrollment.day).includes(dayName));
-  if (!scheduled.length) return false;
-  const primaryType = scheduled[0]?.class_type;
-  if (primaryType === '내신' || primaryType === '자유학기') return false;
-  return !scheduled.every((enrollment) => enrollment.class_type === '특강');
+  const primary = scheduled.find((enrollment) => enrollment.class_type !== '특강');
+  if (!primary || !['정규', '자유학기'].includes(primary.class_type || '정규')) return '';
+  return enrollmentCode(primary);
 }
 
 function reportQueuesForStudent(studentId, queues) {
@@ -51,20 +50,21 @@ function notificationStatusOf(statuses) {
 
 export function buildAttendanceNotificationGaps({ daily, students, classSettings, queues, dateKST }) {
   const studentMap = new Map(students.map((student) => [student.id, student]));
-  const eligible = daily.filter((record) => {
+  const eligible = daily.map((record) => {
     const student = studentMap.get(record.student_id);
-    return record.student_id
-      && isAttendedStatus(record.attendance?.status)
-      && isRegularStudentOnDate(student, classSettings, dateKST);
-  });
+    if (!record.student_id || !isAttendedStatus(record.attendance?.status)) return null;
+    const className = reportClassOnDate(student, classSettings, dateKST);
+    return className ? { record, className } : null;
+  }).filter(Boolean);
   const items = [];
-  for (const record of eligible) {
+  for (const { record, className } of eligible) {
     const student = studentMap.get(record.student_id);
     const statuses = [...new Set(reportQueuesForStudent(record.student_id, queues).map((queue) => queue.status).filter(Boolean))];
     if (statuses.includes('sent')) continue;
     items.push({
       student_id: record.student_id,
       student_name: student?.name || record.student_name || '(이름 미확인)',
+      class_name: className,
       attendance_status: record.attendance.status,
       notification_status: notificationStatusOf(statuses),
       queue_statuses: statuses,

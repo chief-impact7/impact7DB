@@ -230,7 +230,7 @@ export const getRecipientMessageHistory = onCall({ enforceAppCheck: false }, han
 // 발송 현황 집계 — 큐 read를 차단(T11)하므로 대시보드는 이 callable로 카운트+마스킹 실패목록만 받는다.
 export const getMessageDeliveryStatus = onCall({ enforceAppCheck: false }, handleGetMessageDeliveryStatus);
 
-// 전날 정규 출석·지각·조퇴 중 학부모 수업 리포트가 발송 완료되지 않은 명단. 매일 KST 15:00 확정 스냅샷.
+// 전날 정규·자유학기 출석·지각·조퇴 중 학부모 수업 리포트가 발송 완료되지 않은 명단. 매일 KST 15:00 확정 스냅샷.
 export const attendanceNotificationGapSweeper = onSchedule(
   { schedule: '0 15 * * *', timeZone: 'Asia/Seoul' },
   () => runAttendanceNotificationGapSnapshot(),
