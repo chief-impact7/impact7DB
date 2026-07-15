@@ -3,6 +3,9 @@ import { isAttendedStatus } from '@impact7/shared/history';
 import { applyNaesinFreeDerivation, enrollmentCode } from '@impact7/shared/enrollment-derivation';
 import { getDayName, normalizedDays, resolveNaesinCsKey } from '@impact7/shared/expected-arrival';
 import { formatDateKST } from '@impact7/shared/datetime';
+import { classSettingsGet } from '@impact7/shared/class-code';
+import { staffLabel } from '@impact7/shared/staff-label';
+import { teacherDisplayName } from '@impact7/shared/teacher-label';
 import { assertAuthorizedStaff } from './authGuards.js';
 
 export function previousKstDate(now = new Date()) {
@@ -54,10 +57,12 @@ export function buildAttendanceNotificationGaps({ daily, students, classSettings
     const student = studentMap.get(record.student_id);
     if (!record.student_id || !isAttendedStatus(record.attendance?.status)) return null;
     const className = reportClassOnDate(student, classSettings, dateKST);
-    return className ? { record, className } : null;
+    if (!className) return null;
+    const teacherName = teacherDisplayName(staffLabel(classSettingsGet(classSettings, className)?.teacher));
+    return { record, className, teacherName };
   }).filter(Boolean);
   const items = [];
-  for (const { record, className } of eligible) {
+  for (const { record, className, teacherName } of eligible) {
     const student = studentMap.get(record.student_id);
     const statuses = [...new Set(reportQueuesForStudent(record.student_id, queues).map((queue) => queue.status).filter(Boolean))];
     if (statuses.includes('sent')) continue;
@@ -65,6 +70,7 @@ export function buildAttendanceNotificationGaps({ daily, students, classSettings
       student_id: record.student_id,
       student_name: student?.name || record.student_name || '(이름 미확인)',
       class_name: className,
+      teacher_name: teacherName,
       attendance_status: record.attendance.status,
       notification_status: notificationStatusOf(statuses),
       queue_statuses: statuses,

@@ -22,7 +22,7 @@ describe('parent report gaps for regular attendance', () => {
         { id: 's2', name: '나학생', enrollments: [{ ...REGULAR, class_type: '자유학기', class_number: '102' }] },
         { id: 's3', name: '다학생', enrollments: [{ ...REGULAR, class_type: '특강' }] },
       ],
-      classSettings: {},
+      classSettings: { HA102: { teacher: 'edward@impact7.kr' } },
       queues: [
         { student_id: 's1', kind: 'parent_notice', template_key: 'report', status: 'sent' },
         { student_id: 's2', kind: 'direct', source: 'parent_report', status: 'failed_permanent' },
@@ -34,6 +34,7 @@ describe('parent report gaps for regular attendance', () => {
       expect.objectContaining({
         student_id: 's2',
         class_name: 'HA102',
+        teacher_name: 'Edward',
         attendance_status: '지각',
         notification_status: 'retry_failed',
       }),
