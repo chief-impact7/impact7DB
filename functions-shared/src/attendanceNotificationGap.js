@@ -44,8 +44,13 @@ function reportQueuesForStudent(studentId, queues) {
   });
 }
 
+function reportStatusesForStudent(studentId, queues) {
+  return [...new Set(reportQueuesForStudent(studentId, queues).map((queue) => queue.status).filter(Boolean))];
+}
+
 function notificationStatusOf(statuses) {
   if (statuses.length === 0) return 'not_queued';
+  if (statuses.includes('sent')) return 'complete';
   if (statuses.includes('failed_permanent')) return 'retry_failed';
   if (statuses.includes('failed_retryable')) return 'retrying';
   return 'pending';
@@ -64,7 +69,7 @@ export function buildAttendanceNotificationGaps({ daily, students, classSettings
   const items = [];
   for (const { record, className, teacherName } of eligible) {
     const student = studentMap.get(record.student_id);
-    const statuses = [...new Set(reportQueuesForStudent(record.student_id, queues).map((queue) => queue.status).filter(Boolean))];
+    const statuses = reportStatusesForStudent(record.student_id, queues);
     if (statuses.includes('sent')) continue;
     items.push({
       student_id: record.student_id,
@@ -131,12 +136,18 @@ export async function handleGetAttendanceNotificationGaps(request, deps = {}) {
   const snap = await db.collection('attendance_notification_gaps').doc(dateKST).get();
   if (!snap.exists) return { dateKST, generated: false, items: [] };
   const data = snap.data();
+  const queueSnap = await db.collection('message_queue').where('report_date_kst', '==', dateKST).get();
+  const queues = queueSnap.docs.map((doc) => doc.data());
+  const items = (data.items ?? []).map((item) => {
+    const statuses = reportStatusesForStudent(item.student_id, queues);
+    return { ...item, notification_status: notificationStatusOf(statuses), queue_statuses: statuses };
+  });
   return {
     dateKST,
     generated: true,
     generatedAt: data.generated_at?.toMillis?.() ?? null,
     attendedCount: data.attended_count ?? 0,
-    missingCount: data.missing_count ?? 0,
-    items: data.items ?? [],
+    missingCount: items.filter((item) => item.notification_status !== 'complete').length,
+    items,
   };
 }
