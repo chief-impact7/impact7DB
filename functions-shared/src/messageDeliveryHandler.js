@@ -12,8 +12,8 @@ const QUEUE_STATUSES = ['pending', 'processing', 'awaiting_delivery_result', 'fa
 const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
 const CHANNELS = ['kakao', 'sms', 'mms'];
 const MAX_FAILURES = 30;
-const MAX_DETAILS_PER_STATUS = 30;
 const SCAN_LIMIT = 500;
+const MAX_DETAILS_PER_STATUS = SCAN_LIMIT;
 const RANGED_SCAN_LIMIT = 2000; // 기간 지정 통계는 상한을 넉넉히(학원 규모에서 사실상 전수)
 
 // 표시용 마스킹. 저장(recipient_masked)·표시 포맷이 공용 maskPhone으로 통일됐으므로

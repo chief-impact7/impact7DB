@@ -120,6 +120,20 @@ describe('handleGetMessageDeliveryStatus', () => {
     expect(res.queueDetails.sent[0]).not.toHaveProperty('recipientPhone');
   });
 
+  it('returns more than the former 30-row status detail cap', async () => {
+    const queue = Array.from({ length: 31 }, (_, index) => ({
+      id: `q${index + 1}`,
+      status: 'sent',
+      recipient_phone: `0100000${String(index).padStart(4, '0')}`,
+    }));
+    const res = await handleGetMessageDeliveryStatus(
+      { auth, data: {} },
+      { firestore: makeFirestore({ queue }) },
+    );
+
+    expect(res.queueDetails.sent).toHaveLength(31);
+  });
+
   it('rejects an inverted range (from > to)', async () => {
     await expect(handleGetMessageDeliveryStatus(
       { auth, data: { fromMs: 2000, toMs: 1000 } }, { firestore: makeFirestore() },
