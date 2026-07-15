@@ -263,6 +263,39 @@ describe('handleCreateBulkMessage', () => {
     await expect(handleCreateBulkMessage({ auth, data: { title: 't', content: 'x', studentIds: [] } }, { db })).rejects.toThrow();
   });
 
+  it('accepts up to 10,000 recipients and rejects more', async () => {
+    const studentIds = Array.from({ length: 10000 }, (_, i) => `bulk-${i}`);
+    for (let i = 0; i < studentIds.length; i += 1) {
+      db._docs[`students/${studentIds[i]}`] = { parent_phone_1: `010${String(i).padStart(8, '0')}` };
+    }
+    const accepted = await handleCreateBulkMessage(
+      { auth, data: { title: 't', content: 'x', studentIds } },
+      { db },
+    );
+    expect(accepted.stats).toMatchObject({ total: 10000, queued: 10000, skipped_missing: 0 });
+    expect(Object.keys(db._docs).filter((key) => key.startsWith('message_queue/'))).toHaveLength(10000);
+
+    await expect(handleCreateBulkMessage(
+      { auth, data: { title: 't', content: 'x', studentIds: [...studentIds, 'bulk-over'] } },
+      { db },
+    )).rejects.toThrow('한 번에 최대 10000명');
+  });
+
+  it('실제 큐 문서가 10,000건을 넘으면 거부', async () => {
+    const studentIds = Array.from({ length: 5001 }, (_, i) => `multi-${i}`);
+    for (let i = 0; i < studentIds.length; i += 1) {
+      db._docs[`students/${studentIds[i]}`] = {
+        parent_phone_1: `010${String(i).padStart(8, '0')}`,
+        parent_phone_2: `011${String(i).padStart(8, '0')}`,
+      };
+    }
+    await expect(handleCreateBulkMessage({
+      auth,
+      data: { title: 't', content: 'x', studentIds, recipientFields: ['parent_1', 'parent_2'] },
+    }, { db })).rejects.toThrow('한 번에 최대 10000건');
+    expect(Object.keys(db._docs).filter((key) => key.startsWith('message_queue/'))).toHaveLength(0);
+  });
+
   it('is idempotent on requestId', async () => {
     const data = { title: 't', content: 'x', studentIds: ['s1'], requestId: 'b-1' };
     await handleCreateBulkMessage({ auth, data }, { db });
@@ -300,6 +333,32 @@ describe('handleCreateBulkMessage', () => {
     expect(queue.filter((q) => q.student_id === 's1')).toHaveLength(1);
     expect(queue.filter((q) => q.student_id === 's2')).toHaveLength(1);
     expect(db._docs['bulk_campaigns/b-stuck'].status).toBe('queued');
+  });
+
+  it('다중 수신 캠페인 재개 시 이미 저장된 역할만 제외하고 남은 역할을 큐잉', async () => {
+    const now = new Date('2026-07-04T05:00:00Z');
+    db._docs['students/s1'].student_phone = '01055556666';
+    db._docs['students/s1'].parent_phone_2 = '01077778888';
+    db._docs['bulk_campaigns/b-multi-stuck'] = {
+      status: 'enqueuing', stats: {}, content: 'x',
+      enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+      request_fingerprint: recipientFingerprint(['s1'], {
+        recipientField: null,
+        recipientFields: ['student', 'parent_2'],
+      }),
+    };
+    db._docs['message_queue/q1'] = {
+      kind: 'direct', campaign_id: 'b-multi-stuck', student_id: 's1', recipient_role: 'student',
+    };
+    await handleCreateBulkMessage({
+      auth,
+      data: {
+        title: 't', content: 'x', studentIds: ['s1'],
+        recipientFields: ['student', 'parent_2'], requestId: 'b-multi-stuck',
+      },
+    }, { db, now });
+    const queue = Object.values(db._docs).filter((value) => value.campaign_id === 'b-multi-stuck');
+    expect(queue.map((value) => value.recipient_role).sort()).toEqual(['parent_2', 'student']);
   });
 
   it('enqueuing 진행 중(lease 유효) 재호출 → duplicate 단락 (더블클릭 race 차단)', async () => {

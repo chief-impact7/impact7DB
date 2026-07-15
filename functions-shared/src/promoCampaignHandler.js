@@ -16,7 +16,7 @@ import { resolveMmsImageId } from './mmsImage.js';
 //  - 광고 문자는 수신동의자(canReceivePromoSms)에게만 허용한다(정보통신망법).
 //  - 정보성 출결 경로와 데이터·권한·동의를 섞지 않는다.
 
-const MAX_RECIPIENTS = 1000; // 일일 한도 가드(솔라피 사업자 기본 1,000건)
+const MAX_RECIPIENTS = 10000;
 const BATCH_LIMIT = 400; // Firestore 배치 쓰기 상한(500) 여유
 
 export function buildPromoSmsQueueDoc({ studentId, phone, recipientRole, consent, campaignId, content, scheduledDate, imageId }) {
@@ -160,6 +160,9 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
     imageId,
   });
   stats.skipped_missing = studentIds.length - entries.length; // 존재하지 않는 학생 id
+  if (docs.length > MAX_RECIPIENTS) {
+    throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}건까지 발송할 수 있습니다.`);
+  }
 
   // 멱등: create()로 원자 선점(bulkMessageHandler와 동일 관용구) — 같은 requestId 동시
   // 요청(더블클릭)에서 정확히 하나만 enqueue한다. 캠페인 doc을 먼저 'enqueuing'으로 기록해

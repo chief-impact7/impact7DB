@@ -245,6 +245,51 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
   const CONSENTED = { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } };
   const CONSENTED_2 = { parent_phone_1: '01033334444', message_consent: { promo: { optedIn: true } } };
 
+  it('10,000명까지 허용하고 초과하면 거부', async () => {
+    const db = makeDb();
+    const studentIds = Array.from({ length: 10000 }, (_, i) => `promo-${i}`);
+    for (let i = 0; i < studentIds.length; i += 1) {
+      db._docs[`students/${studentIds[i]}`] = {
+        parent_phone_1: `010${String(i).padStart(8, '0')}`,
+        message_consent: { promo: { optedIn: true } },
+      };
+    }
+    await expect(handleCreatePromoCampaign(
+      { auth, data: { title: '홍보', content: AD_CONTENT, studentIds } },
+      { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
+    )).resolves.toMatchObject({ stats: { total: 10000, queued: 10000 } });
+    expect(Object.keys(db._docs).filter((key) => key.startsWith('message_queue/'))).toHaveLength(10000);
+
+    await expect(handleCreatePromoCampaign(
+      { auth, data: { title: '홍보', content: AD_CONTENT, studentIds: [...studentIds, 'promo-over'] } },
+      { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
+    )).rejects.toThrow('한 번에 최대 10000명');
+  });
+
+  it('실제 큐 문서가 10,000건을 넘으면 거부', async () => {
+    const db = makeDb();
+    const studentIds = Array.from({ length: 5001 }, (_, i) => `promo-multi-${i}`);
+    for (let i = 0; i < studentIds.length; i += 1) {
+      db._docs[`students/${studentIds[i]}`] = {
+        student_phone: `010${String(i).padStart(8, '0')}`,
+        parent_phone_1: `011${String(i).padStart(8, '0')}`,
+        message_consent: {
+          promo: { optedIn: true },
+          promo_student: { optedIn: true },
+        },
+      };
+    }
+    await expect(handleCreatePromoCampaign({
+      auth,
+      data: {
+        title: '홍보', content: AD_CONTENT, studentIds,
+        recipientFields: ['student', 'parent_1'],
+      },
+    }, { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() }))
+      .rejects.toThrow('한 번에 최대 10000건');
+    expect(Object.keys(db._docs).filter((key) => key.startsWith('message_queue/'))).toHaveLength(0);
+  });
+
   it('requestId 재호출: queued 완료 캠페인 → duplicate 반환(재발송 없음)', async () => {
     const db = makeDb({
       'students/s1': CONSENTED,

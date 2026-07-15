@@ -2,14 +2,14 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { buildSmsQueueDoc } from './smsQueueDoc.js';
-import { resolveRecipientPhone, resolveRecipientPhones } from './recipientPhone.js';
+import { resolveRecipientPhones, resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
 import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
 import { parseKstToDate } from './promoSchedule.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { enrollmentCode } from '@impact7/shared/enrollment-derivation';
 import { resolveMmsImageId } from './mmsImage.js';
 
-const MAX_RECIPIENTS = 1000;
+const MAX_RECIPIENTS = 10000;
 const BATCH_LIMIT = 400;
 
 const VAR_TOKENS = ['%이름', '%학교', '%학년', '%반'];
@@ -48,11 +48,12 @@ export function buildBulkRecipients(entries, opts) {
   const seenPhones = new Set();
 
   for (const { id, student } of entries) {
-    const phones = fields
-      ? resolveRecipientPhones(student, fields)
-      : [resolveRecipientPhone(student, opts.recipientField)].filter(Boolean);
+    const targets = fields
+      ? resolveRecipientTargets(student, fields)
+      : [resolveRecipientTarget(student, opts.recipientField)].filter(Boolean);
+    if (fields) stats.deduped += resolveRecipientPhones(student, fields).length - targets.length;
 
-    if (phones.length === 0) {
+    if (targets.length === 0) {
       stats.skipped_no_phone += 1;
       continue;
     }
@@ -60,20 +61,18 @@ export function buildBulkRecipients(entries, opts) {
     const content = useVars ? applyMessageVars(opts.content, student) : opts.content;
     // 변수 모드에서도 한 학생 내 동일 번호는 1건만(intra-entry dedup).
     // 형제 간(inter-entry) dedup은 변수 모드에서 유지하지 않는다.
-    const effectivePhones = useVars ? [...new Set(phones)] : phones;
-
-    for (const phone of effectivePhones) {
-      if (!useVars && seenPhones.has(phone)) {
+    for (const target of targets) {
+      if (!useVars && seenPhones.has(target.phone)) {
         stats.deduped += 1;
         continue;
       }
-      if (!useVars) seenPhones.add(phone);
+      if (!useVars) seenPhones.add(target.phone);
       docs.push(buildSmsQueueDoc({
         studentId: id,
-        phone,
+        phone: target.phone,
         campaignId: opts.campaignId,
         content,
-        recipientRole: null,
+        recipientRole: target.field,
         scheduledDate: opts.scheduledDate,
         imageId: opts.imageId,
       }));
@@ -128,6 +127,9 @@ export async function handleCreateBulkMessage(request, deps = {}) {
     imageId,
   });
   stats.skipped_missing = studentIds.length - entries.length;
+  if (docs.length > MAX_RECIPIENTS) {
+    throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}건까지 발송할 수 있습니다.`);
+  }
 
   // create로 원자적 선점 — 같은 requestId 동시 요청에서 정확히 하나만 큐에 등록.
   // 'enqueuing' 고착(이전 호출이 배치 도중 사망)이면 duplicate 단락 시 잔여 대상이 영영
@@ -158,14 +160,21 @@ export async function handleCreateBulkMessage(request, deps = {}) {
     resuming = true;
   }
 
-  // 재개 시 이미 enqueue된 학생은 제외. 학생당 여러 번호 doc이 있어 학생 단위 스킵은
-  // 배치 경계에 걸린 두 번째 번호를 놓칠 수 있으나(드묾), 번호 단위 대조는 PII purge로
-  // recipient_phone이 지워진 doc에서 중복 발송을 유발하므로 과소발송 쪽을 택한다.
+  // 재개 시 이미 enqueue된 수신 역할만 제외한다. 구버전 role 없는 큐는 학생 단위로 제외한다.
   let pendingDocs = docs;
   if (resuming) {
     const queuedSnap = await db.collection('message_queue').where('campaign_id', '==', campaignRef.id).get();
-    const already = new Set(queuedSnap.docs.map((d) => d.data().student_id));
-    pendingDocs = docs.filter((d) => !already.has(d.student_id));
+    const alreadyStudents = new Set();
+    const alreadyTargets = new Set();
+    for (const doc of queuedSnap.docs) {
+      const queued = doc.data();
+      if (queued.recipient_role) alreadyTargets.add(`${queued.student_id}:${queued.recipient_role}`);
+      else alreadyStudents.add(queued.student_id);
+    }
+    pendingDocs = docs.filter((d) => (
+      !alreadyStudents.has(d.student_id)
+      && !alreadyTargets.has(`${d.student_id}:${d.recipient_role}`)
+    ));
   }
 
   let batch = db.batch();
