@@ -8,7 +8,7 @@ function snapOf(docs) {
   return { forEach: (fn) => docs.forEach(fn), docs };
 }
 
-function makeFirestore({ queue = [], logs = [] } = {}) {
+function makeFirestore({ queue = [], logs = [], role = 'owner' } = {}) {
   // where/orderBy/limit는 Firestore처럼 새 query를 반환(불변) — 같은 컬렉션 핸들을 여러 번
   // where해도 필터가 누적되지 않는다. count()/get()/in 연산을 지원한다.
   function makeChain(rows, filters) {
@@ -33,6 +33,9 @@ function makeFirestore({ queue = [], logs = [] } = {}) {
   }
   return {
     collection(name) {
+      if (name === 'HR_users') {
+        return { doc: () => ({ get: async () => ({ exists: !!role, data: () => ({ role }) }) }) };
+      }
       return makeChain(name === 'message_queue' ? queue : logs, []);
     },
   };
@@ -51,10 +54,10 @@ describe('handleGetMessageDeliveryStatus', () => {
     )).rejects.toMatchObject({ code: 'permission-denied' });
   });
 
-  it('aggregates queue counts and returns masked failures only (no plaintext phone)', async () => {
+  it('returns recipient details in authorized status rows and keeps failure-management rows masked', async () => {
     const firestore = makeFirestore({
       queue: [
-        { id: 'q1', status: 'pending', recipient_phone: '01011112222' },
+        { id: 'q1', status: 'pending', recipient_phone: '01011112222', recipient_role: 'student' },
         { id: 'q2', status: 'sent', recipient_phone: '01033334444' },
         { id: 'q3', status: 'failed_permanent', student_id: 's3', recipient_phone: '01055556666', last_error_code: '4000', fallback_text: '홍길동 학생이 등원하였습니다.', updated_at: { toMillis: () => 1700000000000 } },
         { id: 'q4', status: 'failed_retryable', student_id: 's4', recipient_phone: '01077778888' },
@@ -73,15 +76,12 @@ describe('handleGetMessageDeliveryStatus', () => {
     expect(res.channelCounts).toEqual({ kakao: 1, sms: 2, mms: 1 });
     expect(res.sentCount).toBe(4);
     expect(res.failedCount).toBe(1);
+    expect(res.queueDetails.pending[0]).toMatchObject({ recipientPhone: '01011112222', recipientRole: 'student' });
 
     expect(res.failures).toHaveLength(2);
     const f = res.failures.find(x => x.id === 'q3');
     expect(f).toMatchObject({ studentId: 's3', status: 'failed_permanent', lastErrorCode: '4000', recipientMasked: '***-****-6666', updatedAt: 1700000000000, content: '홍길동 학생이 등원하였습니다.' });
-
-    // 평문 번호가 응답 어디에도 없어야 한다.
-    const serialized = JSON.stringify(res);
-    expect(serialized).not.toContain('01055556666');
-    expect(serialized).not.toContain('01077778888');
+    expect(f).not.toHaveProperty('recipientPhone');
   });
 
   it('filters both queue summary and log stats by fromMs/toMs range', async () => {
@@ -105,8 +105,19 @@ describe('handleGetMessageDeliveryStatus', () => {
     expect(res.channelCounts).toMatchObject({ kakao: 0, sms: 1 });
     expect(res.queueCounts.pending).toBe(1);
     expect(res.queueCounts.sent).toBe(0);
-    expect(res.queueDetails.pending[0]).toMatchObject({ id: 'q1', recipientMasked: '***-****-2222' });
+    expect(res.queueDetails.pending[0]).toMatchObject({ id: 'q1', recipientPhone: '01011112222', recipientMasked: '***-****-2222' });
     expect(res.logLimitReached).toBe(false);
+  });
+
+  it('keeps recipient phone masked for non-director staff', async () => {
+    const firestore = makeFirestore({
+      role: 'staff',
+      queue: [{ id: 'q1', status: 'sent', recipient_phone: '01011112222', recipient_role: 'parent_1' }],
+    });
+    const res = await handleGetMessageDeliveryStatus({ auth, data: {} }, { firestore });
+
+    expect(res.queueDetails.sent[0]).toMatchObject({ recipientMasked: '***-****-2222', recipientRole: 'parent_1' });
+    expect(res.queueDetails.sent[0]).not.toHaveProperty('recipientPhone');
   });
 
   it('rejects an inverted range (from > to)', async () => {

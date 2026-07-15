@@ -1,12 +1,12 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { assertAuthorizedStaff } from './authGuards.js';
+import { assertAuthorizedStaff, assertDirector } from './authGuards.js';
 import { maskPhone } from './phoneMask.js';
 
 // 관리자 발송 현황 집계 callable.
 // message_queue는 발송용 평문 번호를 보유하는 서버 전용 데이터다(rules read 차단, T11과 짝).
-// 클라가 큐 doc을 직접 read하면 네트워크 응답에 평문 번호가 노출되므로, 이 callable이
-// 서버에서 카운트 + 마스킹된 실패 목록만 내려준다. 평문은 서버를 벗어나지 않는다.
+// 클라가 큐 doc을 직접 읽지 않고, 권한 확인을 거친 이 callable이 상태별 상세와
+// 마스킹된 실패 관리 목록을 구분해 내려준다.
 
 const QUEUE_STATUSES = ['pending', 'processing', 'awaiting_delivery_result', 'failed_retryable', 'failed_permanent', 'sent'];
 const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
@@ -22,7 +22,7 @@ function recipientMaskedOf(d) {
   return d.recipient_masked ?? maskPhone(d.recipient_phone);
 }
 
-function queueDetail(doc) {
+function queueDetail(doc, includeRecipientPhone = false) {
   const d = doc.data();
   return {
     id: doc.id,
@@ -30,7 +30,9 @@ function queueDetail(doc) {
     status: d.status,
     kind: d.kind ?? null,
     lastErrorCode: d.last_error_code ?? null,
+    recipientRole: d.recipient_role ?? null,
     recipientMasked: recipientMaskedOf(d),
+    ...(includeRecipientPhone && d.recipient_phone ? { recipientPhone: d.recipient_phone } : {}),
     createdAt: d.created_at?.toMillis?.() ?? (d.created_at instanceof Date ? d.created_at.getTime() : null),
     updatedAt: d.updated_at?.toMillis?.() ?? (d.updated_at instanceof Date ? d.updated_at.getTime() : null),
   };
@@ -49,6 +51,13 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
   assertAuthorizedStaff(request.auth);
   const db = deps.firestore || getFirestore();
   const queueCol = db.collection('message_queue');
+  let includeRecipientPhone = false;
+  try {
+    await assertDirector(request.auth, db);
+    includeRecipientPhone = true;
+  } catch (error) {
+    if (error?.code !== 'permission-denied') throw error;
+  }
 
   // 기간 필터(선택) — fromMs/toMs epoch ms. 큐 요약과 발송 로그에 함께 적용한다.
   const fromMs = Number(request.data?.fromMs);
@@ -99,7 +108,9 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
   const queueDetails = Object.fromEntries(QUEUE_STATUSES.map((status) => [status, []]));
   queuePreviewSnap.forEach((doc) => {
     const status = doc.data().status;
-    if (queueDetails[status]?.length < MAX_DETAILS_PER_STATUS) queueDetails[status].push(queueDetail(doc));
+    if (queueDetails[status]?.length < MAX_DETAILS_PER_STATUS) {
+      queueDetails[status].push(queueDetail(doc, includeRecipientPhone));
+    }
   });
   const failureDocs = hasRange
     ? queuePreviewSnap.docs.filter((doc) => FAILED_STATUSES.includes(doc.data().status)).slice(0, MAX_FAILURES)
