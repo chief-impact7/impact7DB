@@ -1,4 +1,4 @@
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { isAttendedStatus } from '@impact7/shared/history';
 import { applyNaesinFreeDerivation, enrollmentCode } from '@impact7/shared/enrollment-derivation';
 import { getDayName, normalizedDays, resolveNaesinCsKey } from '@impact7/shared/expected-arrival';
@@ -36,16 +36,32 @@ export function reportClassOnDate(student, classSettings, dateKST) {
   return enrollmentCode(primary);
 }
 
-function reportQueuesForStudent(studentId, queues) {
+function legacyReportDateLabel(dateKST) {
+  const [, month, day] = dateKST.split('-').map(Number);
+  return `${month}/${day}(${getDayName(dateKST)})`;
+}
+
+function isReportQueue(queue, dateKST) {
+  if (queue.kind === 'parent_notice') {
+    if (queue.template_key === 'report' && queue.report_date_kst === dateKST) return true;
+    const variables = queue.template_variables ?? {};
+    return variables['#{날짜}'] === legacyReportDateLabel(dateKST)
+      && Object.hasOwn(variables, '#{내용}');
+  }
+  return queue.kind === 'direct'
+    && queue.source === 'parent_report'
+    && queue.report_date_kst === dateKST;
+}
+
+function reportQueuesForStudent(studentId, queues, dateKST) {
   return queues.filter((queue) => {
     if (queue.student_id !== studentId) return false;
-    if (queue.kind === 'parent_notice') return queue.template_key === 'report';
-    return queue.kind === 'direct' && queue.source === 'parent_report';
+    return isReportQueue(queue, dateKST);
   });
 }
 
-function reportStatusesForStudent(studentId, queues) {
-  return [...new Set(reportQueuesForStudent(studentId, queues).map((queue) => queue.status).filter(Boolean))];
+function reportStatusesForStudent(studentId, queues, dateKST) {
+  return [...new Set(reportQueuesForStudent(studentId, queues, dateKST).map((queue) => queue.status).filter(Boolean))];
 }
 
 function notificationStatusOf(statuses) {
@@ -54,6 +70,14 @@ function notificationStatusOf(statuses) {
   if (statuses.includes('failed_permanent')) return 'retry_failed';
   if (statuses.includes('failed_retryable')) return 'retrying';
   return 'pending';
+}
+
+async function loadReportQueues(db, dateKST) {
+  const [tagged, recent] = await Promise.all([
+    db.collection('message_queue').where('report_date_kst', '==', dateKST).get(),
+    db.collection('message_queue').where('created_at', '>=', Timestamp.fromDate(new Date(`${dateKST}T00:00:00+09:00`))).get(),
+  ]);
+  return [...tagged.docs, ...recent.docs].map((doc) => doc.data());
 }
 
 export function buildAttendanceNotificationGaps({ daily, students, classSettings, queues, dateKST }) {
@@ -69,7 +93,7 @@ export function buildAttendanceNotificationGaps({ daily, students, classSettings
   const items = [];
   for (const { record, className, teacherName } of eligible) {
     const student = studentMap.get(record.student_id);
-    const statuses = reportStatusesForStudent(record.student_id, queues);
+    const statuses = reportStatusesForStudent(record.student_id, queues, dateKST);
     if (statuses.includes('sent')) continue;
     items.push({
       student_id: record.student_id,
@@ -90,9 +114,9 @@ export function buildAttendanceNotificationGaps({ daily, students, classSettings
 export async function runAttendanceNotificationGapSnapshot(deps = {}) {
   const db = deps.firestore ?? getFirestore();
   const dateKST = previousKstDate(deps.now ?? new Date());
-  const [dailySnap, queueSnap] = await Promise.all([
+  const [dailySnap, queues] = await Promise.all([
     db.collection('daily_records').where('date', '==', dateKST).get(),
-    db.collection('message_queue').where('report_date_kst', '==', dateKST).get(),
+    loadReportQueues(db, dateKST),
   ]);
   const daily = dailySnap.docs.map((doc) => doc.data());
   const attendedIds = [...new Set(daily
@@ -115,7 +139,7 @@ export async function runAttendanceNotificationGapSnapshot(deps = {}) {
     daily,
     students,
     classSettings,
-    queues: queueSnap.docs.map((doc) => doc.data()),
+    queues,
     dateKST,
   });
 
@@ -136,10 +160,9 @@ export async function handleGetAttendanceNotificationGaps(request, deps = {}) {
   const snap = await db.collection('attendance_notification_gaps').doc(dateKST).get();
   if (!snap.exists) return { dateKST, generated: false, items: [] };
   const data = snap.data();
-  const queueSnap = await db.collection('message_queue').where('report_date_kst', '==', dateKST).get();
-  const queues = queueSnap.docs.map((doc) => doc.data());
+  const queues = await loadReportQueues(db, dateKST);
   const items = (data.items ?? []).map((item) => {
-    const statuses = reportStatusesForStudent(item.student_id, queues);
+    const statuses = reportStatusesForStudent(item.student_id, queues, dateKST);
     return { ...item, notification_status: notificationStatusOf(statuses), queue_statuses: statuses };
   });
   return {

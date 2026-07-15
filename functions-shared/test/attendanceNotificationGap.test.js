@@ -29,8 +29,8 @@ describe('parent report gaps for regular attendance', () => {
       ],
       classSettings: { HA102: { teacher: 'edward@impact7.kr' } },
       queues: [
-        { student_id: 's1', kind: 'parent_notice', template_key: 'report', status: 'sent' },
-        { student_id: 's2', kind: 'direct', source: 'parent_report', status: 'failed_permanent' },
+        { student_id: 's1', kind: 'parent_notice', template_key: 'report', report_date_kst: '2026-07-13', status: 'sent' },
+        { student_id: 's2', kind: 'direct', source: 'parent_report', report_date_kst: '2026-07-13', status: 'failed_permanent' },
       ],
     });
 
@@ -46,11 +46,38 @@ describe('parent report gaps for regular attendance', () => {
     ]);
   });
 
+  it('recognizes legacy report notices by their report variables without accepting other notices', () => {
+    const result = buildAttendanceNotificationGaps({
+      dateKST: '2026-07-13',
+      daily: [
+        { student_id: 's1', attendance: { status: '출석' } },
+        { student_id: 's2', attendance: { status: '출석' } },
+        { student_id: 's3', attendance: { status: '출석' } },
+      ],
+      students: [
+        { id: 's1', name: '가학생', enrollments: [REGULAR] },
+        { id: 's2', name: '나학생', enrollments: [REGULAR] },
+        { id: 's3', name: '다학생', enrollments: [REGULAR] },
+      ],
+      classSettings: {},
+      queues: [
+        { student_id: 's1', kind: 'parent_notice', source: 'manual', status: 'sent', template_variables: { '#{학생명}': '가학생', '#{날짜}': '7/13(월)', '#{내용}': '수업 내용' } },
+        { student_id: 's2', kind: 'parent_notice', source: 'manual', status: 'sent', template_variables: { '#{학생명}': '나학생', '#{안내내용}': '일반 안내' } },
+        { student_id: 's3', kind: 'parent_notice', template_key: 'report', report_date_kst: '2026-07-14', status: 'sent', template_variables: { '#{학생명}': '다학생', '#{날짜}': '7/14(화)', '#{내용}': '다음 날 수업 내용' } },
+      ],
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ student_id: 's2', notification_status: 'not_queued' }),
+      expect.objectContaining({ student_id: 's3', notification_status: 'not_queued' }),
+    ]);
+  });
+
   it('writes the previous-day snapshot at the scheduled boundary', async () => {
     const saved = {};
     const rows = {
       daily_records: [{ student_id: 's1', attendance: { status: '출석' } }],
-      message_queue: [{ student_id: 's1', kind: 'parent_notice', template_key: 'report', status: 'failed_permanent' }],
+      message_queue: [{ student_id: 's1', kind: 'parent_notice', template_key: 'report', report_date_kst: '2026-07-13', status: 'failed_permanent' }],
     };
     const firestore = {
       collection(name) {
@@ -101,10 +128,13 @@ describe('parent report gaps for regular attendance', () => {
         }
         return {
           where(field, operator, value) {
-            expect([field, operator, value]).toEqual(['report_date_kst', '==', '2026-07-13']);
             return {
               get: async () => ({
-                docs: queues.filter((queue) => queue[field] === value).map((queue) => ({ data: () => queue })),
+                docs: queues.filter((queue) => (
+                  field === 'report_date_kst'
+                    ? queue[field] === value
+                    : false
+                )).map((queue) => ({ data: () => queue })),
               }),
             };
           },
