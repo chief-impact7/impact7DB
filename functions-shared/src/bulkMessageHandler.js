@@ -15,7 +15,7 @@ const BATCH_LIMIT = 400;
 const VAR_TOKENS = ['%이름', '%학교', '%학년', '%반'];
 
 // 본문에 변수 토큰이 포함되어 있는지 여부. 포함 시 dedup 비활성(학생마다 내용이 다름).
-function hasVarTokens(content) {
+export function hasVarTokens(content) {
   return VAR_TOKENS.some((t) => content.includes(t));
 }
 

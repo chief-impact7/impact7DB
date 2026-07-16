@@ -8,8 +8,9 @@ vi.mock('firebase-admin/firestore', () => ({
 const { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii, __testing } = await import('../src/queueWorker.js');
 
 // message_queue/message_logs를 흉내내는 인메모리 Firestore.
-function makeDb(initialQueue = {}) {
+function makeDb(initialQueue = {}, initialStudents = {}) {
   const queue = new Map(Object.entries(initialQueue));
+  const students = new Map(Object.entries(initialStudents));
   const logs = [];
 
   function docRef(collMap, id) {
@@ -85,9 +86,10 @@ function makeDb(initialQueue = {}) {
       if (name === 'message_logs') {
         return { add: async (entry) => { logs.push(entry); return { id: `log${logs.length}` }; } };
       }
+      const collection = name === 'students' ? students : queue;
       return {
-        doc: (id) => docRef(queue, id),
-        where: (...a) => query(queue).where(...a),
+        doc: (id) => docRef(collection, id),
+        where: (...a) => query(collection).where(...a),
       };
     },
     batch() {
@@ -513,6 +515,29 @@ describe('kind=direct 즉석 SMS', () => {
     const d1 = db._queue.get('d1');
     expect(d1.status).toBe('awaiting_delivery_result');
     expect(d1.solapi_group_id).toBe('g');
+  });
+
+  it('미치환 변수가 큐에 남아도 발송 직전 학생별로 치환한다', async () => {
+    const sender = vi.fn(async () => ({ ok: true, retryable: false, channel: 'sms', messageId: 'm', groupId: 'g', statusCode: '2000' }));
+    const db = makeDb(
+      { d1: { kind: 'direct', status: 'pending', student_id: 's1', recipient_phone: '01012345678', content: '%이름 %학교 %학년 %반', attempt_count: 0 } },
+      { s1: { name: '노현담', level: '초등', school_elementary: '영도초', grade: 6, enrollments: [{ level_symbol: 'PA', class_number: '101' }] } },
+    );
+
+    await processQueueDoc(eventFor(db, 'd1'), { db, sender });
+
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ text: '노현담 영도초 6 PA101' }));
+    expect(db._queue.get('d1').content).toBe('노현담 영도초 6 PA101');
+  });
+
+  it('학생 정보가 없으면 미치환 원문을 발송하지 않는다', async () => {
+    const sender = vi.fn();
+    const db = makeDb({ d1: { kind: 'direct', status: 'pending', student_id: 'missing', recipient_phone: '01012345678', content: '%이름 안내', attempt_count: 0 } });
+
+    await processQueueDoc(eventFor(db, 'd1'), { db, sender });
+
+    expect(sender).not.toHaveBeenCalled();
+    expect(db._queue.get('d1')).toMatchObject({ status: 'failed_permanent', last_error_code: 'unresolved_message_vars' });
   });
 
   it('groupId 없는 접수성공 → 폴링 없이 즉시 sent(사후조회 불가, 중복 방지)', async () => {

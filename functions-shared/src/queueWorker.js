@@ -1,6 +1,7 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { maskPhone } from './phoneMask.js';
 import { parseKstToDate } from './promoSchedule.js';
+import { applyMessageVars, hasVarTokens } from './bulkMessageHandler.js';
 
 // 메시지 큐 워커 — 계약 정본(message-architect_api-contract §2.4, §4.1) 기준.
 // status 전이: pending → processing → sent | failed_retryable | failed_permanent.
@@ -108,6 +109,18 @@ function smsChannelFor(data) {
 function scheduledAtFor(data) {
   if (!SMS_KINDS.has(data?.kind) || !data?.scheduled_date) return null;
   return parseKstToDate(data.scheduled_date);
+}
+
+async function resolveQueuedMessageVars(db, ref, data) {
+  if (!SMS_KINDS.has(data.kind) || !hasVarTokens(data.content ?? '')) return null;
+  if (!data.student_id) return '학생 정보가 없어 메시지 변수를 치환할 수 없습니다.';
+
+  const student = await db.collection('students').doc(data.student_id).get();
+  if (!student.exists) return '학생을 찾을 수 없어 메시지 변수를 치환할 수 없습니다.';
+
+  data.content = applyMessageVars(data.content, student.data());
+  await ref.update({ content: data.content, updated_at: FieldValue.serverTimestamp() });
+  return null;
 }
 
 // pending→processing(또는 failed_retryable/processing→processing) CAS 클레임.
@@ -218,6 +231,17 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
     await markPermanent(db, ref, data, (data.attempt_count ?? 0) + 1, {
       statusCode: 'kind_not_allowed',
       message: `허용되지 않은 kind: ${data.kind ?? '(none)'} — promo는 별도 동의 게이트 필요`,
+      channel: null,
+    });
+    await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: null });
+    return;
+  }
+
+  const variableError = await resolveQueuedMessageVars(db, ref, data);
+  if (variableError) {
+    await markPermanent(db, ref, data, (data.attempt_count ?? 0) + 1, {
+      statusCode: 'unresolved_message_vars',
+      message: variableError,
       channel: null,
     });
     await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: null });
