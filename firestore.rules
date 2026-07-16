@@ -433,7 +433,8 @@ service cloud.firestore {
         && boardCardColumnValid();
 
       allow update: if isAuthorized()
-        && hasOnlyAllowedBoardCardUpdateFields();
+        && hasOnlyAllowedBoardCardUpdateFields()
+        && boardCardColumnValid();
 
       allow delete: if false;  // 보관(archived)만, 삭제 금지
     }
