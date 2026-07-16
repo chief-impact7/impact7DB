@@ -3,9 +3,16 @@ vi.mock('firebase-admin/firestore', () => ({
   getFirestore: vi.fn(),
   FieldValue: { serverTimestamp: () => '<ts>' },
 }));
-vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn() }));
+vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn(), assertManagerOrAbove: vi.fn() }));
 
-const { buildBulkRecipients, handleCreateBulkMessage, applyMessageVars } = await import('../src/bulkMessageHandler.js');
+const {
+  buildBulkRecipients,
+  buildStaffRecipients,
+  handleCreateBulkMessage,
+  handleGetBulkStaffRecipients,
+  applyMessageVars,
+} = await import('../src/bulkMessageHandler.js');
+const { assertManagerOrAbove } = await import('../src/authGuards.js');
 const { recipientFingerprint } = await import('../src/campaignResume.js');
 const bulkFp = (ids) => recipientFingerprint(ids, { recipientField: null, recipientFields: null });
 
@@ -33,7 +40,14 @@ function makeDb() {
   const docs = {};
   let n = 0;
   const col = (name) => ({
+    async get() {
+      const matched = Object.entries(docs)
+        .filter(([k]) => k.startsWith(`${name}/`))
+        .map(([k, v]) => ({ id: k.slice(name.length + 1), exists: true, data: () => v }));
+      return { docs: matched };
+    },
     doc: (id) => { const key = id ?? `${name}_auto_${n++}`; return {
+      collectionName: name,
       id: id ?? key,
       async get() { return { exists: !!docs[`${name}/${key}`], data: () => docs[`${name}/${key}`] }; },
       async set(v) { docs[`${name}/${key}`] = v; },
@@ -57,7 +71,7 @@ function makeDb() {
   return {
     _docs: docs,
     collection: col,
-    async getAll(...refs) { return refs.map((r) => ({ id: r.id, exists: !!docs[`students/${r.id}`], data: () => docs[`students/${r.id}`] })); },
+    async getAll(...refs) { return refs.map((r) => ({ id: r.id, exists: !!docs[`${r.collectionName}/${r.id}`], data: () => docs[`${r.collectionName}/${r.id}`] })); },
     async runTransaction(fn) {
       const ops = [];
       const tx = {
@@ -71,6 +85,83 @@ function makeDb() {
     batch() { const ops = []; return { set: (ref, v) => ops.push([ref, v]), create: (ref, v) => ops.push([ref, v, true]), async commit() { for (const [ref, v] of ops) await ref.set(v); } }; },
   };
 }
+
+describe('교직원 대량 문자', () => {
+  it('%이름 개인화 시 동일 번호도 각 교직원 이름으로 큐잉한다', () => {
+    const entries = [
+      { id: 'st1', staff: { name: '김재직', phone: '010-1111-2222' } },
+      { id: 'st2', staff: { name: '박번호없음', phone: '' } },
+      { id: 'st3', staff: { name: '이중복', phone: '01011112222' } },
+    ];
+    const { docs, stats } = buildStaffRecipients(entries, { campaignId: 'c1', content: '%이름 안내', scheduledDate: null });
+    expect(stats).toMatchObject({ total: 3, queued: 2, skipped_no_phone: 1, deduped: 0 });
+    expect(docs).toHaveLength(2);
+    expect(docs[0]).toMatchObject({ staff_id: 'st1', recipient_role: 'staff', recipient_phone: '01011112222', content: '김재직 안내' });
+    expect(docs[1]).toMatchObject({ staff_id: 'st3', recipient_role: 'staff', recipient_phone: '01011112222', content: '이중복 안내' });
+    expect(docs[0].student_id).toBeUndefined();
+  });
+
+  it('개인화가 없으면 동일 번호를 한 번만 큐잉한다', () => {
+    const entries = [
+      { id: 'st1', staff: { name: '김재직', phone: '010-1111-2222' } },
+      { id: 'st2', staff: { name: '이중복', phone: '01011112222' } },
+    ];
+    const { docs, stats } = buildStaffRecipients(entries, { campaignId: 'c1', content: '업무 안내', scheduledDate: null });
+    expect(stats).toMatchObject({ total: 2, queued: 1, deduped: 1 });
+    expect(docs).toHaveLength(1);
+  });
+
+  it('발송 시점에 HR 허용 상태가 아닌 교직원은 제외한다', () => {
+    const entries = [
+      { id: 'st1', staff: { name: '입사대기', phone: '01011112222', status: 'join_pending', plannedJoinDate: '2999-01-01' } },
+      { id: 'st2', staff: { name: '재직자', phone: '01022223333', status: 'active' } },
+    ];
+    const { docs, stats } = buildStaffRecipients(entries, {
+      campaignId: 'c1', content: '업무 안내', scheduledDate: null, dateKst: '2026-07-16',
+    });
+    expect(stats).toMatchObject({ total: 2, queued: 1, skipped_status: 1 });
+    expect(docs.map((doc) => doc.staff_id)).toEqual(['st2']);
+  });
+});
+
+describe('handleGetBulkStaffRecipients', () => {
+  it('manager 이상만 조회하고 최소 필드만 반환한다', async () => {
+    const db = makeDb();
+    db._docs['staff/st1'] = {
+      name: '김재직', status: 'active', department: '교수', affiliation: '2단지', phone: '010-1111-2222',
+      residentNumber: 'secret', bankInfo: { accountNumber: 'secret' },
+    };
+    const result = await handleGetBulkStaffRecipients({ auth }, { db, todayKst: '2026-07-16' });
+    expect(assertManagerOrAbove).toHaveBeenCalledWith(auth, db);
+    expect(result.recipients).toEqual([{
+      id: 'st1', name: '김재직', status: 'active', department: '교수', affiliation: '2단지', phoneAvailable: true,
+    }]);
+    expect(JSON.stringify(result)).not.toContain('010-1111-2222');
+    expect(JSON.stringify(result)).not.toContain('secret');
+  });
+
+  it('HR 인사일자와 휴직 예정 상태를 재직·휴직·퇴직으로 파생한다', async () => {
+    const db = makeDb();
+    db._docs['staff/leave'] = { name: '휴직자', status: 'active', leaveDate: '2026-07-01', phone: '01011112222' };
+    db._docs['staff/return'] = { name: '복직자', status: 'inactive', returnDate: '2026-07-01', phone: '01022223333' };
+    db._docs['staff/retired'] = { name: '퇴직자', status: 'active', resignationDate: '2026-07-01', phone: '01033334444' };
+    db._docs['staff/leave-pending'] = { name: '휴직예정자', status: 'leave_pending', phone: '01044445555' };
+    const result = await handleGetBulkStaffRecipients({ auth }, { db, todayKst: '2026-07-16' });
+    expect(Object.fromEntries(result.recipients.map(({ name, status }) => [name, status]))).toEqual({
+      복직자: 'active',
+      퇴직자: 'terminated',
+      휴직예정자: 'active',
+      휴직자: 'inactive',
+    });
+  });
+
+  it('manager 권한 검사를 통과하지 못하면 조회를 거부한다', async () => {
+    const db = makeDb();
+    assertManagerOrAbove.mockRejectedValueOnce(new Error('관리자 권한이 필요합니다'));
+    await expect(handleGetBulkStaffRecipients({ auth }, { db, todayKst: '2026-07-16' }))
+      .rejects.toThrow('관리자 권한');
+  });
+});
 
 describe('buildBulkRecipients — recipientFields 다중선택 + dedup', () => {
   it('recipientFields 2개 선택 시 학생당 2번호 enqueue', () => {
@@ -261,6 +352,42 @@ describe('handleCreateBulkMessage', () => {
   it('rejects empty content / empty studentIds', async () => {
     await expect(handleCreateBulkMessage({ auth, data: { title: 't', content: ' ', studentIds: ['s1'] } }, { db })).rejects.toThrow();
     await expect(handleCreateBulkMessage({ auth, data: { title: 't', content: 'x', studentIds: [] } }, { db })).rejects.toThrow();
+  });
+
+  it('studentIds와 staffIds 혼합 요청을 거부한다', async () => {
+    db._docs['staff/st1'] = { name: '직원', phone: '01055556666', status: 'active' };
+    await expect(handleCreateBulkMessage({
+      auth,
+      data: { title: 't', content: 'x', studentIds: ['s1'], staffIds: ['st1'] },
+    }, { db })).rejects.toThrow('함께 발송할 수 없습니다');
+  });
+
+  it('manager가 선택한 교직원 번호를 서버에서 조회해 큐잉한다', async () => {
+    db._docs['staff/st1'] = { name: '김재직', phone: '010-5555-6666', status: 'active' };
+    const res = await handleCreateBulkMessage({
+      auth,
+      data: { title: 't', content: '%이름 업무 안내', staffIds: ['st1'], requestId: 'staff-1' },
+    }, { db });
+    expect(assertManagerOrAbove).toHaveBeenCalledWith(auth, db);
+    expect(res.stats).toMatchObject({ total: 1, queued: 1 });
+    const queue = Object.values(db._docs).find((v) => v.staff_id === 'st1');
+    expect(queue).toMatchObject({ recipient_role: 'staff', recipient_phone: '01055556666', content: '김재직 업무 안내' });
+    expect(queue.student_id).toBeUndefined();
+  });
+
+  it('교직원 발송은 학생 전용 변수를 거부한다', async () => {
+    await expect(handleCreateBulkMessage({
+      auth,
+      data: { title: 't', content: '%학교 안내', staffIds: ['st1'] },
+    }, { db })).rejects.toThrow('교직원 문자 변수는 %이름만 사용할 수 있습니다');
+  });
+
+  it('교직원 대상도 한 번에 10,000명을 넘길 수 없다', async () => {
+    const staffIds = Array.from({ length: 10001 }, (_, i) => `staff-${i}`);
+    await expect(handleCreateBulkMessage({
+      auth,
+      data: { title: 't', content: '안내', staffIds },
+    }, { db })).rejects.toThrow('한 번에 최대 10000명');
   });
 
   it('accepts up to 10,000 recipients and rejects more', async () => {

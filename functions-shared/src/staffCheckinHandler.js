@@ -37,8 +37,9 @@ function personnelDatesOf(staff) {
   return out;
 }
 
-function effectiveStaffStatus(staff, dateKST) {
-  const current = textOf(staff?.status) || ACTIVE_STATUS;
+export function effectiveStaffStatus(staff, dateKST) {
+  const rawStatus = textOf(staff?.status) || ACTIVE_STATUS;
+  const current = rawStatus === 'leave_pending' ? ACTIVE_STATUS : rawStatus;
   if (STATUS_CANCELLED.has(current)) return current;
   const changes = [];
   for (const record of personnelDatesOf(staff)) {

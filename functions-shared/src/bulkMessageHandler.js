@@ -1,6 +1,6 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { assertAuthorizedStaff } from './authGuards.js';
+import { assertAuthorizedStaff, assertManagerOrAbove } from './authGuards.js';
 import { buildSmsQueueDoc } from './smsQueueDoc.js';
 import { resolveRecipientPhones, resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
 import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
@@ -8,11 +8,15 @@ import { parseKstToDate } from './promoSchedule.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { enrollmentCode } from '@impact7/shared/enrollment-derivation';
 import { resolveMmsImageId } from './mmsImage.js';
+import { effectiveStaffStatus } from './staffCheckinHandler.js';
+import { digitsOf, isValidPhoneKR } from '@impact7/shared/phone';
+import { todayKST } from '@impact7/shared/datetime';
 
 const MAX_RECIPIENTS = 10000;
 const BATCH_LIMIT = 400;
 
 const VAR_TOKENS = ['%이름', '%학교', '%학년', '%반'];
+const STAFF_STATUSES = new Set(['active', 'inactive', 'terminated']);
 
 // 본문에 변수 토큰이 포함되어 있는지 여부. 포함 시 dedup 비활성(학생마다 내용이 다름).
 export function hasVarTokens(content) {
@@ -83,6 +87,68 @@ export function buildBulkRecipients(entries, opts) {
   return { docs, stats };
 }
 
+export function buildStaffRecipients(entries, opts) {
+  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_status: 0, deduped: 0 };
+  const docs = [];
+  const seenPhones = new Set();
+  const dedupeByPhone = !opts.content.includes('%이름');
+  const dateKst = opts.dateKst ?? todayKST();
+
+  for (const { id, staff } of entries) {
+    if (!STAFF_STATUSES.has(effectiveStaffStatus(staff, dateKst))) {
+      stats.skipped_status += 1;
+      continue;
+    }
+    const phone = digitsOf(staff.phone);
+    if (!isValidPhoneKR(phone)) {
+      stats.skipped_no_phone += 1;
+      continue;
+    }
+    if (dedupeByPhone && seenPhones.has(phone)) {
+      stats.deduped += 1;
+      continue;
+    }
+    seenPhones.add(phone);
+    docs.push({
+      ...buildSmsQueueDoc({
+        phone,
+        campaignId: opts.campaignId,
+        content: opts.content.replaceAll('%이름', staff.name ?? ''),
+        recipientRole: 'staff',
+        scheduledDate: opts.scheduledDate,
+        imageId: opts.imageId,
+      }),
+      staff_id: id,
+      recipient_type: 'staff',
+    });
+    stats.queued += 1;
+  }
+
+  return { docs, stats };
+}
+
+export async function handleGetBulkStaffRecipients(request, deps = {}) {
+  const db = deps.db ?? getFirestore();
+  await assertManagerOrAbove(request.auth, db);
+  const dateKst = deps.todayKst ?? todayKST();
+  const snapshot = await db.collection('staff').get();
+  const recipients = snapshot.docs
+    .map((doc) => {
+      const staff = doc.data();
+      return {
+        id: doc.id,
+        name: String(staff.name ?? '').trim(),
+        status: effectiveStaffStatus(staff, dateKst),
+        department: String(staff.department ?? '').trim(),
+        affiliation: String(staff.affiliation ?? '').trim(),
+        phoneAvailable: isValidPhoneKR(staff.phone),
+      };
+    })
+    .filter((staff) => staff.name && STAFF_STATUSES.has(staff.status))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  return { recipients };
+}
+
 // 정보성 대용량 발송 — 직원 권한. 동의·야간·광고검증 없음. message_queue(kind='direct')로 enqueue.
 export async function handleCreateBulkMessage(request, deps = {}) {
   const db = deps.db ?? getFirestore();
@@ -92,10 +158,20 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   const title = String(data.title ?? '').trim();
   const content = String(data.content ?? '').trim();
   const studentIds = Array.isArray(data.studentIds) ? [...new Set(data.studentIds.filter(Boolean))] : [];
+  const staffIds = Array.isArray(data.staffIds) ? [...new Set(data.staffIds.filter(Boolean))] : [];
   if (!title) throw new HttpsError('invalid-argument', '제목이 필요합니다.');
   if (!content) throw new HttpsError('invalid-argument', '본문이 필요합니다.');
-  if (!studentIds.length) throw new HttpsError('invalid-argument', '발송 대상이 없습니다.');
-  if (studentIds.length > MAX_RECIPIENTS) throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}명까지 발송할 수 있습니다.`);
+  if (studentIds.length && staffIds.length) throw new HttpsError('invalid-argument', '학생과 교직원은 함께 발송할 수 없습니다.');
+  const audience = staffIds.length ? 'staff' : 'student';
+  const targetIds = audience === 'staff' ? staffIds : studentIds;
+  if (!targetIds.length) throw new HttpsError('invalid-argument', '발송 대상이 없습니다.');
+  if (targetIds.length > MAX_RECIPIENTS) throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}명까지 발송할 수 있습니다.`);
+  if (audience === 'staff') {
+    await assertManagerOrAbove(request.auth, db);
+    if (['%학교', '%학년', '%반'].some((token) => content.includes(token))) {
+      throw new HttpsError('invalid-argument', '교직원 문자 변수는 %이름만 사용할 수 있습니다.');
+    }
+  }
 
   // 정보성은 야간 보정 없음. 지정 시 형식만 검증(YYYY-MM-DD HH:mm:ss, KST).
   let scheduledDate = null;
@@ -114,19 +190,22 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   }
   const imageId = await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage);
 
-  const refs = studentIds.map((id) => db.collection('students').doc(id));
+  const collectionName = audience === 'staff' ? 'staff' : 'students';
+  const refs = targetIds.map((id) => db.collection(collectionName).doc(id));
   const snaps = await db.getAll(...refs);
-  const entries = snaps.filter((s) => s.exists).map((s) => ({ id: s.id, student: s.data() }));
+  const entries = snaps.filter((s) => s.exists).map((s) => ({ id: s.id, [audience]: s.data() }));
 
-  const { docs, stats } = buildBulkRecipients(entries, {
+  const buildRecipients = audience === 'staff' ? buildStaffRecipients : buildBulkRecipients;
+  const { docs, stats } = buildRecipients(entries, {
     campaignId: campaignRef.id,
     content,
     recipientField: data.recipientField,
     recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : undefined,
     scheduledDate,
     imageId,
+    dateKst: deps.todayKst ?? todayKST(),
   });
-  stats.skipped_missing = studentIds.length - entries.length;
+  stats.skipped_missing = targetIds.length - entries.length;
   if (docs.length > MAX_RECIPIENTS) {
     throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}건까지 발송할 수 있습니다.`);
   }
@@ -136,15 +215,17 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   // 미발송되므로, lease 만료 시에만 트랜잭션 CAS(claimCampaignResume)로 잔여 재개 —
   // promoCampaignHandler와 동일 패턴. 지문에 recipientFields 포함 — 대상/수신필드가 바뀌면
   // phone dedup 귀속이 바뀌어 공유번호 중복 발송이 가능하므로 재개 거부.
-  const fingerprint = recipientFingerprint(studentIds, {
-    recipientField: data.recipientField ?? null,
-    recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : null,
-  });
+  const fingerprint = recipientFingerprint(targetIds, audience === 'staff'
+    ? { audience: 'staff' }
+    : {
+      recipientField: data.recipientField ?? null,
+      recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : null,
+    });
   const now = deps.now ?? new Date();
   let resuming = false;
   try {
     await campaignRef.create({
-      title, content, targeting: 'I', kind: 'bulk_info', image_id: imageId,
+      title, content, audience, targeting: 'I', kind: 'bulk_info', image_id: imageId,
       scheduled_date: scheduledDate ?? null, status: 'enqueuing', stats,
       created_by: request.auth?.uid ?? null, created_at: FieldValue.serverTimestamp(),
       enqueue_started_at: now.getTime(),
@@ -166,15 +247,19 @@ export async function handleCreateBulkMessage(request, deps = {}) {
     const queuedSnap = await db.collection('message_queue').where('campaign_id', '==', campaignRef.id).get();
     const alreadyStudents = new Set();
     const alreadyTargets = new Set();
+    const alreadyStaff = new Set();
     for (const doc of queuedSnap.docs) {
       const queued = doc.data();
-      if (queued.recipient_role) alreadyTargets.add(`${queued.student_id}:${queued.recipient_role}`);
+      if (queued.staff_id) alreadyStaff.add(queued.staff_id);
+      else if (queued.recipient_role) alreadyTargets.add(`${queued.student_id}:${queued.recipient_role}`);
       else alreadyStudents.add(queued.student_id);
     }
-    pendingDocs = docs.filter((d) => (
-      !alreadyStudents.has(d.student_id)
-      && !alreadyTargets.has(`${d.student_id}:${d.recipient_role}`)
-    ));
+    pendingDocs = audience === 'staff'
+      ? docs.filter((d) => !alreadyStaff.has(d.staff_id))
+      : docs.filter((d) => (
+        !alreadyStudents.has(d.student_id)
+        && !alreadyTargets.has(`${d.student_id}:${d.recipient_role}`)
+      ));
   }
 
   let batch = db.batch();
