@@ -153,4 +153,40 @@ describe('parent report gaps for regular attendance', () => {
       expect.objectContaining({ student_id: 's2', notification_status: 'not_queued', queue_statuses: [] }),
     ]);
   });
+
+  it('loads a requested past snapshot and rejects invalid or future dates', async () => {
+    const requestedIds = [];
+    const firestore = {
+      collection(name) {
+        if (name === 'attendance_notification_gaps') {
+          return { doc: (id) => ({ get: async () => {
+            requestedIds.push(id);
+            return { exists: false };
+          } }) };
+        }
+        return { where: () => ({ get: async () => ({ docs: [] }) }) };
+      },
+    };
+    const deps = { firestore, now: new Date('2026-07-16T06:00:00.000Z') };
+    const auth = { uid: 'u1', token: { email: 'staff@impact7.kr' } };
+
+    await expect(handleGetAttendanceNotificationGaps(
+      { auth, data: { dateKST: '2026-07-10' } },
+      deps,
+    )).resolves.toMatchObject({ dateKST: '2026-07-10', generated: false });
+    expect(requestedIds).toEqual(['2026-07-10']);
+
+    await expect(handleGetAttendanceNotificationGaps(
+      { auth, data: { dateKST: '2026-02-30' } },
+      deps,
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(handleGetAttendanceNotificationGaps(
+      { auth, data: { dateKST: '2026-07-10/hidden/doc' } },
+      deps,
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(handleGetAttendanceNotificationGaps(
+      { auth, data: { dateKST: '2026-07-16' } },
+      deps,
+    )).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
 });

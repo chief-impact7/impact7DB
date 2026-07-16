@@ -1,4 +1,5 @@
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { isAttendedStatus } from '@impact7/shared/history';
 import { applyNaesinFreeDerivation, enrollmentCode } from '@impact7/shared/enrollment-derivation';
 import { getDayName, normalizedDays, resolveNaesinCsKey } from '@impact7/shared/expected-arrival';
@@ -11,6 +12,15 @@ import { assertAuthorizedStaff } from './authGuards.js';
 export function previousKstDate(now = new Date()) {
   const [year, month, day] = formatDateKST(now).split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
+}
+
+function requestedPastDate(value, latestDateKST) {
+  if (value == null || value === '') return latestDateKST;
+  const dateKST = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKST) || getDayName(dateKST) === '' || dateKST > latestDateKST) {
+    throw new HttpsError('invalid-argument', '조회 날짜는 전날 이전의 YYYY-MM-DD 형식이어야 합니다.');
+  }
+  return dateKST;
 }
 
 function activeEnrollmentsAt(enrollments, dateKST) {
@@ -156,7 +166,8 @@ export async function runAttendanceNotificationGapSnapshot(deps = {}) {
 export async function handleGetAttendanceNotificationGaps(request, deps = {}) {
   assertAuthorizedStaff(request.auth);
   const db = deps.firestore ?? getFirestore();
-  const dateKST = previousKstDate(deps.now ?? new Date());
+  const latestDateKST = previousKstDate(deps.now ?? new Date());
+  const dateKST = requestedPastDate(request.data?.dateKST, latestDateKST);
   const snap = await db.collection('attendance_notification_gaps').doc(dateKST).get();
   if (!snap.exists) return { dateKST, generated: false, items: [] };
   const data = snap.data();
