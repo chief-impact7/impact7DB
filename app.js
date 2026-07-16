@@ -3,7 +3,7 @@ import { msIcon } from './ms-icon.js';
 window.msIcon = msIcon;
 import { onAuthStateChanged } from 'firebase/auth';
 import { installKeyboardActivation } from './a11y-dom.js';
-import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, Timestamp, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, Timestamp, query, where, orderBy, limit, writeBatch, onSnapshot } from 'firebase/firestore';
 import { auth, db, dataAuthReady } from './firebase-config.js';
 import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
 import { cleanSchoolName, collectKnownSchoolNames, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
@@ -33,6 +33,7 @@ import './form-enter.js';
 import './theme.js';
 import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
 import { maybeSuggestUpgrade } from './student-number-reissue.js';
+import { waitForFinalizedStudent } from './leave-request-sync.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
     { db, writeBatch, doc, collection, serverTimestamp }
@@ -5641,6 +5642,47 @@ const _isWithdrawalType = (t) => t === '퇴원요청' || t === '휴원→퇴원'
 const _isReturnType = (t) => t === '복귀요청' || t === '재등원요청';
 const _isReEnrollType = (t) => t === '재등원요청';
 
+async function _refreshStudentAfterFinalApproval(requestId, studentId) {
+    try {
+        const freshStudent = await waitForFinalizedStudent({
+            watchRequest: (next, error) => onSnapshot(
+                doc(db, 'leave_requests', requestId),
+                snapshot => next(snapshot.data()),
+                error,
+            ),
+            loadStudent: async () => {
+                const snapshot = await getDoc(doc(db, 'students', studentId));
+                return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+            },
+        });
+        if (!freshStudent) {
+            showToast('승인은 완료됐지만 학생 상태 반영이 지연되고 있습니다. 잠시 후 새로고침해주세요.', 'warn');
+            return false;
+        }
+        freshStudent.enrollments = normalizeEnrollments(freshStudent);
+        allStudents = allStudents.map(student => student.id === studentId ? freshStudent : student);
+        await promoteEnrollPending();
+        storeUpdate({ allStudents });
+        applyFilterAndRender();
+        if (currentStudentId === studentId) {
+            window.selectStudent(studentId, allStudents.find(student => student.id === studentId));
+        }
+        return true;
+    } catch (error) {
+        showToast(`승인은 완료됐지만 학생 상태 반영에 실패했습니다: ${error.message}`, 'error');
+        return false;
+    }
+}
+
+async function _showStudentAfterApproval(isFinal, requestId, studentId) {
+    if (isFinal) {
+        await _refreshStudentAfterFinalApproval(requestId, studentId);
+        return;
+    }
+    const student = allStudents.find(s => s.id === studentId);
+    if (student) window.selectStudent(studentId, student);
+}
+
 // 휴원 종류 표시는 SoT인 students.status(전달 인자 studentStatus)를 따른다.
 // 휴원·휴원연장·퇴원→휴원 요청서에서만 종류 부기. r.leave_sub_type은 신청 시점 기록이라
 // 표시에는 쓰지 않는다(과거 값 추적은 history_logs로).
@@ -6078,9 +6120,7 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
             }
             storeUpdate({ leaveRequests: [...leaveRequests] });
 
-            // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
-            const stu = allStudents.find(s => s.id === studentId);
-            if (stu) window.selectStudent(studentId, stu);
+            await _showStudentAfterApproval(isFinal, docId, studentId);
         } catch (err) {
             showToast('교수부 승인 실패: ' + err.message, 'error');
             console.error(err);
@@ -6134,9 +6174,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
             }
             storeUpdate({ leaveRequests: [...leaveRequests] });
 
-            // 최종 승인 시 학생 상태 전이는 Cloud Function(onLeaveRequestApproved)이 처리
-            const stu = allStudents.find(s => s.id === studentId);
-            if (stu) window.selectStudent(studentId, stu);
+            await _showStudentAfterApproval(isFinal, docId, studentId);
         } catch (err) {
             showToast('행정부 승인 실패: ' + err.message, 'error');
             console.error(err);
