@@ -6,6 +6,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { defineSecret } from 'firebase-functions/params';
 import { handleLlmGenerate } from './src/llmHandler.js';
 import { handleGenerateStudentReportAi } from './src/studentReportAiHandler.js';
+import { handleGenerateBoardBriefing } from './src/boardBriefingHandler.js';
 import { handleSyncChatMessages } from './src/chatSyncHandler.js';
 import {
   handleRunStudentReportAutomation,
@@ -61,6 +62,10 @@ export const llmGenerate = onCall({ enforceAppCheck: false }, handleLlmGenerate)
 // 종합상태 + 상담요약 + 다음상담 브리핑을 단일 호출로 생성(기존 consultation/status 콜러블 통합).
 // Chat 언급은 syncChatMessages가 적재한 chat_messages를 조회하므로 여기엔 secret 불필요.
 export const generateStudentReportAi = onCall({ enforceAppCheck: false }, handleGenerateStudentReportAi);
+
+// impact7board 칸반 보드 주간 AI 브리핑 — board_cards 스냅샷(컬럼별 수·정체·마감임박)을 Gemini로 요약해
+// board_briefings/{board}_{isoWeek}에 저장. 같은 주 문서가 있으면 force!==true일 때 캐시를 그대로 반환(재호출 없음).
+export const generateBoardBriefing = onCall({ enforceAppCheck: false }, handleGenerateBoardBriefing);
 
 // CHAT_SA_KEY: DWD로 chief@를 가장해 Chat 메시지를 읽는 SA 키.
 // 하루 1회 chief 스페이스 신규 메시지를 증분 수집 → 재원생 이름 태깅 → chat_messages 적재.
