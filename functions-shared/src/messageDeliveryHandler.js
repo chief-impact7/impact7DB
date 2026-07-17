@@ -38,6 +38,12 @@ function queueDetail(doc, includeRecipientPhone = false) {
   };
 }
 
+// 솔라피 SDK는 잔액 조회 시에만 동적 로드(콜드스타트에 solapi 패키지 미포함 유지).
+async function defaultFetchBalance() {
+  const provider = await import('./solapiProvider.js');
+  return provider.fetchSolapiBalance();
+}
+
 function failureDetail(doc) {
   const d = doc.data();
   return {
@@ -86,6 +92,8 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
   if (Number.isFinite(toMs)) logsQuery = logsQuery.where('created_at', '<=', new Date(toMs));
   const logScanLimit = hasRange ? RANGED_SCAN_LIMIT : SCAN_LIMIT;
   const logsPromise = logsQuery.limit(logScanLimit).get();
+  // 잔액 고갈은 전 채널 발송 실패로 이어짐 — 조회 실패는 통계에 영향 주지 않게 null 처리.
+  const balancePromise = (deps.fetchBalance ?? defaultFetchBalance)().catch(() => null);
 
   const [queueCountEntries, archivedAgg, failuresSnap, queuePreviewSnap, logSnap] = await Promise.all([
     Promise.all(queueCountPromises),
@@ -120,6 +128,7 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
   const channelCounts = Object.fromEntries(CHANNELS.map(c => [c, 0]));
   let sentCount = 0;
   let failedCount = 0;
+  const failedCodeCounts = {};
   logSnap.forEach(doc => {
     const d = doc.data();
     if (d.status === 'sent') {
@@ -128,10 +137,14 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
       if (channelCounts[channel] != null) channelCounts[channel]++;
     } else if (d.status === 'failed') {
       failedCount++;
+      const code = String(d.status_code ?? 'unknown');
+      failedCodeCounts[code] = (failedCodeCounts[code] || 0) + 1;
     }
   });
 
   return {
+    solapiBalance: await balancePromise,
+    failedCodeCounts,
     queueCounts,
     archivedCount: archivedAgg.data().count,
     channelCounts,

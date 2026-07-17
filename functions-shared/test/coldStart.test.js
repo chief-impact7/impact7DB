@@ -22,11 +22,12 @@ describe('cold start import chain (F7)', () => {
     expect(src).not.toMatch(/from 'solapi'/);
   });
 
-  it('checkin / delivery handlers do not import solapi or solapiProvider', () => {
+  it('checkin / delivery handlers do not import solapi or solapiProvider statically', () => {
     for (const file of ['src/checkinHandler.js', 'src/messageDeliveryHandler.js']) {
       const src = read(file);
       expect(src).not.toMatch(/from 'solapi'/);
-      expect(src).not.toMatch(/solapiProvider/);
+      // 정적 import 금지 — queueWorker처럼 사용 시점 동적 import만 허용(잔액 조회).
+      expect(src).not.toMatch(/^import .*solapiProvider/m);
     }
   });
 

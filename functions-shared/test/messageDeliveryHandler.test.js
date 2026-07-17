@@ -66,16 +66,19 @@ describe('handleGetMessageDeliveryStatus', () => {
         { id: 'l1', status: 'sent', channel: 'kakao' },
         { id: 'l2', status: 'sent', channel: 'sms' },
         { id: 'l3', status: 'sent', channel: 'lms' },
-        { id: 'l4', status: 'failed', channel: 'kakao' },
+        { id: 'l4', status: 'failed', channel: 'kakao', status_code: '3104' },
         { id: 'l5', status: 'sent', channel: 'mms' },
       ],
     });
-    const res = await handleGetMessageDeliveryStatus({ auth, data: {} }, { firestore });
+    const fetchBalance = async () => ({ balance: 13341, point: 0, autoRecharge: 10000, rechargeTo: 50000 });
+    const res = await handleGetMessageDeliveryStatus({ auth, data: {} }, { firestore, fetchBalance });
 
     expect(res.queueCounts).toMatchObject({ pending: 1, sent: 1, failed_permanent: 1, failed_retryable: 1, processing: 0 });
     expect(res.channelCounts).toEqual({ kakao: 1, sms: 2, mms: 1 });
     expect(res.sentCount).toBe(4);
     expect(res.failedCount).toBe(1);
+    expect(res.failedCodeCounts).toEqual({ '3104': 1 });
+    expect(res.solapiBalance).toEqual({ balance: 13341, point: 0, autoRecharge: 10000, rechargeTo: 50000 });
     expect(res.queueDetails.pending[0]).toMatchObject({ recipientPhone: '01011112222', recipientRole: 'student' });
 
     expect(res.failures).toHaveLength(2);
@@ -98,8 +101,10 @@ describe('handleGetMessageDeliveryStatus', () => {
       ],
     });
     const res = await handleGetMessageDeliveryStatus(
-      { auth, data: { fromMs: day(3).getTime(), toMs: day(4).getTime() } }, { firestore },
+      { auth, data: { fromMs: day(3).getTime(), toMs: day(4).getTime() } },
+      { firestore, fetchBalance: async () => { throw new Error('solapi down'); } },
     );
+    expect(res.solapiBalance).toBeNull(); // 잔액 조회 실패는 통계에 영향 없음
     expect(res.sentCount).toBe(1);   // l2만 기간 내 sent
     expect(res.failedCount).toBe(1); // l3
     expect(res.channelCounts).toMatchObject({ kakao: 0, sms: 1 });

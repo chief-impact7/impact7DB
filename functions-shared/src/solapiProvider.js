@@ -39,6 +39,19 @@ function defaultServiceFactory(apiKey, apiSecret) {
   return new SolapiMessageService(apiKey, apiSecret);
 }
 
+// 발송 현황 카드용 잔액·자동충전 조회. 잔액 고갈은 전 채널 발송 실패로 이어지므로 화면에 상시 노출한다.
+export async function fetchSolapiBalance(config, { serviceFactory = defaultServiceFactory } = {}) {
+  const cfg = config ?? getSolapiConfig();
+  const service = serviceFactory(cfg.apiKey, cfg.apiSecret);
+  const res = await service.getBalance();
+  return {
+    balance: res?.balance ?? 0,
+    point: res?.point ?? 0,
+    autoRecharge: res?.autoRecharge ?? 0,
+    rechargeTo: res?.rechargeTo ?? null,
+  };
+}
+
 const SOLAPI_SEND_INTERVAL_MS = 75;
 
 export function createSolapiSendLimiter({
