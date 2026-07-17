@@ -8,7 +8,7 @@ import { parseKstToDate } from './promoSchedule.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { enrollmentCode } from '@impact7/shared/enrollment-derivation';
 import { resolveMmsImageId } from './mmsImage.js';
-import { effectiveStaffStatus } from './staffCheckinHandler.js';
+import { effectiveStaffStatus } from '@impact7/shared/staff-status';
 import { digitsOf, isValidPhoneKR } from '@impact7/shared/phone';
 import { todayKST } from '@impact7/shared/datetime';
 

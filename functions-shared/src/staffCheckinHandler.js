@@ -2,6 +2,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { businessDayKST } from '@impact7/shared/datetime';
 import { normalizeAttendanceLabel } from '@impact7/shared/attendance-action';
+import { effectiveStaffStatus } from '@impact7/shared/staff-status';
 import { assertAuthorizedStaff } from './authGuards.js';
 import {
   STAFF_ACTIONS, STAFF_DAY_STATES, nextStaffDayState, staffAllowedActions,
@@ -13,46 +14,6 @@ function textOf(v) { return String(v ?? '').trim(); }
 
 const REENTRY_WINDOW_MS = 20_000;
 const ACTIVE_STATUS = 'active';
-const STATUS_CANCELLED = new Set(['join_cancelled', 'leave_cancelled']);
-const AUTO_STATUS_BY_DATE_TYPE = {
-  joinDate: { status: 'active', priority: 1, from: ['onboarding', 'join_pending', 'active'] },
-  plannedJoinDate: { status: 'active', priority: 1, from: ['onboarding', 'join_pending', 'active'] },
-  firstWorkDate: { status: 'active', priority: 1, from: ['onboarding', 'join_pending', 'active'] },
-  returnDate: { status: 'active', priority: 1, from: ['inactive', 'leave_pending'] },
-  leaveDate: { status: 'inactive', priority: 2, from: ['active', 'leave_pending'] },
-  plannedResignationDate: { status: 'terminated', priority: 3, from: ['active', 'inactive', 'leave_pending'] },
-  resignationDate: { status: 'terminated', priority: 3, from: ['active', 'inactive', 'leave_pending'] },
-  lastWorkDate: { status: 'terminated', priority: 3, from: ['active', 'inactive', 'leave_pending'] },
-};
-
-function personnelDatesOf(staff) {
-  const records = Array.isArray(staff?.personnelDates) ? staff.personnelDates : [];
-  const out = records
-    .filter((record) => record?.type && record?.date)
-    .map((record) => ({ type: textOf(record.type), date: textOf(record.date) }));
-  for (const type of Object.keys(AUTO_STATUS_BY_DATE_TYPE)) {
-    const date = textOf(staff?.[type]);
-    if (date && !out.some((record) => record.type === type)) out.push({ type, date });
-  }
-  return out;
-}
-
-export function effectiveStaffStatus(staff, dateKST) {
-  const rawStatus = textOf(staff?.status) || ACTIVE_STATUS;
-  const current = rawStatus === 'leave_pending' ? ACTIVE_STATUS : rawStatus;
-  if (STATUS_CANCELLED.has(current)) return current;
-  const changes = [];
-  for (const record of personnelDatesOf(staff)) {
-    if (!record.date || record.date > dateKST) continue;
-    const change = AUTO_STATUS_BY_DATE_TYPE[record.type];
-    if (change?.from.includes(current)) {
-      changes.push({ date: record.date, status: change.status, priority: change.priority });
-    }
-  }
-  if (!changes.length) return current;
-  changes.sort((a, b) => a.date.localeCompare(b.date) || a.priority - b.priority);
-  return changes[changes.length - 1].status;
-}
 
 const STAFF_NOTICE_TEMPLATES = {
   [STAFF_ACTIONS.CLOCK_IN]: {
