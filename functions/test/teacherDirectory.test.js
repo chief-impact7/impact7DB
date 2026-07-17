@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeTeacherLocals, isEligibleEmail } from '../src/teacherDirectory.js';
+import { activeTeacherLocals, assignableStaffLocals, isEligibleEmail } from '../src/teacherDirectory.js';
 
 describe('activeTeacherLocals', () => {
   it('교수부 재직자의 영어이름 첫 토큰(소문자)만 모은다', () => {
@@ -11,6 +11,19 @@ describe('activeTeacherLocals', () => {
       { department: '교수', englishName: '', status: 'active' },
     ]);
     expect([...locals].sort()).toEqual(['edward', 'rachel']);
+  });
+});
+
+describe('assignableStaffLocals', () => {
+  it('교수·행정 재직자만 모으고 단기·퇴직은 제외한다', () => {
+    const locals = assignableStaffLocals([
+      { department: '교수', englishName: 'Rachel', status: 'active' },
+      { department: '행정', englishName: 'Jane Park', status: 'active' },
+      { department: '단기', englishName: 'Tom', status: 'active' },
+      { department: '행정', englishName: 'Mike', status: 'terminated' },
+      { department: '교수', englishName: '', status: 'active' },
+    ]);
+    expect([...locals].sort()).toEqual(['jane', 'rachel']);
   });
 });
 

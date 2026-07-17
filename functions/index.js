@@ -8,7 +8,13 @@ import { runClassCleanup } from './src/cleanup.js';
 import { syncNaesinPeriod } from './src/syncNaesinPeriod.js';
 import { runScheduledWithdrawals } from './src/scheduledWithdrawals.js';
 import { generateDailyStats } from './src/dailyStats.js';
-import { activeTeacherLocals, isEligibleEmail, syncTeacherEligibility } from './src/teacherDirectory.js';
+import {
+  activeTeacherLocals,
+  assignableStaffLocals,
+  isEligibleEmail,
+  syncTeacherEligibility,
+  MIRRORED_DEPARTMENTS,
+} from './src/teacherDirectory.js';
 
 initializeApp();
 getFirestore();
@@ -179,8 +185,9 @@ export const onStaffTeacherEligibility = onDocumentWritten(
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
-    const involvesTeacher = before?.department === '교수' || after?.department === '교수';
-    if (!involvesTeacher) return null;
+    const involvesMirrored =
+      MIRRORED_DEPARTMENTS.includes(before?.department) || MIRRORED_DEPARTMENTS.includes(after?.department);
+    if (!involvesMirrored) return null;
     if (before && after && eligibilityFieldsOf(before) === eligibilityFieldsOf(after)) return null;
     const result = await syncTeacherEligibility(getFirestore());
     console.log('[teacher-eligibility] staff 변경 스윕:', JSON.stringify(result));
@@ -208,19 +215,22 @@ export const onScheduleTeacherEligibility = onSchedule(
 );
 
 // 로그인 추적이 teachers 문서를 새로 만들 때 자격 필드를 보정한다 (퇴직자 재로그인 재생성 대응).
-// homeroom_eligible이 이미 boolean이면 계산된 문서 — 스킵해 자기 트리거 루프를 끊는다.
+// 두 자격 필드가 모두 boolean이면 계산된 문서 — 스킵해 자기 트리거 루프를 끊는다.
 export const onTeacherDocEligibility = onDocumentWritten(
   { document: 'teachers/{email}', retry: false },
   async (event) => {
     const after = event.data?.after?.data();
     if (!after) return null; // 삭제 이벤트
-    if (typeof after.homeroom_eligible === 'boolean') return null;
+    if (typeof after.homeroom_eligible === 'boolean' && typeof after.board_assignable === 'boolean') return null;
     const db = getFirestore();
-    const staffSnap = await db.collection('staff').where('department', '==', '교수').get();
-    const locals = activeTeacherLocals(staffSnap.docs.map((d) => d.data()));
-    const eligible = isEligibleEmail(event.params.email, locals);
-    await event.data.after.ref.update({ homeroom_eligible: eligible });
-    console.log(`[teacher-eligibility] teachers/${event.params.email} → ${eligible}`);
+    const staffSnap = await db.collection('staff').where('department', 'in', MIRRORED_DEPARTMENTS).get();
+    const staffDocs = staffSnap.docs.map((d) => d.data());
+    const patch = {
+      homeroom_eligible: isEligibleEmail(event.params.email, activeTeacherLocals(staffDocs)),
+      board_assignable: isEligibleEmail(event.params.email, assignableStaffLocals(staffDocs)),
+    };
+    await event.data.after.ref.update(patch);
+    console.log(`[teacher-eligibility] teachers/${event.params.email} →`, JSON.stringify(patch));
     return null;
   }
 );
