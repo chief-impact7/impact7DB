@@ -1,5 +1,6 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { businessDayKST } from '@impact7/shared/datetime';
+import { effectiveStaffStatus } from '@impact7/shared/staff-status';
 import { STAFF_ACTIONS, STAFF_DAY_STATES } from './staffAttendanceState.js';
 import { DEFAULT_STAFF_ATTENDANCE_SETTINGS, resolveAutoTime } from './staffAttendanceSettings.js';
 
@@ -24,8 +25,12 @@ export async function handleStaffAutoClockin(deps = {}) {
   const dayStartHour = effectiveSettings.dayStartHour ?? 6;
   const prevDate = deps.prevDate ?? prevDateOfKST(businessDayKST(new Date(), dayStartHour));
 
-  const staffSnap = await firestore.collection('staff').where('status', '==', 'active').get();
-  if (staffSnap.empty) {
+  // 저장 status 쿼리는 stale(퇴직 미실체화·복직 미반영)을 놓친다 — 전량 읽고 기록 대상일 기준 파생으로 판정
+  const staffSnap = await firestore.collection('staff').get();
+  const activeDocs = staffSnap.docs.filter(
+    (staffDoc) => effectiveStaffStatus(staffDoc.data(), prevDate) === 'active'
+  );
+  if (!activeDocs.length) {
     console.log(`[staffAutoClockin] active 직원 없음`);
     return { date: prevDate, processed: 0, skipped: 0 };
   }
@@ -34,7 +39,7 @@ export async function handleStaffAutoClockin(deps = {}) {
   let skipped = 0;
   const batch = firestore.batch();
 
-  await Promise.all(staffSnap.docs.map(async (staffDoc) => {
+  await Promise.all(activeDocs.map(async (staffDoc) => {
     const staff = staffDoc.data();
     const staffId = staffDoc.id;
     const dept = staff.department ?? null;

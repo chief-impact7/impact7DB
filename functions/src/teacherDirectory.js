@@ -2,12 +2,14 @@
 // DSC 담임 선택 UI는 staff(PII — director/manager 전용 읽기)를 못 읽으므로 이 필드가 필터 기준.
 // 규약: @impact7/shared teacher-label (isActiveTeacher, 영어이름 첫 토큰 ↔ 이메일 로컬파트 매칭).
 import { isActiveTeacher, teacherDisplayName } from '@impact7/shared/teacher-label';
+import { todayKST } from '@impact7/shared/datetime';
 
-// staff 문서들 → 재직 교수의 영어이름 첫 토큰(소문자) 집합
+// staff 문서들 → 재직 교수의 영어이름 첫 토큰(소문자) 집합. 재직은 파생 판정(staff-status).
 export function activeTeacherLocals(staffDocs) {
   const locals = new Set();
+  const today = todayKST();
   for (const s of staffDocs) {
-    if (!isActiveTeacher(s)) continue;
+    if (!isActiveTeacher(s, today)) continue;
     const local = teacherDisplayName(s.englishName).toLowerCase();
     if (local) locals.add(local);
   }

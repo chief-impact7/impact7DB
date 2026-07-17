@@ -41,14 +41,10 @@ function makeFirestore({ staffDocs = {}, attendanceDocs = {}, settings = null } 
       }
       if (name === 'staff') {
         return {
-          where() {
+          async get() {
             return {
-              async get() {
-                return {
-                  empty: Object.keys(staffDocs).length === 0,
-                  docs: Object.entries(staffDocs).map(([id, d]) => ({ id, data: () => d })),
-                };
-              },
+              empty: Object.keys(staffDocs).length === 0,
+              docs: Object.entries(staffDocs).map(([id, d]) => ({ id, data: () => d })),
             };
           },
         };
@@ -163,6 +159,51 @@ describe('handleStaffAutoClockin — 스킵 케이스', () => {
     });
     const res = await handleStaffAutoClockin({ firestore: fs, prevDate: PREV_DATE });
     expect(res).toMatchObject({ processed: 0, skipped: 1 });
+  });
+});
+
+describe('handleStaffAutoClockin — 파생 재직 판정', () => {
+  const settings = {
+    ...BASE_SETTINGS,
+    autoClockIn: { global: '08:00', byDept: {}, byStaff: {} },
+  };
+
+  it('저장 status가 active여도 기록 대상일에 퇴직이면 제외', async () => {
+    const fs = makeFirestore({
+      staffDocs: {
+        'st1': { name: '김선생', status: 'active', resignationDate: '2026-06-01' },
+      },
+      attendanceDocs: {},
+      settings,
+    });
+    const res = await handleStaffAutoClockin({ firestore: fs, prevDate: PREV_DATE });
+    expect(res).toMatchObject({ processed: 0 });
+    expect(fs._sets).toHaveLength(0);
+  });
+
+  it('저장 status가 inactive여도 복직일이 지났으면 처리', async () => {
+    const fs = makeFirestore({
+      staffDocs: {
+        'st1': { name: '박선생', status: 'inactive', leaveDate: '2026-01-01', returnDate: '2026-03-01' },
+      },
+      attendanceDocs: {},
+      settings,
+    });
+    const res = await handleStaffAutoClockin({ firestore: fs, prevDate: PREV_DATE });
+    expect(res).toMatchObject({ processed: 1 });
+    expect(fs._sets[0].id).toBe(`${PREV_DATE}_st1`);
+  });
+
+  it('종무일 당일(기록 대상일)까지는 자동 출근 생성', async () => {
+    const fs = makeFirestore({
+      staffDocs: {
+        'st1': { name: '이선생', status: 'active', lastWorkDate: PREV_DATE },
+      },
+      attendanceDocs: {},
+      settings,
+    });
+    const res = await handleStaffAutoClockin({ firestore: fs, prevDate: PREV_DATE });
+    expect(res).toMatchObject({ processed: 1 });
   });
 });
 

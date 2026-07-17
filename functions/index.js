@@ -167,7 +167,13 @@ export const onClassSettingsNaesinPeriodChanged = onDocumentUpdated(
 );
 
 // HR 퇴직·복직·부서변경 연동: staff 쓰기 시 담임 자격(teachers.homeroom_eligible)을 재계산한다.
-// 관련 필드(department·status·englishName) 변화가 없으면 스킵. 스윕은 멱등이라 retry 안전.
+// 재직은 인사 날짜 파생(@impact7/shared/staff-status)이므로 status뿐 아니라 날짜 필드 변화도 본다.
+// 관련 필드 변화가 없으면 스킵. 스윕은 멱등이라 retry 안전.
+const eligibilityFieldsOf = (s) => JSON.stringify([
+  s?.status, s?.department, s?.englishName, s?.personnelDates,
+  s?.joinDate, s?.plannedJoinDate, s?.firstWorkDate, s?.returnDate,
+  s?.leaveDate, s?.resignationDate, s?.plannedResignationDate, s?.lastWorkDate,
+]);
 export const onStaffTeacherEligibility = onDocumentWritten(
   { document: 'staff/{staffId}', retry: false },
   async (event) => {
@@ -175,14 +181,29 @@ export const onStaffTeacherEligibility = onDocumentWritten(
     const after = event.data?.after?.data();
     const involvesTeacher = before?.department === '교수' || after?.department === '교수';
     if (!involvesTeacher) return null;
-    const changed = !before || !after
-      || before.status !== after.status
-      || before.department !== after.department
-      || before.englishName !== after.englishName;
-    if (!changed) return null;
+    if (before && after && eligibilityFieldsOf(before) === eligibilityFieldsOf(after)) return null;
     const result = await syncTeacherEligibility(getFirestore());
     console.log('[teacher-eligibility] staff 변경 스윕:', JSON.stringify(result));
     return null;
+  }
+);
+
+// 파생 재직은 시간 경과만으로도 바뀐다(예: 미리 등록한 퇴사일 도래) — staff 쓰기 없이도
+// 자격이 갱신되도록 매일 1회 스윕한다. 멱등이라 트리거 스윕과 겹쳐도 안전.
+export const onScheduleTeacherEligibility = onSchedule(
+  {
+    schedule: '10 6 * * *',
+    timeZone: 'Asia/Seoul',
+    retryCount: 0,
+  },
+  async () => {
+    try {
+      const result = await syncTeacherEligibility(getFirestore());
+      console.log('[teacher-eligibility] 일일 스윕:', JSON.stringify(result));
+    } catch (err) {
+      console.error('[teacher-eligibility] 일일 스윕 실패:', err);
+      throw err;
+    }
   }
 );
 
