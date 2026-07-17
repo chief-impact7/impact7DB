@@ -145,6 +145,38 @@ describe('handleGetMessageDeliveryStatus', () => {
     )).rejects.toMatchObject({ code: 'invalid-argument' });
   });
 
+  it('failed_permanent 중 결과 미수신(delivery_result_timeout) 건을 분리 집계한다', async () => {
+    const firestore = makeFirestore({
+      queue: [
+        { id: 'q1', status: 'failed_permanent', last_error_code: 'delivery_result_timeout', recipient_phone: '01011112222' },
+        { id: 'q2', status: 'failed_permanent', last_error_code: '3058', recipient_phone: '01033334444' },
+      ],
+      logs: [
+        { id: 'l1', status: 'failed', channel: 'sms', status_code: 'delivery_result_timeout' },
+        { id: 'l2', status: 'failed', channel: 'sms', status_code: '3058' },
+      ],
+    });
+    const res = await handleGetMessageDeliveryStatus({ auth, data: {} }, { firestore });
+    expect(res.queueCounts.failed_permanent).toBe(2);
+    expect(res.unconfirmedPermanentCount).toBe(1);
+    expect(res.failedCodeCounts).toEqual({ delivery_result_timeout: 1, 3058: 1 });
+  });
+
+  it('기간 지정 시에도 결과 미수신 건을 분리 집계한다', async () => {
+    const day = (n) => new Date(Date.UTC(2026, 6, n));
+    const firestore = makeFirestore({
+      queue: [
+        { id: 'q1', status: 'failed_permanent', last_error_code: 'delivery_result_timeout', recipient_phone: '01011112222', created_at: day(3) },
+        { id: 'q2', status: 'failed_permanent', last_error_code: 'delivery_result_timeout', recipient_phone: '01033334444', created_at: day(1) },
+      ],
+    });
+    const res = await handleGetMessageDeliveryStatus(
+      { auth, data: { fromMs: day(2).getTime(), toMs: day(4).getTime() } }, { firestore },
+    );
+    expect(res.queueCounts.failed_permanent).toBe(1);
+    expect(res.unconfirmedPermanentCount).toBe(1);
+  });
+
   it('uses the stored recipient_masked after PII purge (no plaintext phone field)', async () => {
     const firestore = makeFirestore({
       queue: [

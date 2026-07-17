@@ -10,6 +10,8 @@ import { maskPhone } from './phoneMask.js';
 
 const QUEUE_STATUSES = ['pending', 'processing', 'awaiting_delivery_result', 'failed_retryable', 'failed_permanent', 'sent'];
 const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
+// 접수 성공 후 결과 미수신으로 종결된 코드 — 실패 확정이 아니라서 통계에서 분리 집계한다.
+const UNCONFIRMED_CODE = 'delivery_result_timeout';
 const CHANNELS = ['kakao', 'sms', 'mms'];
 const MAX_FAILURES = 30;
 const SCAN_LIMIT = 500;
@@ -77,6 +79,10 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
     return [s, agg.data().count];
   });
   const archivedCountPromise = queueCol.where('status', '==', 'archived').count().get();
+  const unconfirmedPermanentPromise = hasRange ? null : queueCol
+    .where('status', '==', 'failed_permanent')
+    .where('last_error_code', '==', UNCONFIRMED_CODE)
+    .count().get();
   const failuresPromise = hasRange ? null : queueCol
     .where('status', 'in', FAILED_STATUSES)
     .orderBy('updated_at', 'desc')
@@ -95,22 +101,26 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
   // 잔액 고갈은 전 채널 발송 실패로 이어짐 — 조회 실패는 통계에 영향 주지 않게 null 처리.
   const balancePromise = (deps.fetchBalance ?? defaultFetchBalance)().catch(() => null);
 
-  const [queueCountEntries, archivedAgg, failuresSnap, queuePreviewSnap, logSnap] = await Promise.all([
+  const [queueCountEntries, archivedAgg, unconfirmedAgg, failuresSnap, queuePreviewSnap, logSnap] = await Promise.all([
     Promise.all(queueCountPromises),
     archivedCountPromise,
+    unconfirmedPermanentPromise,
     failuresPromise,
     queuePreviewPromise,
     logsPromise,
   ]);
 
   const queueCounts = Object.fromEntries(QUEUE_STATUSES.map(s => [s, 0]));
+  let unconfirmedPermanentCount = 0;
   if (hasRange) {
     queuePreviewSnap.forEach((doc) => {
-      const status = doc.data().status;
-      if (queueCounts[status] != null) queueCounts[status] += 1;
+      const d = doc.data();
+      if (queueCounts[d.status] != null) queueCounts[d.status] += 1;
+      if (d.status === 'failed_permanent' && d.last_error_code === UNCONFIRMED_CODE) unconfirmedPermanentCount += 1;
     });
   } else {
     for (const [s, c] of queueCountEntries) queueCounts[s] = c;
+    unconfirmedPermanentCount = unconfirmedAgg.data().count;
   }
 
   const queueDetails = Object.fromEntries(QUEUE_STATUSES.map((status) => [status, []]));
@@ -146,6 +156,8 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
     solapiBalance: await balancePromise,
     failedCodeCounts,
     queueCounts,
+    // failed_permanent 중 결과 미수신(delivery_result_timeout) 건수 — 클라가 '최종 실패'와 분리 표시.
+    unconfirmedPermanentCount,
     archivedCount: archivedAgg.data().count,
     channelCounts,
     sentCount,
