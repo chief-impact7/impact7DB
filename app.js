@@ -3285,7 +3285,7 @@ function _renderEnrollmentCard(container, e, idx, isHistory) {
             <span class="enrollment-type">${esc(ct)}</span>
             ${notStarted ? '<span class="enrollment-pending">예정</span>' : ''}
             ${semLabel ? `<span class="enrollment-semester">${esc(semLabel)}</span>` : ''}
-            ${!isRegular && !isHistory && idx >= 0 ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리">종강처리</button>` : ''}
+            ${!isRegular && !isHistory && idx >= 0 ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리" aria-label="종강처리">${msIcon('archive')}</button>` : ''}
         </div>
         <div class="enrollment-card-body">
             <div class="enrollment-field"><span class="field-label">요일</span><span>${esc(days)}</span></div>
@@ -5747,8 +5747,8 @@ function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
     const errorHtml = r.finalize_error
         ? `<div style="margin-top:6px;padding:6px 8px;background:var(--danger-bg);color:var(--danger-strong);border-radius:4px;font-size:11px;">
             <strong>서버 처리 실패</strong> (${r.finalize_attempts || 0}회 시도): ${esc(r.finalize_error)}
-            <button class="btn-cancel" style="margin-left:8px;font-size:10px;padding:2px 6px;"
-                onclick="event.stopPropagation(); window._retryFinalize('${escAttr(r.docId)}')">재시도</button>
+            <button class="btn-cancel" style="margin-left:8px;font-size:10px;padding:2px 6px;" title="재시도" aria-label="재시도"
+                onclick="event.stopPropagation(); window._retryFinalize('${escAttr(r.docId)}')">${msIcon('refresh')}</button>
            </div>`
         : '';
 
@@ -5761,15 +5761,15 @@ function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
             <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">
                 <button class="${cDone ? 'btn-cancel' : 'btn-cancel'}" style="font-size:11px;padding:4px 10px;${cDone ? '' : 'opacity:0.5;'}"
                     onclick="event.stopPropagation(); window.toggleCancelLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
-                    ${cDone ? '취소 ✕' : '취소'}
+                    ${cDone ? `취소 ${msIcon('close')}` : '취소'}
                 </button>
                 <button class="${tDone ? 'btn-save' : 'btn-cancel'}" style="font-size:11px;padding:4px 10px;${tDone ? '' : 'opacity:0.5;'}"
                     onclick="event.stopPropagation(); window.teacherApproveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
-                    ${tDone ? '교수부 ✓' : '교수부'}
+                    ${tDone ? `교수부 ${msIcon('check')}` : '교수부'}
                 </button>
                 <button class="${aDone ? 'btn-save' : 'btn-cancel'}" style="font-size:11px;padding:4px 10px;${aDone ? '' : 'opacity:0.5;'}"
                     onclick="event.stopPropagation(); window.approveLeaveRequest('${escAttr(r.docId)}', '${escAttr(studentId)}')">
-                    ${aDone ? '행정부 ✓' : '행정부'}
+                    ${aDone ? `행정부 ${msIcon('check')}` : '행정부'}
                 </button>
             </div>`;
     }
@@ -5849,8 +5849,7 @@ async function renderLeaveRequestCard(studentId) {
 
     // 휴원요청서 카드
     const leaveBtn = isLeaveStu
-        ? `<button class="btn-save" style="${btnStyle}" onclick="window.openReturnFromLeaveModal('${escAttr(studentId)}')">
-            복귀</button>`
+        ? `<button class="btn-save" style="${btnStyle}" onclick="window.openReturnFromLeaveModal('${escAttr(studentId)}')" title="복귀" aria-label="복귀">${msIcon('undo')}</button>`
         : '';
     if (leaveRecords.length > 0 || leaveBtn) {
         cards += `<div class="form-card">
@@ -5865,8 +5864,7 @@ async function renderLeaveRequestCard(studentId) {
 
     // 퇴원요청서 카드
     const withdrawBtn = isWithdrawnStu
-        ? `<button class="btn-save" style="${btnStyle}" onclick="window.openReEnrollModal('${escAttr(studentId)}')">
-            재등원</button>`
+        ? `<button class="btn-save" style="${btnStyle}" onclick="window.openReEnrollModal('${escAttr(studentId)}')" title="재등원" aria-label="재등원">${msIcon('person_add')}</button>`
         : '';
     if (withdrawRecords.length > 0 || withdrawBtn) {
         cards += `<div class="form-card">
