@@ -8,6 +8,7 @@ vi.mock('../src/authGuards.js', () => ({ assertAuthorizedStaff: vi.fn(), assertM
 const {
   buildBulkRecipients,
   buildBulkAlimtalkRecipients,
+  buildStaffAlimtalkRecipients,
   buildStaffRecipients,
   handleCreateBulkMessage,
   handleGetBulkStaffRecipients,
@@ -260,6 +261,53 @@ describe('알림톡 수신자·변수 구성', () => {
     expect(() => validateAlimtalkVariables(template, { '#{다른값}': 'x' })).toThrow('템플릿에 없는 변수');
     expect(() => validateAlimtalkVariables(template, {})).toThrow('템플릿 변수 값을 입력하세요');
   });
+
+  it('studentNameAuto=false면 #{학생명}도 입력 변수로 요구한다', () => {
+    expect(() => validateAlimtalkVariables(template, { '#{상담일시}': '7월 20일' }, { studentNameAuto: false }))
+      .toThrow('템플릿 변수 값을 입력하세요: #{학생명}');
+    expect(validateAlimtalkVariables(template, { '#{학생명}': '학부모님', '#{상담일시}': '7월 20일' }, { studentNameAuto: false }))
+      .toEqual({ '#{학생명}': '학부모님', '#{상담일시}': '7월 20일' });
+  });
+
+  it('학생명 변수가 없는 템플릿은 이름 미주입 + 형제 동일 번호를 1건으로 합친다', () => {
+    const noName = { templateId: 'TPL_NOTICE', content: '휴원 안내', variables: [], buttons: [] };
+    const { docs, stats } = buildBulkAlimtalkRecipients(
+      [
+        { id: 's1', student: { name: '김철수', parent_phone_1: '01011112222' } },
+        { id: 's2', student: { name: '이영희', parent_phone_1: '01011112222' } },
+      ],
+      { campaignId: 'c1', template: noName, templateVariables: {}, recipientFields: ['parent_1'], scheduledDate: null },
+    );
+    expect(stats).toMatchObject({ queued: 1, deduped: 1 });
+    expect(docs).toHaveLength(1);
+    expect(docs[0].template_variables).toEqual({});
+  });
+
+  it('교직원 알림톡은 재직·유효번호만 큐잉하고 #{학생명}에 직원 이름을 넣는다', () => {
+    const entries = [
+      { id: 'st1', staff: { name: '김직원', phone: '010-5555-6666', status: 'active' } },
+      { id: 'st2', staff: { name: '이중복', phone: '01055556666', status: 'active' } },
+      { id: 'st3', staff: { name: '박대기', phone: '01077778888', status: 'join_pending', plannedJoinDate: '2999-01-01' } },
+      { id: 'st4', staff: { name: '최무번', phone: '', status: 'active' } },
+    ];
+    // 이름 변수 템플릿 = 개인화 발송 — SMS(%이름)와 동일하게 동일 번호도 각각 발송.
+    const { docs, stats } = buildStaffAlimtalkRecipients(entries, {
+      campaignId: 'c1', template, templateVariables: { '#{상담일시}': '7월 20일 15시' }, scheduledDate: null, dateKst: '2026-07-16',
+    });
+    expect(stats).toMatchObject({ total: 4, queued: 2, deduped: 0, skipped_status: 1, skipped_no_phone: 1 });
+    expect(docs[0]).toMatchObject({
+      kind: 'bulk_alimtalk', staff_id: 'st1', recipient_role: 'staff', recipient_phone: '01055556666',
+      template_code: 'TPL_COUNSEL',
+      template_variables: { '#{학생명}': '김직원', '#{상담일시}': '7월 20일 15시' },
+    });
+    expect(docs[1].template_variables['#{학생명}']).toBe('이중복');
+
+    const noName = { templateId: 'TPL_NOTICE', content: '휴원 안내', variables: [], buttons: [] };
+    const uniform = buildStaffAlimtalkRecipients(entries, {
+      campaignId: 'c1', template: noName, templateVariables: {}, scheduledDate: null, dateKst: '2026-07-16',
+    });
+    expect(uniform.stats).toMatchObject({ queued: 1, deduped: 1 });
+  });
 });
 
 describe('applyMessageVars', () => {
@@ -412,17 +460,60 @@ describe('handleCreateBulkMessage', () => {
     expect(db._docs['bulk_campaigns/alimtalk-1']).toMatchObject({ kind: 'bulk_alimtalk', template_code: 'TPL_COUNSEL' });
   });
 
-  it('알림톡에서 교직원 대상과 자유본문·MMS 계약 혼용을 거부한다', async () => {
-    db._docs['staff/st1'] = { name: '직원', phone: '01055556666', status: 'active' };
-    await expect(handleCreateBulkMessage({
-      auth, data: { channel: 'alimtalk', templateId: 'TPL', staffIds: ['st1'] },
-    }, { db })).rejects.toThrow('학생 학부모만');
+  it('교직원 알림톡을 매니저 게이트로 큐잉하고 #{학생명}에 직원 이름을 넣는다', async () => {
+    db._docs['staff/st1'] = { name: '김직원', phone: '01055556666', status: 'active' };
+    const template = {
+      templateId: 'TPL_COUNSEL', name: '상담 안내', status: 'APPROVED',
+      content: '#{학생명} 상담은 #{상담일시}입니다.',
+      variables: [{ name: '#{학생명}' }, { name: '#{상담일시}' }], buttons: [],
+    };
+    const getAlimtalkTemplate = vi.fn().mockResolvedValue(template);
+    const res = await handleCreateBulkMessage({
+      auth,
+      data: {
+        channel: 'alimtalk', templateId: 'TPL_COUNSEL', staffIds: ['st1'],
+        templateVariables: { '#{상담일시}': '7월 20일 15시' }, requestId: 'alimtalk-staff-1',
+      },
+    }, { db, getAlimtalkTemplate });
+    expect(assertManagerOrAbove).toHaveBeenCalled();
+    expect(res.stats).toMatchObject({ total: 1, queued: 1 });
+    const queue = Object.entries(db._docs)
+      .find(([key, value]) => key.startsWith('message_queue/') && value.kind === 'bulk_alimtalk')?.[1];
+    expect(queue).toMatchObject({
+      staff_id: 'st1', recipient_role: 'staff', template_code: 'TPL_COUNSEL',
+      template_variables: { '#{학생명}': '김직원', '#{상담일시}': '7월 20일 15시' },
+    });
+  });
+
+  it('학생 알림톡은 받는이에 학생 본인 번호도 허용한다', async () => {
+    db._docs['students/s1'] = { name: '김학생', student_phone: '01099998888', parent_phone_1: '01011112222' };
+    const template = {
+      templateId: 'TPL_NOTICE', name: '공지', status: 'APPROVED',
+      content: '#{학생명} 안내', variables: [{ name: '#{학생명}' }], buttons: [],
+    };
+    const getAlimtalkTemplate = vi.fn().mockResolvedValue(template);
+    const res = await handleCreateBulkMessage({
+      auth,
+      data: {
+        channel: 'alimtalk', templateId: 'TPL_NOTICE', studentIds: ['s1'],
+        recipientFields: ['student', 'parent_1'], requestId: 'alimtalk-student-field',
+      },
+    }, { db, getAlimtalkTemplate });
+    expect(res.stats).toMatchObject({ queued: 2 });
+    const roles = Object.entries(db._docs)
+      .filter(([key, value]) => key.startsWith('message_queue/') && value.kind === 'bulk_alimtalk')
+      .map(([, value]) => value.recipient_role)
+      .sort();
+    expect(roles).toEqual(['parent_1', 'student']);
+  });
+
+  it('알림톡에서 MMS 첨부와 지원 외 받는이 필드를 거부한다', async () => {
     await expect(handleCreateBulkMessage({
       auth, data: { channel: 'alimtalk', templateId: 'TPL', studentIds: ['s1'], mmsImage: { dataBase64: 'x' } },
     }, { db })).rejects.toThrow('MMS 이미지를 첨부할 수 없습니다');
     await expect(handleCreateBulkMessage({
-      auth, data: { channel: 'alimtalk', templateId: 'TPL', studentIds: ['s1'], recipientFields: ['student'] },
-    }, { db })).rejects.toThrow('학부모 연락처만');
+      auth, data: { channel: 'alimtalk', templateId: 'TPL', studentIds: ['s1'], recipientFields: ['other'] },
+    }, { db })).rejects.toThrow('학생·학부모 연락처만');
   });
 
   it('rejects empty content / empty studentIds', async () => {

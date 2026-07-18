@@ -32,19 +32,24 @@ describe('alimtalkTemplateView', () => {
     expect(view).not.toHaveProperty('accountId');
   });
 
-  it('직원용 또는 버튼 링크 변수가 필요한 템플릿은 목록에 표시하되 발송 불가 처리한다', () => {
+  it('학생명 변수가 없는 템플릿도 발송 가능하다', () => {
     expect(alimtalkTemplateView(approved({ content: '#{성함} 선생님', variables: [{ name: '#{성함}' }] })))
-      .toMatchObject({ sendable: false, unavailableReason: '학생 학부모 단체발송용 템플릿이 아닙니다.' });
+      .toMatchObject({ sendable: true, variables: ['#{성함}'] });
+    expect(alimtalkTemplateView(approved({ content: '변수 없는 공지', variables: [] })))
+      .toMatchObject({ sendable: true, variables: [] });
+  });
+
+  it('버튼 링크 변수가 필요한 템플릿은 목록에 표시하되 발송 불가 처리한다', () => {
     expect(alimtalkTemplateView(approved({
       buttons: [{ buttonName: '확인', buttonType: 'WL', linkMo: 'https://example.test/#{token}' }],
       variables: [{ name: '#{학생명}' }, { name: '#{token}' }],
-    }))).toMatchObject({ sendable: false, unavailableReason: '학생별 링크 데이터가 필요한 템플릿입니다.' });
+    }))).toMatchObject({ sendable: false, unavailableReason: '수신자별 링크 데이터가 필요한 템플릿입니다.' });
     expect(alimtalkTemplateView(approved({
       quickReplies: [{ name: '바로가기', linkType: 'WL', linkMo: 'https://example.test/#{token}' }],
       variables: [{ name: '#{학생명}' }, { name: '#{token}' }],
     }))).toMatchObject({
       sendable: false,
-      unavailableReason: '학생별 링크 데이터가 필요한 템플릿입니다.',
+      unavailableReason: '수신자별 링크 데이터가 필요한 템플릿입니다.',
       buttons: [{ name: '바로가기', type: 'WL' }],
     });
   });

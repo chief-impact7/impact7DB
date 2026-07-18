@@ -1,7 +1,6 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 
-const STUDENT_NAME_VARIABLE = '#{학생명}';
 const TOKEN_PATTERN = /#\{[^}]+\}/g;
 
 function tokensIn(value) {
@@ -20,12 +19,10 @@ function buttonTokens(buttons = []) {
 
 export function alimtalkTemplateView(template) {
   const variables = (template?.variables ?? []).map((variable) => variable.name).filter(Boolean);
-  const contentTokens = tokensIn(template?.content);
   const linkTokens = buttonTokens([...(template?.buttons ?? []), ...(template?.quickReplies ?? [])]);
   let unavailableReason = '';
   if (template?.status !== 'APPROVED' || template?.isHidden) unavailableReason = '승인된 공개 템플릿이 아닙니다.';
-  else if (!contentTokens.has(STUDENT_NAME_VARIABLE)) unavailableReason = '학생 학부모 단체발송용 템플릿이 아닙니다.';
-  else if (linkTokens.size) unavailableReason = '학생별 링크 데이터가 필요한 템플릿입니다.';
+  else if (linkTokens.size) unavailableReason = '수신자별 링크 데이터가 필요한 템플릿입니다.';
 
   return {
     templateId: template?.templateId ?? '',

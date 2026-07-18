@@ -19,6 +19,7 @@ const BATCH_LIMIT = 400;
 
 const VAR_TOKENS = ['%이름', '%학교', '%학년', '%반'];
 const STAFF_STATUSES = new Set(['active', 'inactive', 'terminated']);
+const ALIMTALK_RECIPIENT_FIELDS = new Set(['student', 'parent_1', 'parent_2']);
 
 // 본문에 변수 토큰이 포함되어 있는지 여부. 포함 시 dedup 비활성(학생마다 내용이 다름).
 export function hasVarTokens(content) {
@@ -89,7 +90,7 @@ export function buildBulkRecipients(entries, opts) {
   return { docs, stats };
 }
 
-function alimtalkFallbackText(template, variables) {
+export function alimtalkFallbackText(template, variables) {
   const lines = [applyTemplate(template.content, variables)];
   const webLinks = [
     ...(template.buttons ?? []).map((button) => ({ name: button.buttonName, type: button.buttonType, url: button.linkMo })),
@@ -103,10 +104,11 @@ function alimtalkFallbackText(template, variables) {
   return lines.filter(Boolean).join('\n');
 }
 
-export function validateAlimtalkVariables(template, input = {}) {
+// studentNameAuto=false(직접 번호): 대상 이름을 알 수 없어 #{학생명}도 입력 변수로 요구한다.
+export function validateAlimtalkVariables(template, input = {}, { studentNameAuto = true } = {}) {
   const expected = [...new Set((template.variables ?? [])
     .map((variable) => variable.name)
-    .filter((name) => name && name !== '#{학생명}'))];
+    .filter((name) => name && (!studentNameAuto || name !== '#{학생명}')))];
   const allowed = new Set(expected);
   for (const key of Object.keys(input ?? {})) {
     if (!allowed.has(key)) throw new HttpsError('invalid-argument', `템플릿에 없는 변수입니다: ${key}`);
@@ -121,12 +123,39 @@ export function validateAlimtalkVariables(template, input = {}) {
   return variables;
 }
 
+// 템플릿에 #{학생명}이 있을 때만 대상 이름을 주입 — 없는 템플릿에 미지의 변수를 보내지 않는다.
+function templateHasNameVariable(template) {
+  return (template.variables ?? []).some((variable) => variable.name === '#{학생명}');
+}
+
+function alimtalkVariablesWithName(templateVariables, hasNameVariable, name) {
+  return hasNameVariable
+    ? { ...templateVariables, '#{학생명}': String(name ?? '') }
+    : { ...templateVariables };
+}
+
+export function buildAlimtalkQueueDoc({ phone, templateId, variables, fallbackText, scheduledDate }) {
+  return {
+    kind: 'bulk_alimtalk',
+    status: 'pending',
+    recipient_phone: phone,
+    template_code: templateId,
+    template_variables: variables,
+    fallback_text: fallbackText,
+    scheduled_date: scheduledDate ?? null,
+    attempt_count: 0,
+    next_attempt_at: null,
+  };
+}
+
 export function buildBulkAlimtalkRecipients(entries, opts) {
   const fields = Array.isArray(opts.recipientFields) && opts.recipientFields.length > 0
     ? opts.recipientFields
     : null;
+  const hasNameVariable = templateHasNameVariable(opts.template);
   const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, deduped: 0 };
   const docs = [];
+  const seenPhones = new Set();
 
   for (const { id, student } of entries) {
     const targets = fields
@@ -137,21 +166,26 @@ export function buildBulkAlimtalkRecipients(entries, opts) {
       stats.skipped_no_phone += 1;
       continue;
     }
-    const variables = { ...opts.templateVariables, '#{학생명}': String(student.name ?? '') };
+    const variables = alimtalkVariablesWithName(opts.templateVariables, hasNameVariable, student.name);
+    const fallbackText = alimtalkFallbackText(opts.template, variables);
+    // 이름 변수가 없으면 전원 동일 내용 — SMS(buildBulkRecipients)와 같은 기준으로 번호 중복을 1건만 남긴다.
     for (const target of targets) {
+      if (!hasNameVariable && seenPhones.has(target.phone)) {
+        stats.deduped += 1;
+        continue;
+      }
+      if (!hasNameVariable) seenPhones.add(target.phone);
       docs.push({
-        kind: 'bulk_alimtalk',
-        status: 'pending',
+        ...buildAlimtalkQueueDoc({
+          phone: target.phone,
+          templateId: opts.template.templateId,
+          variables,
+          fallbackText,
+          scheduledDate: opts.scheduledDate,
+        }),
         student_id: id,
         recipient_role: target.field,
-        recipient_phone: target.phone,
         campaign_id: opts.campaignId,
-        template_code: opts.template.templateId,
-        template_variables: variables,
-        fallback_text: alimtalkFallbackText(opts.template, variables),
-        scheduled_date: opts.scheduledDate ?? null,
-        attempt_count: 0,
-        next_attempt_at: null,
       });
       stats.queued += 1;
     }
@@ -159,13 +193,10 @@ export function buildBulkAlimtalkRecipients(entries, opts) {
   return { docs, stats };
 }
 
-export function buildStaffRecipients(entries, opts) {
-  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_status: 0, deduped: 0 };
-  const docs = [];
+// 재직 상태·유효 번호 게이트를 통과한 교직원 대상. dedupeByPhone이면 동일 번호를 1건만 남긴다.
+function collectStaffTargets(entries, { dateKst, dedupeByPhone }, stats) {
+  const targets = [];
   const seenPhones = new Set();
-  const dedupeByPhone = !opts.content.includes('%이름');
-  const dateKst = opts.dateKst ?? todayKST();
-
   for (const { id, staff } of entries) {
     if (!STAFF_STATUSES.has(effectiveStaffStatus(staff, dateKst))) {
       stats.skipped_status += 1;
@@ -181,21 +212,57 @@ export function buildStaffRecipients(entries, opts) {
       continue;
     }
     seenPhones.add(phone);
-    docs.push({
-      ...buildSmsQueueDoc({
+    targets.push({ id, staff, phone });
+  }
+  return targets;
+}
+
+export function buildStaffAlimtalkRecipients(entries, opts) {
+  const hasNameVariable = templateHasNameVariable(opts.template);
+  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_status: 0, deduped: 0 };
+  const targets = collectStaffTargets(entries, {
+    dateKst: opts.dateKst ?? todayKST(),
+    dedupeByPhone: !hasNameVariable,
+  }, stats);
+  const docs = targets.map(({ id, staff, phone }) => {
+    const variables = alimtalkVariablesWithName(opts.templateVariables, hasNameVariable, staff.name);
+    return {
+      ...buildAlimtalkQueueDoc({
         phone,
-        campaignId: opts.campaignId,
-        content: opts.content.replaceAll('%이름', staff.name ?? ''),
-        recipientRole: 'staff',
+        templateId: opts.template.templateId,
+        variables,
+        fallbackText: alimtalkFallbackText(opts.template, variables),
         scheduledDate: opts.scheduledDate,
-        imageId: opts.imageId,
       }),
       staff_id: id,
       recipient_type: 'staff',
-    });
-    stats.queued += 1;
-  }
+      recipient_role: 'staff',
+      campaign_id: opts.campaignId,
+    };
+  });
+  stats.queued = docs.length;
+  return { docs, stats };
+}
 
+export function buildStaffRecipients(entries, opts) {
+  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_status: 0, deduped: 0 };
+  const targets = collectStaffTargets(entries, {
+    dateKst: opts.dateKst ?? todayKST(),
+    dedupeByPhone: !opts.content.includes('%이름'),
+  }, stats);
+  const docs = targets.map(({ id, staff, phone }) => ({
+    ...buildSmsQueueDoc({
+      phone,
+      campaignId: opts.campaignId,
+      content: opts.content.replaceAll('%이름', staff.name ?? ''),
+      recipientRole: 'staff',
+      scheduledDate: opts.scheduledDate,
+      imageId: opts.imageId,
+    }),
+    staff_id: id,
+    recipient_type: 'staff',
+  }));
+  stats.queued = docs.length;
   return { docs, stats };
 }
 
@@ -238,19 +305,20 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   const targetIds = audience === 'staff' ? staffIds : studentIds;
   if (!targetIds.length) throw new HttpsError('invalid-argument', '발송 대상이 없습니다.');
   if (targetIds.length > MAX_RECIPIENTS) throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}명까지 발송할 수 있습니다.`);
+  // 권한 게이트는 외부 API(솔라피 템플릿 조회) 호출보다 먼저.
+  if (audience === 'staff') await assertManagerOrAbove(request.auth, db);
   let alimtalkTemplate = null;
   let alimtalkVariables = null;
   let alimtalkRecipientFields = null;
   if (channel === 'alimtalk') {
-    if (audience !== 'student') throw new HttpsError('invalid-argument', '알림톡 단체발송은 학생 학부모만 지원합니다.');
     if (data.mmsImage) throw new HttpsError('invalid-argument', '알림톡에는 MMS 이미지를 첨부할 수 없습니다.');
     const templateId = String(data.templateId ?? '').trim();
     if (!templateId) throw new HttpsError('invalid-argument', '알림톡 템플릿을 선택하세요.');
     alimtalkRecipientFields = Array.isArray(data.recipientFields) && data.recipientFields.length
       ? [...new Set(data.recipientFields)]
       : [data.recipientField || 'parent_1'];
-    if (alimtalkRecipientFields.some((field) => field !== 'parent_1' && field !== 'parent_2')) {
-      throw new HttpsError('invalid-argument', '알림톡 단체발송은 학부모 연락처만 지원합니다.');
+    if (alimtalkRecipientFields.some((field) => !ALIMTALK_RECIPIENT_FIELDS.has(field))) {
+      throw new HttpsError('invalid-argument', '알림톡 받는이는 학생·학부모 연락처만 지원합니다.');
     }
     alimtalkTemplate = await (deps.getAlimtalkTemplate ?? getApprovedAlimtalkTemplate)(templateId);
     alimtalkVariables = validateAlimtalkVariables(alimtalkTemplate, data.templateVariables);
@@ -259,11 +327,9 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   }
   if (!title) throw new HttpsError('invalid-argument', '제목이 필요합니다.');
   if (!content) throw new HttpsError('invalid-argument', '본문이 필요합니다.');
-  if (audience === 'staff') {
-    await assertManagerOrAbove(request.auth, db);
-    if (['%학교', '%학년', '%반'].some((token) => content.includes(token))) {
-      throw new HttpsError('invalid-argument', '교직원 문자 변수는 %이름만 사용할 수 있습니다.');
-    }
+  if (audience === 'staff' && channel === 'sms'
+    && ['%학교', '%학년', '%반'].some((token) => content.includes(token))) {
+    throw new HttpsError('invalid-argument', '교직원 문자 변수는 %이름만 사용할 수 있습니다.');
   }
 
   // 정보성은 야간 보정 없음. 지정 시 형식만 검증(YYYY-MM-DD HH:mm:ss, KST).
@@ -289,7 +355,7 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   const entries = snaps.filter((s) => s.exists).map((s) => ({ id: s.id, [audience]: s.data() }));
 
   const buildRecipients = channel === 'alimtalk'
-    ? buildBulkAlimtalkRecipients
+    ? (audience === 'staff' ? buildStaffAlimtalkRecipients : buildBulkAlimtalkRecipients)
     : (audience === 'staff' ? buildStaffRecipients : buildBulkRecipients);
   const { docs, stats } = buildRecipients(entries, {
     campaignId: campaignRef.id,
@@ -314,19 +380,21 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   // 미발송되므로, lease 만료 시에만 트랜잭션 CAS(claimCampaignResume)로 잔여 재개 —
   // promoCampaignHandler와 동일 패턴. 지문에 recipientFields 포함 — 대상/수신필드가 바뀌면
   // phone dedup 귀속이 바뀌어 공유번호 중복 발송이 가능하므로 재개 거부.
-  const fingerprint = recipientFingerprint(targetIds, audience === 'staff'
-    ? { audience: 'staff' }
-    : {
-      recipientField: channel === 'alimtalk' ? alimtalkRecipientFields[0] : (data.recipientField ?? null),
-      recipientFields: channel === 'alimtalk'
-        ? alimtalkRecipientFields
-        : (Array.isArray(data.recipientFields) ? data.recipientFields : null),
-      ...(channel === 'alimtalk' ? {
-        channel,
-        templateId: alimtalkTemplate.templateId,
-        templateVariables: alimtalkVariables,
-      } : {}),
-    });
+  const fingerprint = recipientFingerprint(targetIds, {
+    ...(audience === 'staff'
+      ? { audience: 'staff' }
+      : {
+        recipientField: channel === 'alimtalk' ? alimtalkRecipientFields[0] : (data.recipientField ?? null),
+        recipientFields: channel === 'alimtalk'
+          ? alimtalkRecipientFields
+          : (Array.isArray(data.recipientFields) ? data.recipientFields : null),
+      }),
+    ...(channel === 'alimtalk' ? {
+      channel,
+      templateId: alimtalkTemplate.templateId,
+      templateVariables: alimtalkVariables,
+    } : {}),
+  });
   const now = deps.now ?? new Date();
   let resuming = false;
   try {

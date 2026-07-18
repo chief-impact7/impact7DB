@@ -135,6 +135,12 @@ describe('handleSendDirectMessage', () => {
     expect(doc.scheduled_date).toBe('2026-07-01T09:00:00+09:00');
   });
 
+  it('rejects a malformed info scheduledAt instead of silently sending now', async () => {
+    await expect(handleSendDirectMessage({
+      auth, data: { recipients: '01011112222', text: '안내', scheduledAt: '2026/07/20 3pm' },
+    }, { db })).rejects.toThrow('예약시각 형식');
+  });
+
   it('sets scheduled_date to null when scheduledAt is omitted', async () => {
     await handleSendDirectMessage({ auth, data: { recipients: '01011112222', text: '안내' } }, { db });
     const doc = Object.values(db._docs).find((d) => d.kind === 'direct');
@@ -175,6 +181,54 @@ describe('handleSendDirectMessage', () => {
       auth,
       data: { recipients: '01011112222', text: '안내', messageKind: 'unknown' },
     }, { db })).rejects.toMatchObject({ code: 'invalid-argument' });
+  });
+
+  it('알림톡 채널이면 승인 템플릿 검증 후 bulk_alimtalk 큐를 등록한다', async () => {
+    const template = {
+      templateId: 'TPL_NOTICE', name: '공지', status: 'APPROVED',
+      content: '#{학생명}님, 상담은 #{상담일시}입니다.',
+      variables: [{ name: '#{학생명}' }, { name: '#{상담일시}' }], buttons: [],
+    };
+    const getAlimtalkTemplate = vi.fn().mockResolvedValue(template);
+    const res = await handleSendDirectMessage({
+      auth,
+      data: {
+        channel: 'alimtalk', templateId: 'TPL_NOTICE',
+        recipients: '01011112222\n01033334444',
+        templateVariables: { '#{학생명}': '학부모', '#{상담일시}': '7월 20일 15시' },
+        requestId: 'direct-alimtalk-1',
+      },
+    }, { db, getAlimtalkTemplate });
+    expect(getAlimtalkTemplate).toHaveBeenCalledWith('TPL_NOTICE');
+    expect(res.queued).toBe(2);
+    const queue = Object.values(db._docs).filter((doc) => doc.kind === 'bulk_alimtalk');
+    expect(queue).toHaveLength(2);
+    expect(queue[0]).toMatchObject({
+      status: 'pending', template_code: 'TPL_NOTICE',
+      template_variables: { '#{학생명}': '학부모', '#{상담일시}': '7월 20일 15시' },
+      fallback_text: '학부모님, 상담은 7월 20일 15시입니다.',
+      created_by: 'staff@impact7.kr',
+    });
+  });
+
+  it('알림톡 채널은 #{학생명} 값 누락·홍보성·MMS를 거부한다', async () => {
+    const template = {
+      templateId: 'TPL_NOTICE', name: '공지', status: 'APPROVED',
+      content: '#{학생명}님 안내', variables: [{ name: '#{학생명}' }], buttons: [],
+    };
+    const getAlimtalkTemplate = vi.fn().mockResolvedValue(template);
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { channel: 'alimtalk', templateId: 'TPL_NOTICE', recipients: '01011112222', templateVariables: {} },
+    }, { db, getAlimtalkTemplate })).rejects.toThrow('템플릿 변수 값을 입력하세요: #{학생명}');
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { channel: 'alimtalk', templateId: 'TPL_NOTICE', recipients: '01011112222', messageKind: 'promo' },
+    }, { db })).rejects.toThrow('정보성 발송만');
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { channel: 'alimtalk', templateId: 'TPL_NOTICE', recipients: '01011112222', mmsImage: { name: 'a.jpg', dataBase64: JPEG_BASE64 } },
+    }, { db })).rejects.toThrow('MMS 이미지를 첨부할 수 없습니다');
   });
 });
 
