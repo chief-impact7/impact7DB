@@ -97,7 +97,7 @@ jobs:
         run: |
           (cd functions && npm ci)
           export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
-          firebase deploy --only functions:leave-request --project impact7db --non-interactive
+          firebase deploy --only functions:leave-request --project impact7db --non-interactive --force
 
       # v2 함수 재배포가 일부 서비스의 public invoker(allUsers)를 무작위로 리셋해, onCall이
       # "Empty Authorization header"로 거부되며 클라엔 functions/internal이 뜨는 이슈 대응.
