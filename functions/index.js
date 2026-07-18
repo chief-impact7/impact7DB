@@ -176,12 +176,12 @@ export const onClassSettingsNaesinPeriodChanged = onDocumentUpdated(
 // 재직은 인사 날짜 파생(@impact7/shared/staff-status)이므로 status뿐 아니라 날짜 필드 변화도 본다.
 // 관련 필드 변화가 없으면 스킵. 스윕은 멱등이라 retry 안전.
 const eligibilityFieldsOf = (s) => JSON.stringify([
-  s?.status, s?.department, s?.englishName, s?.personnelDates,
+  s?.status, s?.department, s?.name, s?.englishName, s?.email, s?.personnelDates,
   s?.joinDate, s?.plannedJoinDate, s?.firstWorkDate, s?.returnDate,
   s?.leaveDate, s?.resignationDate, s?.plannedResignationDate, s?.lastWorkDate,
 ]);
 export const onStaffTeacherEligibility = onDocumentWritten(
-  { document: 'staff/{staffId}', retry: false },
+  { document: 'staff/{staffId}', retry: true },
   async (event) => {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -196,7 +196,7 @@ export const onStaffTeacherEligibility = onDocumentWritten(
 );
 
 // 파생 재직은 시간 경과만으로도 바뀐다(예: 미리 등록한 퇴사일 도래) — staff 쓰기 없이도
-// 자격이 갱신되도록 매일 1회 스윕한다. 멱등이라 트리거 스윕과 겹쳐도 안전.
+// 담임 자격과 보드 안전 명부가 갱신되도록 매일 1회 스윕한다. 멱등이라 트리거 스윕과 겹쳐도 안전.
 export const onScheduleTeacherEligibility = onSchedule(
   {
     schedule: '10 6 * * *',

@@ -448,6 +448,12 @@ service cloud.firestore {
         && resource.data.get('created_by', '') == request.auth.token.email;
     }
 
+    // [Board] HR 직원현황의 안전 명부 미러 — 이름·이메일·부서·재직 여부만 서버가 동기화한다.
+    match /staff_directory/{staffId} {
+      allow read: if isAuthorized();
+      allow write: if false;
+    }
+
     // [Board] 주간 AI 브리핑 — 서버(Functions callable)만 생성, 클라이언트는 읽기만.
     match /board_briefings/{weekKey} {
       allow read: if isAuthorized();
