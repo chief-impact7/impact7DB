@@ -34,8 +34,10 @@ const PII_FIELDS = ['recipient_phone', 'fallback_text', 'template_variables', 'i
 async function defaultSender(payload) {
   const mod = await import('./solapiProvider.js');
   const config = mod.getSolapiConfig();
-  if (SMS_KINDS.has(payload.kind)) return mod.sendSms(payload, config);
-  return mod.sendKakaoAlimtalk(payload, config);
+  // 라우팅은 payload 형태로 판정 — 알림톡 kind라도 템플릿 미설정 가드(buildSendPayload)를
+  // 거치면 templateCode 없는 문자 payload가 온다.
+  if (payload.templateCode) return mod.sendKakaoAlimtalk(payload, config);
+  return mod.sendSms(payload, config);
 }
 
 // 발송결과 사후 조회기(폴링). 접수≠도달이므로 groupId로 최종 발송결과를 조회한다.
@@ -79,7 +81,17 @@ function smsTextFor(data) {
   return data.sms_suffix ? `${base}\n\n${data.sms_suffix}` : base;
 }
 
+// 알림톡 템플릿 코드 미설정 판정 — env 미주입이면 enqueue 경로들이 `<ENVKEY>_PENDING`을 박는다.
+// 이 코드로 접수하면 솔라피가 1042로 거부하고, 접수 거부에는 내장 SMS 대체도 시작되지 않는다
+// (2026-07-06 직원 출퇴근 101건·07-16 재등원 3건 실사고).
+function templateCodeUnset(code) {
+  const t = String(code ?? '').trim();
+  return !t || t.endsWith('_PENDING');
+}
+
 // 큐 doc → provider payload. kind별로 provider 입력이 다르다(알림톡=템플릿, 자유본문=문자).
+// 알림톡 kind라도 템플릿 미설정이면 시도 없이 fallback_text 문자로 발송한다(발송 유실 방지).
+// env 주입 후 재배포하면 같은 경로가 자동으로 알림톡으로 돌아온다.
 function buildSendPayload(data, now = new Date()) {
   if (SMS_KINDS.has(data.kind)) {
     return {
@@ -90,6 +102,14 @@ function buildSendPayload(data, now = new Date()) {
       ...((data.kind === 'direct' || data.kind === 'promo_sms') && data.image_id
         ? { imageId: data.image_id }
         : {}),
+    };
+  }
+  if (templateCodeUnset(data.template_code)) {
+    return {
+      to: data.recipient_phone,
+      text: data.fallback_text ?? '',
+      scheduledDate: scheduledDateForPayload(data, now),
+      kind: data.kind,
     };
   }
   return {
@@ -227,6 +247,11 @@ async function markPermanent(db, ref, data, nextAttempt, fields) {
   });
 }
 
+// provider가 던진 예외를 일시적 미상 오류(재시도 취급) result로 감싼다.
+function transientError(err) {
+  return { ok: false, retryable: true, statusCode: null, channel: null, errorMessage: String(err?.message || err) };
+}
+
 // 클레임된 큐 doc 1건 발송 시도 + 결과 반영.
 async function dispatch(db, ref, data, sender, notifyResultCallback, now = new Date()) {
   // kind 경계(T8 항목3): 승인된 알림톡과 문자 kind만 이 워커로 발송한다.
@@ -257,17 +282,36 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
   await ref.update({ sent_attempt_at: FieldValue.serverTimestamp() });
 
   // provider는 예외를 던지지 않지만, 방어적 catch 경로는 일시적 미상 오류로 재시도 취급한다.
+  const payload = buildSendPayload(data, now);
   let result;
   try {
-    result = await sender(buildSendPayload(data, now));
+    result = await sender(payload);
   } catch (err) {
-    result = { ok: false, retryable: true, statusCode: null, channel: null, errorMessage: String(err?.message || err) };
+    result = transientError(err);
+  }
+
+  // 알림톡 접수 거부(1042 템플릿 오류, 변수 불일치 등)에는 솔라피 내장 SMS 대체가 시작되지
+  // 않는다(대체는 접수 성공 후 카카오 단계 실패에만 동작). 접수 거부 = 발송된 것이 없으므로
+  // 중복 위험 없이 같은 시도 안에서 fallback_text 문자로 1회 대체 발송한다.
+  if (!result?.ok && !result?.retryable && payload.templateCode && data.fallback_text) {
+    await ref.update({ alimtalk_error_code: result?.statusCode ?? null }); // 원 거부 코드 흔적(감사·통계용)
+    try {
+      result = await sender({
+        to: data.recipient_phone,
+        text: data.fallback_text,
+        scheduledDate: scheduledDateForPayload(data, now),
+        kind: data.kind,
+      });
+    } catch (err) {
+      result = transientError(err);
+    }
   }
 
   if (result?.ok) {
-    if (SMS_KINDS.has(data.kind) && result.groupId) {
+    if ((result.channel === 'sms' || result.channel === 'mms') && result.groupId) {
       // SMS/LMS 접수 성공(2000)도 통신사 도달을 보장하지 않는다(예: 3058 "전송경로 없음"은
       // 비동기 발송결과에만 나타남). 종결하지 않고 발송결과 폴링이 도달/실패를 확정한다.
+      // kind가 아니라 접수 채널로 판정 — 템플릿 미설정 가드로 문자 발송된 알림톡 kind도 포함된다.
       // groupId가 없으면 사후조회가 불가능(매번 missing_group_id로 읽혀 중복 재발송 유발)하므로
       // 폴링에 넣지 않고 아래에서 기존처럼 즉시 종결한다.
       const scheduledAt = scheduledAtFor(data);

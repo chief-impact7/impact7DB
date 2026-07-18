@@ -36,6 +36,9 @@ function makeFirestore({ queue = [], logs = [], role = 'owner' } = {}) {
       if (name === 'HR_users') {
         return { doc: () => ({ get: async () => ({ exists: !!role, data: () => ({ role }) }) }) };
       }
+      if (name === 'template_audit') {
+        return { doc: () => ({ get: async () => ({ exists: false, data: () => undefined }) }) };
+      }
       return makeChain(name === 'message_queue' ? queue : logs, []);
     },
   };

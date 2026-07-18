@@ -227,6 +227,39 @@ describe('processQueueDoc', () => {
     expect(db._logs[0]).toMatchObject({ status: 'failed', status_code: 'invalid_recipient', error_message: '잘못된 번호' });
   });
 
+  it('알림톡 템플릿 코드 미설정(_PENDING) → 알림톡 시도 없이 fallback 문자로 발송 + 발송결과 대기', async () => {
+    const db = makeDb({ q1: baseQueueDoc({ template_code: 'REARRIVAL_TEMPLATE_CODE_PENDING' }) });
+    const sender = vi.fn().mockResolvedValue({ ok: true, channel: 'sms', messageId: 'm1', groupId: 'grp1', statusCode: '2000' });
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender });
+    expect(sender).toHaveBeenCalledTimes(1);
+    const payload = sender.mock.calls[0][0];
+    expect(payload.templateCode).toBeUndefined();
+    expect(payload.text).toBe('출결 안내');
+    expect(db._queue.get('q1').status).toBe('awaiting_delivery_result');
+  });
+
+  it('알림톡 접수 거부(1042 등) + fallback_text 있음 → 같은 시도 안에서 문자로 대체 발송', async () => {
+    const db = makeDb({ q1: baseQueueDoc() });
+    const sender = vi.fn()
+      .mockResolvedValueOnce({ ok: false, retryable: false, statusCode: '1042', channel: 'kakao', errorMessage: '유효한 템플릿 아이디가 아닙니다.' })
+      .mockResolvedValueOnce({ ok: true, channel: 'sms', messageId: 'm2', statusCode: '2000' });
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender });
+    expect(sender).toHaveBeenCalledTimes(2);
+    expect(sender.mock.calls[1][0]).toMatchObject({ text: '출결 안내' });
+    const doc = db._queue.get('q1');
+    expect(doc.status).toBe('sent');
+    expect(doc.alimtalk_error_code).toBe('1042');
+    expect(db._logs[0]).toMatchObject({ status: 'sent', channel: 'sms' });
+  });
+
+  it('알림톡 접수 거부인데 fallback_text 없음 → 기존대로 failed_permanent', async () => {
+    const db = makeDb({ q1: baseQueueDoc({ fallback_text: null }) });
+    const sender = vi.fn().mockResolvedValue({ ok: false, retryable: false, statusCode: '1042', channel: 'kakao' });
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender });
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(db._queue.get('q1').status).toBe('failed_permanent');
+  });
+
   it('kind 화이트리스트: 미허용 kind는 발송 없이 failed_permanent(kind_not_allowed)', async () => {
     const db = makeDb({ q1: baseQueueDoc({ kind: 'unknown_kind' }) });
     const sender = vi.fn();

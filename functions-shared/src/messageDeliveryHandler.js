@@ -100,6 +100,8 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
   const logsPromise = logsQuery.limit(logScanLimit).get();
   // 잔액 고갈은 전 채널 발송 실패로 이어짐 — 조회 실패는 통계에 영향 주지 않게 null 처리.
   const balancePromise = (deps.fetchBalance ?? defaultFetchBalance)().catch(() => null);
+  // 템플릿 정합성 스윕(templateAuditSweep, 일 1회) 최신 결과 — 이상이 있으면 카드가 경고 표시.
+  const templateAuditPromise = db.collection('template_audit').doc('latest').get().catch(() => null);
 
   const [queueCountEntries, archivedAgg, unconfirmedAgg, failuresSnap, queuePreviewSnap, logSnap] = await Promise.all([
     Promise.all(queueCountPromises),
@@ -152,8 +154,17 @@ export async function handleGetMessageDeliveryStatus(request, deps = {}) {
     }
   });
 
+  const templateAuditSnap = await templateAuditPromise;
+  const templateAudit = templateAuditSnap?.exists
+    ? {
+      anomalies: templateAuditSnap.data().anomalies ?? [],
+      checkedAt: templateAuditSnap.data().checked_at?.toMillis?.() ?? null,
+    }
+    : null;
+
   return {
     solapiBalance: await balancePromise,
+    templateAudit,
     failedCodeCounts,
     queueCounts,
     // failed_permanent 중 결과 미수신(delivery_result_timeout) 건수 — 클라가 '최종 실패'와 분리 표시.

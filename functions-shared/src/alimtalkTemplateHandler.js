@@ -50,13 +50,21 @@ async function defaultContext() {
 }
 
 export async function listApprovedAlimtalkTemplates(service, { channelId } = {}) {
+  const templates = await fetchAlimtalkTemplates(service, { channelId, status: 'APPROVED', isHidden: false });
+  return templates
+    .filter((template) => template.status === 'APPROVED' && !template.isHidden)
+    .map(alimtalkTemplateView);
+}
+
+// 솔라피 템플릿 원본 목록 페이저 — filters(status·isHidden 등) 미지정 시 전 상태를 반환한다.
+// 정합성 스윕(templateAuditSweep)은 비승인 상태 감지가 목적이라 필터 없이 쓴다.
+export async function fetchAlimtalkTemplates(service, { channelId, ...filters } = {}) {
   const templates = [];
   const seenKeys = new Set();
   let startKey;
   do {
     const response = await service.getKakaoAlimtalkTemplates({
-      status: 'APPROVED',
-      isHidden: false,
+      ...filters,
       ...(channelId ? { channelId } : {}),
       limit: 100,
       ...(startKey ? { startKey } : {}),
@@ -67,9 +75,7 @@ export async function listApprovedAlimtalkTemplates(service, { channelId } = {})
     seenKeys.add(nextKey);
     startKey = nextKey;
   } while (startKey);
-  return templates
-    .filter((template) => template.status === 'APPROVED' && !template.isHidden && (!channelId || template.channelId === channelId))
-    .map(alimtalkTemplateView);
+  return channelId ? templates.filter((template) => template.channelId === channelId) : templates;
 }
 
 export async function getApprovedAlimtalkTemplate(templateId, deps = {}) {

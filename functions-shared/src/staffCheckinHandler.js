@@ -15,7 +15,7 @@ function textOf(v) { return String(v ?? '').trim(); }
 const REENTRY_WINDOW_MS = 20_000;
 const ACTIVE_STATUS = 'active';
 
-const STAFF_NOTICE_TEMPLATES = {
+export const STAFF_NOTICE_TEMPLATES = {
   [STAFF_ACTIONS.CLOCK_IN]: {
     envKey: 'STAFF_CLOCK_IN_TEMPLATE_CODE',
     fallback: `${BRAND_PREFIX} 출근 안내\n#{성함} 선생님, 출근 처리되었습니다. (#{시각})`,

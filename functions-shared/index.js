@@ -30,6 +30,7 @@ import { handleRetryMessageDelivery, handleManageMessageFailure } from './src/me
 import { handleGetMessageDeliveryStatus } from './src/messageDeliveryHandler.js';
 import { handleGetRecipientMessageHistory } from './src/messageHistoryHandler.js';
 import { processQueueDoc, runRetrySweep, runDeliveryResultSweep, purgeExpiredPii } from './src/queueWorker.js';
+import { runTemplateAuditSweep } from './src/templateAuditSweep.js';
 import { runAbsenceNoticeSweep, handleSendAbsenceNotice, syncAbsenceNoticeDeliveryStatus } from './src/absenceNoticeSweep.js';
 import { handleGetHrPublicToken } from './src/hrPublicTokenHandler.js';
 import { handleSubmitEmployeeContractSignature } from './src/employeeContractSignatureHandler.js';
@@ -282,6 +283,13 @@ export const retrySweeper = onSchedule(
 export const deliveryResultSweeper = onSchedule(
   { schedule: 'every 1 minutes', timeZone: 'Asia/Seoul', secrets: SOLAPI_SECRETS },
   () => runDeliveryResultSweep(),
+);
+
+// 알림톡 템플릿 정합성 스윕(매일 KST 09:30) — 솔라피 템플릿 목록과 env 템플릿 코드를 대조해
+// 미주입·비승인·수정·미매핑을 template_audit/latest에 기록(발송 현황 카드가 경고 표시).
+export const templateAuditSweeper = onSchedule(
+  { schedule: '30 9 * * *', timeZone: 'Asia/Seoul', secrets: SOLAPI_SECRETS },
+  () => runTemplateAuditSweep(),
 );
 
 // 미등원(결석) 자동 안내 — 15분 주기. 등원예정+유예(40분) 경과했는데 미체크인(day_state=미등원)인
