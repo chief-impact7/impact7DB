@@ -42,6 +42,14 @@ describe('HR 공개 read/get 차단 + write 경로 유지 (C-02/C-03/N-02 = G03)
     await assertFails(getDoc(doc(unauthedCtx(env), 'staff/s1')));
   });
 
+  test('보드 안전 명부는 조직 계정만 읽고 클라이언트 쓰기는 거부한다', async () => {
+    await seed('staff_directory/s1', { display_name: '김교수', email: 'kim@impact7.kr', department: '교수', assignable: true });
+    await assertFails(getDoc(doc(unauthedCtx(env), 'staff_directory/s1')));
+    const db = authedCtx(env, 'staff-directory-reader');
+    await assertSucceeds(getDoc(doc(db, 'staff_directory/s1')));
+    await assertFails(updateDoc(doc(db, 'staff_directory/s1'), { assignable: false }));
+  });
+
   test('staff contract 비인증 get 거부', async () => {
     await seed('staff/s1/contracts/c1', { status: 'ready' });
     await assertFails(getDoc(doc(unauthedCtx(env), 'staff/s1/contracts/c1')));
