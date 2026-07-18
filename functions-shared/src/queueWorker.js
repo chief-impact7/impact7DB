@@ -20,8 +20,8 @@ const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000]; // 1m, 5m, 15m
 const LEASE_MS = 10 * 60_000; // processing 리스(10분) — 크래시로 고착된 doc을 sweeper가 회수
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 종결 doc 평문 PII 보존기간(7일) — 이후 purge(T8 항목1)
 const PURGE_LIMIT = 500; // purge 1회 처리 상한(폭주 방지)
-// attendance/parent_notice는 알림톡, 자유 본문(direct/promo_sms 및 구형 promo/report/parent_bms)은 문자로 발송.
-const KAKAO_KINDS = new Set(['attendance', 'parent_notice']);
+// attendance/parent_notice/bulk_alimtalk은 알림톡, 자유 본문은 문자로 발송.
+const KAKAO_KINDS = new Set(['attendance', 'parent_notice', 'bulk_alimtalk']);
 const SMS_KINDS = new Set(['direct', 'promo_sms', 'promo', 'report', 'parent_bms']);
 const ALLOWED_KINDS = new Set([...KAKAO_KINDS, ...SMS_KINDS]);
 // 종결 후 purge 대상 평문·외부 파일 참조 필드.
@@ -82,11 +82,10 @@ function smsTextFor(data) {
 // 큐 doc → provider payload. kind별로 provider 입력이 다르다(알림톡=템플릿, 자유본문=문자).
 function buildSendPayload(data, now = new Date()) {
   if (SMS_KINDS.has(data.kind)) {
-    const scheduledAt = scheduledAtFor(data);
     return {
       to: data.recipient_phone,
       text: smsTextFor(data),
-      scheduledDate: scheduledAt && scheduledAt > now ? data.scheduled_date : undefined,
+      scheduledDate: scheduledDateForPayload(data, now),
       kind: data.kind,
       ...((data.kind === 'direct' || data.kind === 'promo_sms') && data.image_id
         ? { imageId: data.image_id }
@@ -98,6 +97,7 @@ function buildSendPayload(data, now = new Date()) {
     templateCode: data.template_code,
     templateVariables: data.template_variables ?? {},
     fallbackText: data.fallback_text ?? '',
+    scheduledDate: scheduledDateForPayload(data, now),
     kind: data.kind,
   };
 }
@@ -107,8 +107,12 @@ function smsChannelFor(data) {
 }
 
 function scheduledAtFor(data) {
-  if (!SMS_KINDS.has(data?.kind) || !data?.scheduled_date) return null;
-  return parseKstToDate(data.scheduled_date);
+  return data?.scheduled_date ? parseKstToDate(data.scheduled_date) : null;
+}
+
+function scheduledDateForPayload(data, now = new Date()) {
+  const scheduledAt = scheduledAtFor(data);
+  return scheduledAt && scheduledAt > now ? data.scheduled_date : undefined;
 }
 
 async function resolveQueuedMessageVars(db, ref, data) {

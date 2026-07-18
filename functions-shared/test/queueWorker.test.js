@@ -724,6 +724,14 @@ describe('__testing helpers', () => {
     });
   });
 
+  it('buildSendPayload: 예약 알림톡에 scheduledDate를 전달한다', () => {
+    const payload = __testing.buildSendPayload(baseQueueDoc({
+      kind: 'bulk_alimtalk',
+      scheduled_date: '2026-07-20 14:00:00',
+    }), new Date('2026-07-20T04:00:00Z'));
+    expect(payload).toMatchObject({ kind: 'bulk_alimtalk', scheduledDate: '2026-07-20 14:00:00' });
+  });
+
   it('buildSendPayload: direct MMS 큐의 image_id를 imageId로 매핑한다', () => {
     expect(__testing.buildSendPayload({
       kind: 'direct',

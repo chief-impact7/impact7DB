@@ -11,6 +11,8 @@ import { resolveMmsImageId } from './mmsImage.js';
 import { effectiveStaffStatus } from '@impact7/shared/staff-status';
 import { digitsOf, isValidPhoneKR } from '@impact7/shared/phone';
 import { todayKST } from '@impact7/shared/datetime';
+import { applyTemplate } from './templates.js';
+import { getApprovedAlimtalkTemplate } from './alimtalkTemplateHandler.js';
 
 const MAX_RECIPIENTS = 10000;
 const BATCH_LIMIT = 400;
@@ -87,6 +89,76 @@ export function buildBulkRecipients(entries, opts) {
   return { docs, stats };
 }
 
+function alimtalkFallbackText(template, variables) {
+  const lines = [applyTemplate(template.content, variables)];
+  const webLinks = [
+    ...(template.buttons ?? []).map((button) => ({ name: button.buttonName, type: button.buttonType, url: button.linkMo })),
+    ...(template.quickReplies ?? []).map((reply) => ({ name: reply.name, type: reply.linkType, url: reply.linkMo })),
+  ];
+  for (const link of webLinks) {
+    if (link.type === 'WL' && link.url && !/#\{[^}]+\}/.test(link.url)) {
+      lines.push(`${link.name}: ${link.url}`);
+    }
+  }
+  return lines.filter(Boolean).join('\n');
+}
+
+export function validateAlimtalkVariables(template, input = {}) {
+  const expected = [...new Set((template.variables ?? [])
+    .map((variable) => variable.name)
+    .filter((name) => name && name !== '#{학생명}'))];
+  const allowed = new Set(expected);
+  for (const key of Object.keys(input ?? {})) {
+    if (!allowed.has(key)) throw new HttpsError('invalid-argument', `템플릿에 없는 변수입니다: ${key}`);
+  }
+  const variables = {};
+  for (const key of expected) {
+    const value = String(input?.[key] ?? '').trim();
+    if (!value) throw new HttpsError('invalid-argument', `템플릿 변수 값을 입력하세요: ${key}`);
+    if (value.length > 1000) throw new HttpsError('invalid-argument', `템플릿 변수 값이 너무 깁니다: ${key}`);
+    variables[key] = value;
+  }
+  return variables;
+}
+
+export function buildBulkAlimtalkRecipients(entries, opts) {
+  const fields = Array.isArray(opts.recipientFields) && opts.recipientFields.length > 0
+    ? opts.recipientFields
+    : null;
+  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, deduped: 0 };
+  const docs = [];
+
+  for (const { id, student } of entries) {
+    const targets = fields
+      ? resolveRecipientTargets(student, fields)
+      : [resolveRecipientTarget(student, opts.recipientField)].filter(Boolean);
+    if (fields) stats.deduped += resolveRecipientPhones(student, fields).length - targets.length;
+    if (!targets.length) {
+      stats.skipped_no_phone += 1;
+      continue;
+    }
+    const variables = { ...opts.templateVariables, '#{학생명}': String(student.name ?? '') };
+    for (const target of targets) {
+      docs.push({
+        kind: 'bulk_alimtalk',
+        status: 'pending',
+        student_id: id,
+        recipient_role: target.field,
+        recipient_phone: target.phone,
+        campaign_id: opts.campaignId,
+        template_code: opts.template.templateId,
+        template_variables: variables,
+        fallback_text: alimtalkFallbackText(opts.template, variables),
+        scheduled_date: opts.scheduledDate ?? null,
+        attempt_count: 0,
+        next_attempt_at: null,
+      });
+      stats.queued += 1;
+    }
+  }
+  return { docs, stats };
+}
+
 export function buildStaffRecipients(entries, opts) {
   const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_status: 0, deduped: 0 };
   const docs = [];
@@ -155,17 +227,38 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   assertAuthorizedStaff(request.auth);
 
   const data = request.data ?? {};
-  const title = String(data.title ?? '').trim();
-  const content = String(data.content ?? '').trim();
+  const channel = String(data.channel ?? 'sms');
+  if (!['sms', 'alimtalk'].includes(channel)) throw new HttpsError('invalid-argument', '지원하지 않는 발송 채널입니다.');
+  let title = String(data.title ?? '').trim();
+  let content = String(data.content ?? '').trim();
   const studentIds = Array.isArray(data.studentIds) ? [...new Set(data.studentIds.filter(Boolean))] : [];
   const staffIds = Array.isArray(data.staffIds) ? [...new Set(data.staffIds.filter(Boolean))] : [];
-  if (!title) throw new HttpsError('invalid-argument', '제목이 필요합니다.');
-  if (!content) throw new HttpsError('invalid-argument', '본문이 필요합니다.');
   if (studentIds.length && staffIds.length) throw new HttpsError('invalid-argument', '학생과 교직원은 함께 발송할 수 없습니다.');
   const audience = staffIds.length ? 'staff' : 'student';
   const targetIds = audience === 'staff' ? staffIds : studentIds;
   if (!targetIds.length) throw new HttpsError('invalid-argument', '발송 대상이 없습니다.');
   if (targetIds.length > MAX_RECIPIENTS) throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}명까지 발송할 수 있습니다.`);
+  let alimtalkTemplate = null;
+  let alimtalkVariables = null;
+  let alimtalkRecipientFields = null;
+  if (channel === 'alimtalk') {
+    if (audience !== 'student') throw new HttpsError('invalid-argument', '알림톡 단체발송은 학생 학부모만 지원합니다.');
+    if (data.mmsImage) throw new HttpsError('invalid-argument', '알림톡에는 MMS 이미지를 첨부할 수 없습니다.');
+    const templateId = String(data.templateId ?? '').trim();
+    if (!templateId) throw new HttpsError('invalid-argument', '알림톡 템플릿을 선택하세요.');
+    alimtalkRecipientFields = Array.isArray(data.recipientFields) && data.recipientFields.length
+      ? [...new Set(data.recipientFields)]
+      : [data.recipientField || 'parent_1'];
+    if (alimtalkRecipientFields.some((field) => field !== 'parent_1' && field !== 'parent_2')) {
+      throw new HttpsError('invalid-argument', '알림톡 단체발송은 학부모 연락처만 지원합니다.');
+    }
+    alimtalkTemplate = await (deps.getAlimtalkTemplate ?? getApprovedAlimtalkTemplate)(templateId);
+    alimtalkVariables = validateAlimtalkVariables(alimtalkTemplate, data.templateVariables);
+    title = String(alimtalkTemplate.name ?? '').trim();
+    content = String(alimtalkTemplate.content ?? '').trim();
+  }
+  if (!title) throw new HttpsError('invalid-argument', '제목이 필요합니다.');
+  if (!content) throw new HttpsError('invalid-argument', '본문이 필요합니다.');
   if (audience === 'staff') {
     await assertManagerOrAbove(request.auth, db);
     if (['%학교', '%학년', '%반'].some((token) => content.includes(token))) {
@@ -188,22 +281,28 @@ export async function handleCreateBulkMessage(request, deps = {}) {
     const existing = campaignSnapshot.data();
     if (existing?.status !== 'enqueuing') return { campaignId: campaignRef.id, duplicate: true, stats: existing?.stats ?? null, scheduledDate: existing?.scheduled_date ?? null };
   }
-  const imageId = await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage);
+  const imageId = channel === 'sms' ? await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage) : null;
 
   const collectionName = audience === 'staff' ? 'staff' : 'students';
   const refs = targetIds.map((id) => db.collection(collectionName).doc(id));
   const snaps = await db.getAll(...refs);
   const entries = snaps.filter((s) => s.exists).map((s) => ({ id: s.id, [audience]: s.data() }));
 
-  const buildRecipients = audience === 'staff' ? buildStaffRecipients : buildBulkRecipients;
+  const buildRecipients = channel === 'alimtalk'
+    ? buildBulkAlimtalkRecipients
+    : (audience === 'staff' ? buildStaffRecipients : buildBulkRecipients);
   const { docs, stats } = buildRecipients(entries, {
     campaignId: campaignRef.id,
     content,
-    recipientField: data.recipientField,
-    recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : undefined,
+    recipientField: channel === 'alimtalk' ? alimtalkRecipientFields[0] : data.recipientField,
+    recipientFields: channel === 'alimtalk'
+      ? alimtalkRecipientFields
+      : (Array.isArray(data.recipientFields) ? data.recipientFields : undefined),
     scheduledDate,
     imageId,
     dateKst: deps.todayKst ?? todayKST(),
+    template: alimtalkTemplate,
+    templateVariables: alimtalkVariables,
   });
   stats.skipped_missing = targetIds.length - entries.length;
   if (docs.length > MAX_RECIPIENTS) {
@@ -218,14 +317,22 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   const fingerprint = recipientFingerprint(targetIds, audience === 'staff'
     ? { audience: 'staff' }
     : {
-      recipientField: data.recipientField ?? null,
-      recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : null,
+      recipientField: channel === 'alimtalk' ? alimtalkRecipientFields[0] : (data.recipientField ?? null),
+      recipientFields: channel === 'alimtalk'
+        ? alimtalkRecipientFields
+        : (Array.isArray(data.recipientFields) ? data.recipientFields : null),
+      ...(channel === 'alimtalk' ? {
+        channel,
+        templateId: alimtalkTemplate.templateId,
+        templateVariables: alimtalkVariables,
+      } : {}),
     });
   const now = deps.now ?? new Date();
   let resuming = false;
   try {
     await campaignRef.create({
-      title, content, audience, targeting: 'I', kind: 'bulk_info', image_id: imageId,
+      title, content, audience, targeting: 'I', kind: channel === 'alimtalk' ? 'bulk_alimtalk' : 'bulk_info', image_id: imageId,
+      ...(channel === 'alimtalk' ? { template_code: alimtalkTemplate.templateId } : {}),
       scheduled_date: scheduledDate ?? null, status: 'enqueuing', stats,
       created_by: request.auth?.uid ?? null, created_at: FieldValue.serverTimestamp(),
       enqueue_started_at: now.getTime(),

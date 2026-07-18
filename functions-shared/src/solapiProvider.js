@@ -39,6 +39,11 @@ function defaultServiceFactory(apiKey, apiSecret) {
   return new SolapiMessageService(apiKey, apiSecret);
 }
 
+export function createSolapiService(config) {
+  const cfg = config ?? getSolapiConfig();
+  return defaultServiceFactory(cfg.apiKey, cfg.apiSecret);
+}
+
 // 발송 현황 카드용 잔액·자동충전 조회. 잔액 고갈은 전 채널 발송 실패로 이어지므로 화면에 상시 노출한다.
 export async function fetchSolapiBalance(config, { serviceFactory = defaultServiceFactory } = {}) {
   const cfg = config ?? getSolapiConfig();

@@ -23,6 +23,7 @@ import { handleSetPromoConsent } from './src/promoConsentHandler.js';
 import { handleSendParentNotice } from './src/parentNoticeHandler.js';
 import { handleSendDirectMessage } from './src/directMessageHandler.js';
 import { handleCreateBulkMessage, handleGetBulkStaffRecipients } from './src/bulkMessageHandler.js';
+import { handleGetSolapiAlimtalkTemplates } from './src/alimtalkTemplateHandler.js';
 import { handleSendDailyReport } from './src/dailyReportHandler.js';
 import { runPromoConsentReconfirm } from './src/promoConsentReconfirm.js';
 import { handleRetryMessageDelivery, handleManageMessageFailure } from './src/messageRetryHandler.js';
@@ -207,6 +208,10 @@ export const createBulkMessage = onCall(
   handleCreateBulkMessage,
 );
 export const getBulkStaffRecipients = onCall({ enforceAppCheck: false }, handleGetBulkStaffRecipients);
+export const getSolapiAlimtalkTemplates = onCall(
+  { enforceAppCheck: false, secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
+  handleGetSolapiAlimtalkTemplates,
+);
 
 // 일일 학습 리포트 문자 발송 — 직원 권한.
 export const sendDailyReport = onCall({ enforceAppCheck: false }, handleSendDailyReport);
