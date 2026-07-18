@@ -199,7 +199,7 @@ window.openNaesinOverride = (event, groupKey, subIdx, studentId) => {
     const moveOptions = g.subgroups.map((sg, i) => {
         if (i === subIdx) return '';
         const label = sg.days.length > 0 ? `${sg.days.join('')} ${sg.time || ''}` : `서브그룹 ${i + 1}`;
-        return `<button class="btn-cancel" style="font-size:12px;padding:4px 8px;" onclick="window.moveNaesinStudent('${ek}',${subIdx},${i},'${eid}')">→ ${esc(label)}</button>`;
+        return `<button class="btn-cancel" style="font-size:12px;padding:4px 8px;" onclick="window.moveNaesinStudent('${ek}',${subIdx},${i},'${eid}')">${msIcon('arrow_forward')} ${esc(label)}</button>`;
     }).filter(Boolean).join('');
 
     const ovDays = existingOverride ? existingOverride.days : g.subgroups[subIdx].days;

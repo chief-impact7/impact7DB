@@ -4,6 +4,7 @@
 // DB 변경점: shared todayKST 사용, min/max 지원, input[type=date] 전역 위임(파일 하단).
 
 import { todayKST } from '@impact7/shared/datetime';
+import { msIcon } from './ms-icon.js';
 
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -142,9 +143,9 @@ export function openKoreanDatePicker(anchorEl, valueStr, onSelect, { min = null,
         }
         pop.innerHTML = `
             <div class="kdp-header">
-                <button type="button" class="kdp-nav" data-nav="-1" aria-label="이전 달">‹</button>
+                <button type="button" class="kdp-nav" data-nav="-1" aria-label="이전 달">${msIcon('chevron_left')}</button>
                 <span class="kdp-title">${viewY}년 ${viewM + 1}월</span>
-                <button type="button" class="kdp-nav" data-nav="1" aria-label="다음 달">›</button>
+                <button type="button" class="kdp-nav" data-nav="1" aria-label="다음 달">${msIcon('chevron_right')}</button>
             </div>
             <div class="kdp-grid">${DAY_NAMES.map((d, i) =>
                 `<span class="kdp-cell kdp-dow${i === 0 ? ' kdp-sun' : i === 6 ? ' kdp-sat' : ''}">${d}</span>`).join('')}</div>
