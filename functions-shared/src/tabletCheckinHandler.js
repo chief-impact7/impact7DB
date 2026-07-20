@@ -9,7 +9,8 @@ import {
 } from './attendanceState.js';
 import { normalizeAttendanceLabel } from '@impact7/shared/attendance-action';
 import { isLate } from '@impact7/shared/expected-arrival';
-import { loadExpectedArrival } from './expectedArrivalLoader.js';
+import { LEAVE_STATUSES } from '@impact7/shared/enrollment-status';
+import { findSpecialVisit, loadExpectedArrivalContext } from './expectedArrivalLoader.js';
 import { PARENT_NOTICE_TEMPLATES, buildParentNoticeVariables } from './parentNoticeHandler.js';
 import { applyTemplate } from './templates.js';
 import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
@@ -147,10 +148,20 @@ export async function handleTabletCheckin(request, deps = {}) {
   const dailyRef = firestore.collection('daily_records').doc(`${studentId}_${dateKST}`);
 
   // 등원이면 예정시각을 미리 구한다(where 쿼리는 트랜잭션 밖). 실패는 지각 판정을 막지 않는다.
-  let expectedArrival = '';
+  let arrivalContext = { expectedArrival: '', specialVisit: null };
   if (action === ACTIONS.ARRIVE) {
-    expectedArrival = await (deps.loadExpectedArrival || loadExpectedArrival)(firestore, studentId, dateKST)
-      .catch((e) => { console.warn('[tablet] loadExpectedArrival 실패', studentId, e?.message); return ''; });
+    let loadContext = deps.loadExpectedArrivalContext || loadExpectedArrivalContext;
+    if (!deps.loadExpectedArrivalContext && deps.loadExpectedArrival) {
+      loadContext = async (...args) => ({
+        expectedArrival: await deps.loadExpectedArrival(...args),
+        specialVisit: null,
+      });
+    }
+    arrivalContext = await loadContext(firestore, studentId, dateKST)
+      .catch((e) => {
+        console.warn('[tablet] loadExpectedArrivalContext 실패', studentId, e?.message);
+        return { expectedArrival: '', specialVisit: null };
+      });
   }
 
   return firestore.runTransaction(async (tx) => {
@@ -186,6 +197,18 @@ export async function handleTabletCheckin(request, deps = {}) {
     }
 
     const occurredAt = new Date();
+    const loadedSpecialVisit = arrivalContext.specialVisit;
+    const loadedSpecialIsCurrent = loadedSpecialVisit && (student.enrollments || [])
+      .some((enrollment) => findSpecialVisit([enrollment], {}, dateKST)?.code === loadedSpecialVisit.code);
+    const specialVisit = loadedSpecialIsCurrent
+      ? loadedSpecialVisit
+      : findSpecialVisit(student.enrollments, {}, dateKST);
+    const routeToSpecial = action === ACTIONS.ARRIVE
+      && LEAVE_STATUSES.has(student.status)
+      && !!specialVisit;
+    const expectedArrival = routeToSpecial
+      ? specialVisit.scheduled_time
+      : arrivalContext.expectedArrival;
     const late = (action === ACTIONS.ARRIVE) && isLate(arrivalTimeKST(occurredAt), expectedArrival);
     const email = request.auth.token?.email || '';
     const deviceId = textOf(data.deviceId);
@@ -228,12 +251,23 @@ export async function handleTabletCheckin(request, deps = {}) {
       updated_at: FieldValue.serverTimestamp(),
     };
     if (action === ACTIONS.ARRIVE) {
-      dailyUpdate.attendance = { status: late ? '지각' : '출석' };
-      if (!daily?.arrival_time) dailyUpdate.arrival_time = arrivalTimeKST(occurredAt);
+      const arrivalTime = arrivalTimeKST(occurredAt);
+      if (routeToSpecial) {
+        dailyUpdate.visit2 = {
+          ...(daily?.visit2 || {}),
+          ...specialVisit,
+          status: late ? '지각' : '출석',
+          arrival_time: daily?.visit2?.arrival_time || arrivalTime,
+        };
+      } else {
+        dailyUpdate.attendance = { status: late ? '지각' : '출석' };
+        if (!daily?.arrival_time) dailyUpdate.arrival_time = arrivalTime;
+      }
     }
     if (action === ACTIONS.REARRIVE) {
       dailyUpdate.departure = FieldValue.delete();
-      if (!daily?.arrival_time) dailyUpdate.arrival_time = arrivalTimeKST(occurredAt);
+      const isSpecialLeaveVisit = LEAVE_STATUSES.has(student.status) && !!daily?.visit2;
+      if (!isSpecialLeaveVisit && !daily?.arrival_time) dailyUpdate.arrival_time = arrivalTimeKST(occurredAt);
     }
     if (action === ACTIONS.DEPART) {
       const departure = {
