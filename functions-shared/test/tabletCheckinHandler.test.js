@@ -79,7 +79,17 @@ describe('handleTabletCheckin 조회', () => {
 // makeFirestore를 확장: runTransaction + doc().set + 신규 doc() id 생성 지원.
 function makeTxFirestore({ students = {}, daily = {}, devices = {} } = {}) {
   const writes = [];
-  const stores = { students, daily_records: daily, kiosk_devices: devices, attendance_events: {}, message_queue: {} };
+  const stores = {
+    students,
+    daily_records: daily,
+    kiosk_devices: devices,
+    attendance_events: {},
+    message_queue: {},
+    class_settings: {},
+    hw_fail_tasks: {},
+    test_fail_tasks: {},
+    absence_records: {},
+  };
   let autoId = 0;
   function docRef(coll, id) {
     const realId = id || `auto_${++autoId}`;
@@ -93,11 +103,19 @@ function makeTxFirestore({ students = {}, daily = {}, devices = {} } = {}) {
     collection(name) {
       return {
         where(field, op, val) {
-          return { async get() {
-            const docs = Object.entries(stores[name] || {})
-              .filter(([, d]) => d[field] === val).map(([id, d]) => ({ id, data: () => d }));
-            return { docs };
-          } };
+          const filters = [[field, val]];
+          return {
+            where(nextField, nextOp, nextVal) {
+              filters.push([nextField, nextVal]);
+              return this;
+            },
+            async get() {
+              const docs = Object.entries(stores[name] || {})
+                .filter(([, d]) => filters.every(([key, expected]) => d[key] === expected))
+                .map(([id, d]) => ({ id, data: () => d }));
+              return { docs };
+            },
+          };
         },
         doc(id) { return docRef(name, id); },
       };
@@ -219,6 +237,104 @@ describe('handleTabletCheckin 확정', () => {
     );
     expect(fs._stores.daily_records[`s1_${d}`].attendance.status).toBe('출석');
     expect(Object.values(fs._stores.message_queue)[0].template_variables['#{시각}']).not.toContain('(지각)');
+  });
+
+  test.each(['실휴원', '가휴원'])('%s + 당일 특강 등원은 정규가 아니라 visit2에 기록', async (status) => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const { getDayName } = await import('@impact7/shared/expected-arrival');
+    const d = todayKST();
+    const fs = makeTxFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status, enrollments: [{ class_type: '특강', class_number: '여름특강A', day: [getDayName(d)], start_time: '23:59' }] } },
+      daily: { [`s1_${d}`]: { visit2: { status: '미확인', code: '여름특강A', scheduled_time: '23:59' } } },
+      devices: { 'tablet-1f': { departure_policy: 'block' } },
+    });
+
+    await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '등원', deviceId: 'tablet-1f' } },
+      {
+        firestore: fs,
+        loadExpectedArrivalContext: async () => ({
+          expectedArrival: '23:59',
+          specialVisit: { code: '여름특강A', scheduled_time: '23:59' },
+        }),
+      },
+    );
+
+    const daily = fs._stores.daily_records[`s1_${d}`];
+    expect(daily.attendance).toBeUndefined();
+    expect(daily.arrival_time).toBeUndefined();
+    expect(daily.visit2).toMatchObject({ status: '출석', code: '여름특강A', scheduled_time: '23:59' });
+    expect(daily.visit2.arrival_time).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  test('휴원+특강 등원은 기존 정규 출결 값이 있어도 덮어쓰지 않음', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const { getDayName } = await import('@impact7/shared/expected-arrival');
+    const d = todayKST();
+    const fs = makeTxFirestore({
+      students: {
+        s1: {
+          studentNumber: '123456', name: '김민수', status: '가휴원',
+          enrollments: [{ class_type: '특강', class_number: '여름특강A', day: [getDayName(d)], start_time: '23:59' }],
+        },
+      },
+      daily: { [`s1_${d}`]: { attendance: { status: '결석' }, arrival_time: '14:00' } },
+    });
+
+    await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '등원' } },
+      { firestore: fs, loadExpectedArrivalContext: async () => ({ expectedArrival: '23:59', specialVisit: { code: '여름특강A', scheduled_time: '23:59' } }) },
+    );
+
+    const daily = fs._stores.daily_records[`s1_${d}`];
+    expect(daily.attendance).toEqual({ status: '결석' });
+    expect(daily.arrival_time).toBe('14:00');
+    expect(daily.visit2.status).toBe('출석');
+  });
+
+  test('다중 특강은 class_settings로 선택한 특강이 최신 enrollment에 남아 있으면 유지', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const { getDayName } = await import('@impact7/shared/expected-arrival');
+    const d = todayKST();
+    const day = getDayName(d);
+    const fs = makeTxFirestore({
+      students: {
+        s1: {
+          studentNumber: '123456', name: '김민수', status: '가휴원',
+          enrollments: [
+            { class_type: '특강', class_number: '늦은특강', day: [day] },
+            { class_type: '특강', class_number: '이른특강', day: [day] },
+          ],
+        },
+      },
+    });
+
+    await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '등원' } },
+      { firestore: fs, loadExpectedArrivalContext: async () => ({ expectedArrival: '10:00', specialVisit: { code: '이른특강', scheduled_time: '10:00' } }) },
+    );
+
+    expect(fs._stores.daily_records[`s1_${d}`].visit2).toMatchObject({
+      code: '이른특강', scheduled_time: '10:00',
+    });
+  });
+
+  test('휴원 특강 하원 후 재등원해도 정규 arrival_time을 생성하지 않음', async () => {
+    const { todayKST } = await import('@impact7/shared/datetime');
+    const d = todayKST();
+    const fs = makeTxFirestore({
+      students: { s1: { studentNumber: '123456', name: '김민수', status: '가휴원' } },
+      daily: { [`s1_${d}`]: { day_state: '하원', visit2: { status: '출석', arrival_time: '12:30' }, departure: { status: '하원' } } },
+    });
+
+    await handleTabletCheckin(
+      { auth: AUTH, data: { studentNumber: '123456', studentId: 's1', action: '재등원' } },
+      { firestore: fs },
+    );
+
+    const daily = fs._stores.daily_records[`s1_${d}`];
+    expect(daily.arrival_time).toBeUndefined();
+    expect(daily.visit2.arrival_time).toBe('12:30');
   });
 
   test('외출중 학생의 하원 시도 — 전이 거부', async () => {
