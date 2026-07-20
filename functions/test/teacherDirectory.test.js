@@ -58,6 +58,7 @@ describe('staffDirectoryEntry', () => {
       residentNumber: '비공개',
     })).toEqual({
       display_name: '김교수',
+      english_name: 'Rachel',
       email: 'rachel@impact7.kr',
       department: '교수',
       assignable: true,
@@ -128,6 +129,7 @@ describe('syncTeacherEligibility transaction boundary', () => {
     });
     expect(transaction.set).toHaveBeenCalledWith(directoryRef, {
       display_name: '김교수',
+      english_name: 'Rachel',
       email: 'rachel@impact7.kr',
       department: '교수',
       assignable: true,
