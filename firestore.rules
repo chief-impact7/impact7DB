@@ -827,13 +827,22 @@ service cloud.firestore {
     match /teachers/{email} {
       allow read: if isAuthorized();
 
-      allow create, update: if isAuthorized()
+      allow create: if isAuthorized()
         && request.resource.data.keys().hasOnly([
           'email', 'display_name', 'photo_url', 'last_login',
           'updated_by', 'updated_at'
         ])
         && request.resource.data.email is string
         && withinFieldLimit(10);
+
+      // update는 바뀐 키만 검사 — 스윕이 심은 homeroom_eligible·board_assignable가
+      // 병합 결과에 있어도 통과하되, 클라이언트가 그 필드를 변경·자기부여하지 못하게 막는다.
+      allow update: if isAuthorized()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'email', 'display_name', 'photo_url', 'last_login',
+          'updated_by', 'updated_at'
+        ])
+        && request.resource.data.email is string;
 
       allow delete: if false;
     }
