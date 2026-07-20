@@ -44,6 +44,7 @@ export function staffDirectoryEntry(staff) {
   if (!MIRRORED_DEPARTMENTS.includes(staff?.department)) return null;
   return {
     display_name: String(staff.name || staff.englishName || staff.email || '').trim(),
+    english_name: teacherDisplayName(staff.englishName),
     email: String(staff.email || '').trim().toLowerCase(),
     department: staff.department,
     assignable: effectiveStaffStatus(staff, todayKST()) === 'active',
@@ -80,7 +81,7 @@ export async function syncTeacherEligibility(db) {
       const entry = staffDirectoryEntry(doc.data());
       if (!entry) continue;
       existingDirectory.delete(doc.id);
-      // 안전 4필드로 매번 덮어써 과거 버그가 추가한 필드도 조직 전체에 남지 않게 한다.
+      // 안전 5필드로 매번 덮어써 과거 버그가 추가한 필드도 조직 전체에 남지 않게 한다.
       transaction.set(db.collection('staff_directory').doc(doc.id), entry);
       directoryUpdated++;
     }

@@ -67,12 +67,14 @@ describe('syncTeacherEligibility', () => {
     });
     expect((await db.doc('staff_directory/professor').get()).data()).toEqual({
       display_name: '김교수',
+      english_name: 'Rachel',
       email: 'rachel@impact7.kr',
       department: '교수',
       assignable: true,
     });
     expect((await db.doc('staff_directory/admin').get()).data()).toEqual({
       display_name: '박행정',
+      english_name: 'Jane',
       email: 'jane@impact7.kr',
       department: '행정',
       assignable: false,
