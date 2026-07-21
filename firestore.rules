@@ -800,7 +800,7 @@ service cloud.firestore {
 
       function hasOnlyAllowedStudentRecordFields() {
         return request.resource.data.keys().hasOnly([
-          'student_id', 'type', 'occurred_at', 'content', 'files',
+          'student_id', 'type', 'occurred_at', 'content', 'files', 'important',
           'created_at', 'updated_by', 'updated_at'
         ]);
       }
@@ -813,6 +813,7 @@ service cloud.firestore {
         && request.resource.data.type in ['reflection', 'etc']
         && request.resource.data.content is string
         && request.resource.data.content.size() <= 5000
+        && (!('important' in request.resource.data) || request.resource.data.important is bool)
         && withinFieldLimit(15);
 
       allow delete: if isAuthorized();
