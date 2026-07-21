@@ -3339,22 +3339,6 @@ summary.menu-l2 .i7-icon {
 .search-scope-banner .i7-icon {
     font-size: 16px;
 }
-.search-scope-btn {
-    margin-left: auto;
-    padding: 3px 10px;
-    border: 1px solid var(--primary);
-    border-radius: var(--radius-lg);
-    background: var(--surface-container);
-    color: var(--primary);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-}
-.search-scope-btn:hover {
-    background: var(--primary-light);
-}
-
 /* native date picker 인디케이터 숨김 — 클릭 시 한국어 캘린더(date-picker.js)가 대신 뜬다 */
 input[type="date"]::-webkit-calendar-picker-indicator {
     display: none;

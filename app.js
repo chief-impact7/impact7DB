@@ -1041,28 +1041,6 @@ function _refreshUIAfterMutation() {
 }
 
 // ---------------------------------------------------------------------------
-// 비원생(퇴원/종강) 검색 — 로컬 allStudents 캐시에서 필터링
-// ---------------------------------------------------------------------------
-const PAST_STUDENT_STATUSES = new Set(['퇴원', '종강']);
-function searchPastStudents(term) {
-    if (!term || term.length < 2) return [];
-    const lowerTerm = term.toLowerCase();
-    const isPhoneSearch = /\d{3,}/.test(term);
-    return allStudents.filter(s => {
-        if (!PAST_STUDENT_STATUSES.has(s.status)) return false;
-        if (s.name && s.name.toLowerCase().includes(lowerTerm)) return true;
-        if (schoolSearchTerms(s).some(v => v.toLowerCase().includes(lowerTerm))) return true;
-        if (isPhoneSearch) {
-            if (s.student_phone && s.student_phone.includes(term)) return true;
-            if (s.parent_phone_1 && s.parent_phone_1.includes(term)) return true;
-            if (s.other_phone && s.other_phone.includes(term)) return true;
-        }
-        return false;
-    });
-}
-
-
-// ---------------------------------------------------------------------------
 // leave_requests 컬렉션 로딩
 // ---------------------------------------------------------------------------
 async function loadLeaveRequests() {
@@ -1383,59 +1361,12 @@ function applyFilterAndRender() {
         if (!stillExists) activeFilters.class_code = null;
     }
 
+    const term = (document.getElementById('studentSearchInput')?.value.trim() || '').toLowerCase();
     let filtered = allStudents;
 
-    // 필터가 아무것도 활성화되지 않은 상태(All Students 기본) → 이번 학기 누적 뷰
-    // 재원/휴원은 항상 포함, 퇴원/상담/종강은 학기 시작일 이후만 포함
-    if (!hasNonSemesterFilter()) {
-        const cutoffs = {};
-        for (const lv of LEVELS) {
-            const sem = currentSemesterByLevel[lv];
-            if (sem) cutoffs[lv] = semesterSettings[semesterToSettingsKey(lv, sem)]?.start_date || null;
-        }
-        filtered = filtered.filter(s => {
-            const st = s.status || '재원';
-            if (ACTIVE_STUDENT_STATUSES.has(st)) return true;
-            const cutoff = cutoffs[s.level];
-            if (!cutoff) return false;
-            if (st === '퇴원') return s.withdrawal_date && s.withdrawal_date >= cutoff;
-            // 상담/종강: updated_at 기준, 없으면 first_registered 폴백
-            const ts = s.updated_at?.toDate?.()?.toISOString?.()?.slice(0, 10) || s.first_registered || '';
-            return ts ? ts >= cutoff : false;
-        });
-    }
-
-    // 각 타입별로 AND 조건 적용
-    if (activeFilters.level) filtered = filtered.filter(s => s.level === activeFilters.level);
-    if (activeFilters.branch) filtered = filtered.filter(s => activeBranchesFromStudent(s).includes(activeFilters.branch));
-    if (activeFilters.day) filtered = filtered.filter(s => activeDays(s).includes(activeFilters.day));
-    if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
-    if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
-    if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
-    if (activeFilters.grade) filtered = filtered.filter(s => studentGradeKey(s) === activeFilters.grade);
-    // 휴원 필터 활성 시에는 학기 필터를 건너뜀 (휴원생은 현재 학기 enrollment이 없을 수 있음)
-    if (activeFilters.semester && !activeFilters.leave) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
-    if (activeFilters.leave) {
-        const lv = activeFilters.leave;
-        const today = getTodayDateStr();
-        const isOnLeave = (s) => LEAVE_STATUSES.includes(s.status);
-        const isScheduled = (s) => !!s.scheduled_leave_status;
-        const isNonReturn = (s) => s.pause_end_date && s.pause_end_date < today;
-        const isExpected = (s) => isOnLeave(s) && !isNonReturn(s);
-
-        if (lv === 'all')                    filtered = filtered.filter(s => isOnLeave(s) || isScheduled(s));
-        else if (lv === 'scheduled')         filtered = filtered.filter(isScheduled);
-        else if (lv === 'expected')          filtered = filtered.filter(isExpected);
-        else if (lv === 'expected_actual')   filtered = filtered.filter(s => s.status === '실휴원' && isExpected(s));
-        else if (lv === 'expected_pending')  filtered = filtered.filter(s => s.status === '가휴원' && isExpected(s));
-        else if (lv === 'non_return')        filtered = filtered.filter(s => isOnLeave(s) && isNonReturn(s));
-        else if (lv === 'nonreturn_actual')  filtered = filtered.filter(s => s.status === '실휴원' && isNonReturn(s));
-        else if (lv === 'nonreturn_pending') filtered = filtered.filter(s => s.status === '가휴원' && isNonReturn(s));
-    }
-
-    const rawTerm = document.getElementById('studentSearchInput')?.value.trim() || '';
-    const term = rawTerm.toLowerCase();
     if (term) {
+        // 검색어가 있으면 필터·학기cutoff를 전부 무시하고 전체 학생 대상 검색 — 마스터 DB는
+        // 어떤 필터 조합에서도 검색으로 찾은 학생을 놓치면 안 된다(DSC 등 다른 앱과의 검색 동등성).
         filtered = filtered.filter(s =>
             (s.name && s.name.toLowerCase().includes(term)) ||
             schoolSearchTerms(s).some(v => v.toLowerCase().includes(term)) ||
@@ -1444,19 +1375,61 @@ function applyFilterAndRender() {
             (s.other_phone && s.other_phone.includes(term)) ||
             allClassCodes(s).some(code => code.toLowerCase().includes(term))
         );
+    } else {
+        // 필터가 아무것도 활성화되지 않은 상태(All Students 기본) → 이번 학기 누적 뷰
+        // 재원/휴원/상담은 항상 포함, 퇴원/종강은 학기 시작일 이후만 포함
+        if (!hasNonSemesterFilter()) {
+            const cutoffs = {};
+            for (const lv of LEVELS) {
+                const sem = currentSemesterByLevel[lv];
+                if (sem) cutoffs[lv] = semesterSettings[semesterToSettingsKey(lv, sem)]?.start_date || null;
+            }
+            filtered = filtered.filter(s => {
+                const st = s.status || '재원';
+                if (ACTIVE_STUDENT_STATUSES.has(st) || st === '상담') return true;
+                const cutoff = cutoffs[s.level];
+                if (!cutoff) return false;
+                if (st === '퇴원') return s.withdrawal_date && s.withdrawal_date >= cutoff;
+                // 종강: updated_at 기준, 없으면 first_registered 폴백
+                const ts = s.updated_at?.toDate?.()?.toISOString?.()?.slice(0, 10) || s.first_registered || '';
+                return ts ? ts >= cutoff : false;
+            });
+        }
+
+        // 각 타입별로 AND 조건 적용
+        if (activeFilters.level) filtered = filtered.filter(s => s.level === activeFilters.level);
+        if (activeFilters.branch) filtered = filtered.filter(s => activeBranchesFromStudent(s).includes(activeFilters.branch));
+        if (activeFilters.day) filtered = filtered.filter(s => activeDays(s).includes(activeFilters.day));
+        if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
+        if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
+        if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
+        if (activeFilters.grade) filtered = filtered.filter(s => studentGradeKey(s) === activeFilters.grade);
+        // 휴원 필터 활성 시에는 학기 필터를 건너뜀 (휴원생은 현재 학기 enrollment이 없을 수 있음)
+        if (activeFilters.semester && !activeFilters.leave) filtered = filtered.filter(s => (s.enrollments || []).some(e => e.semester === activeFilters.semester));
+        if (activeFilters.leave) {
+            const lv = activeFilters.leave;
+            const today = getTodayDateStr();
+            const isOnLeave = (s) => LEAVE_STATUSES.includes(s.status);
+            const isScheduled = (s) => !!s.scheduled_leave_status;
+            const isNonReturn = (s) => s.pause_end_date && s.pause_end_date < today;
+            const isExpected = (s) => isOnLeave(s) && !isNonReturn(s);
+
+            if (lv === 'all')                    filtered = filtered.filter(s => isOnLeave(s) || isScheduled(s));
+            else if (lv === 'scheduled')         filtered = filtered.filter(isScheduled);
+            else if (lv === 'expected')          filtered = filtered.filter(isExpected);
+            else if (lv === 'expected_actual')   filtered = filtered.filter(s => s.status === '실휴원' && isExpected(s));
+            else if (lv === 'expected_pending')  filtered = filtered.filter(s => s.status === '가휴원' && isExpected(s));
+            else if (lv === 'non_return')        filtered = filtered.filter(s => isOnLeave(s) && isNonReturn(s));
+            else if (lv === 'nonreturn_actual')  filtered = filtered.filter(s => s.status === '실휴원' && isNonReturn(s));
+            else if (lv === 'nonreturn_pending') filtered = filtered.filter(s => s.status === '가휴원' && isNonReturn(s));
+        }
     }
 
     currentFilteredStudents = filtered;
     storeUpdate({ currentFilteredStudents, activeFilters: { ...activeFilters } });
     updateFilterChips();
 
-    // 비원생(퇴원/종강) — 로컬 캐시에서 동기 검색, 활성 목록과 중복 제외
-    let pastResults = [];
-    if (rawTerm.length >= 2) {
-        const filteredIds = new Set(filtered.map(s => s.id));
-        pastResults = searchPastStudents(rawTerm).filter(s => !filteredIds.has(s.id));
-    }
-    renderStudentList(filtered, pastResults);
+    renderStudentList(filtered);
 }
 
 // 활성 필터 요약을 카운트 칩 옆에 표시
@@ -1469,13 +1442,13 @@ function updateFilterChips() {
 
     const label = nonSemester.map(([, v]) => v).join(' · ');
 
-    // 필터가 걸린 채 검색 중이면 범위 안내 배너 표시 (검색은 의도적으로 현재 필터 안에서 동작)
+    // 검색 중에는 필터를 무시하고 전체 검색하므로, 필터(학기 포함)가 걸린 채 검색하면 그 사실을 안내
     const scopeBanner = document.getElementById('search-scope-banner');
     if (scopeBanner) {
         const term = document.getElementById('studentSearchInput')?.value.trim() || '';
-        const show = !!term && nonSemester.length > 0;
+        const show = !!term && active.length > 0;
         scopeBanner.style.display = show ? '' : 'none';
-        if (show) document.getElementById('search-scope-text').textContent = `${label} 내 검색 결과`;
+        if (show) document.getElementById('search-scope-text').textContent = '검색 중 필터 일시중지 — 전체에서 검색 중';
     }
 
     if (nonSemester.length === 0) {
@@ -1672,7 +1645,7 @@ window.closePastSemesterModal = (e) => {
 const CHUNK_SIZE = 100;
 let _chunkObserver = null;
 
-function renderStudentList(students, pastResults) {
+function renderStudentList(students) {
     if (_chunkObserver) {
         _chunkObserver.disconnect();
         _chunkObserver = null;
@@ -1681,10 +1654,9 @@ function renderStudentList(students, pastResults) {
     listContainer.innerHTML = '';
     updateCount(students.length);
 
-    const hasPastResults = pastResults && pastResults.length > 0;
+    const hasTerm = !!document.getElementById('studentSearchInput')?.value.trim();
 
-    if (students.length === 0 && !hasPastResults) {
-        const hasTerm = !!document.getElementById('studentSearchInput')?.value.trim();
+    if (students.length === 0) {
         const showReset = hasNonSemesterFilter() || hasTerm;
         listContainer.innerHTML = `<div class="list-empty">
             <p>일치하는 학생이 없습니다.</p>
@@ -1693,33 +1665,23 @@ function renderStudentList(students, pastResults) {
         return;
     }
 
-    if (groupViewMode !== 'none') {
+    // 검색 결과는 필터를 무시한 전체 학생이므로, 필터 전제의 특수 뷰(그룹/휴원예정)로
+    // 보내면 섹션 분류가 어긋난다 — 검색 중엔 항상 기본 2계층으로 렌더
+    if (!hasTerm && groupViewMode !== 'none') {
         renderGroupedList(students, listContainer);
-        // 그룹 모드에서도 비원생 표시
-        if (hasPastResults) renderPastStudentResults(pastResults, listContainer);
         return;
     }
 
     // Expected 필터 활성 시: 종료일 기준 섹션 헤더로 분리 렌더
     const EXPECTED_LEAVE_FILTERS = ['expected', 'expected_actual', 'expected_pending'];
-    if (EXPECTED_LEAVE_FILTERS.includes(activeFilters.leave)) {
+    if (!hasTerm && EXPECTED_LEAVE_FILTERS.includes(activeFilters.leave)) {
         renderExpectedLeaveList(students, listContainer);
-        if (hasPastResults) renderPastStudentResults(pastResults, listContainer);
         return;
     }
 
     // 기본 경로: 재원생 / 비원생 2계층
     const enrolled = students.filter(s => studentCategory(s.status) === '재원생');
-    const nonEnrolledInList = students.filter(s => studentCategory(s.status) === '비원생');
-
-    // 비원생 섹션 = 목록 내 비원생 + 검색 pastResults, id 기준 dedup
-    const seen = new Set();
-    const nonEnrolled = [];
-    for (const s of [...nonEnrolledInList, ...(pastResults || [])]) {
-        if (seen.has(s.id)) continue;
-        seen.add(s.id);
-        nonEnrolled.push(s);
-    }
+    const nonEnrolled = students.filter(s => studentCategory(s.status) === '비원생');
 
     if (enrolled.length > 0) {
         const header = document.createElement('div');

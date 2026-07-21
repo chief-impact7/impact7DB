@@ -64,5 +64,7 @@
 
 - [codegraph 활용 가이드](reference_codegraph_guide.md) — 인덱스 현황, 도메인별 탐색 쿼리, 주요 모듈 위치
 
+- [DB 검색 전체 대상 원칙](project_db_search_full_scope.md) — 검색어 있으면 모든 필터·학기cutoff 무시(전체 학생), 상담 cutoff 면제, status 네비 '상담' 추가, searchPastStudents 삭제. 서이수 사건(상담생 3중 차단)이 계기 (2026-07-21)
+
 - [⛔ App Check 도입 보류 — 재제안 금지](project_appcheck_rollout.md) — 초기 속도 저하 대비 이득 0(서버 무강제), 사용자가 도입 안 함(2026-07-05). DB·tablet init 추가했다 당일 제거. 사용자 먼저 요청할 때만 로드맵 참조
 - [HR 깔끔한 루트 + 생태계 프록시 워커 + App Check 도메인](project_hr_cleanroot_appcheck_domains.md) — *.impact7.kr 라우팅은 Cloudflare Worker **impact7-proxy**(소스 impact7-hosting/proxy-worker, 구 newtest-proxy 개명; 옛 워커 계정 부재·11개 서브도메인 라이브 200 검증완료, forms 합류). 신규 서브도메인 함정: wrangler.toml custom_domain route 추가 후 첫 wrangler deploy에서 Custom Domain(DNS) 생성 조용히 누락 가능 → 재배포로 해결, 직후 로컬 DNS negative 캐시로 잠시 000. hr는 SvelteKit base=/hr라 루트서 부팅 불가 → base='' 전용 impact7hr.web.app를 루트 프록시(완료, 검증됨). App Check enforce는 reCAPTCHA 키에 *.impact7.kr 등록 필수(app:MISSING 401 함정) (2026-06-22)
