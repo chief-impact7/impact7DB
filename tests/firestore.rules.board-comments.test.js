@@ -61,4 +61,73 @@ describe('board_cards/{cardId}/comments — 카드 댓글 서브컬렉션', () =
     });
     await assertSucceeds(deleteDoc(doc(authedCtx(env, 'teacher2'), PATH)));
   });
+
+  test('카드 update에 댓글 비정규화 필드(last_comment_*·comment_count) 허용', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'board_cards/card1'), {
+        board: 'ops', column: 'todo', order: 1, title: '카드',
+      });
+    });
+    await assertSucceeds(updateDoc(doc(authedCtx(env, 'teacher1'), 'board_cards/card1'), {
+      last_comment_at: serverTimestamp(),
+      last_comment_by: 'teacher1@impact7.kr',
+      comment_count: 1,
+      updated_by: 'teacher1@impact7.kr',
+      updated_at: serverTimestamp(),
+    }));
+  });
+});
+
+describe('board_comment_reads — 사용자별 댓글 읽음 상태', () => {
+  let env;
+  before(async () => {
+    env = await createTestEnv('impact7db-rules-test-board-comment-reads');
+    await env.clearFirestore();
+  });
+  after(async () => { await env?.cleanup(); });
+
+  const MY_DOC = 'board_comment_reads/teacher1@impact7.kr';
+  const validReads = () => ({
+    reads: { card1: serverTimestamp() },
+    updated_by: 'teacher1@impact7.kr',
+    updated_at: serverTimestamp(),
+  });
+
+  test('본인 문서 create/read 허용', async () => {
+    const db = authedCtx(env, 'teacher1');
+    await assertSucceeds(setDoc(doc(db, MY_DOC), validReads()));
+    await assertSucceeds(getDoc(doc(db, MY_DOC)));
+  });
+
+  test('본인 문서 merge update 허용 (reads 맵 키 추가)', async () => {
+    const db = authedCtx(env, 'teacher1');
+    await assertSucceeds(setDoc(doc(db, MY_DOC), validReads()));
+    await assertSucceeds(setDoc(doc(db, MY_DOC), {
+      reads: { card2: serverTimestamp() },
+      updated_by: 'teacher1@impact7.kr',
+      updated_at: serverTimestamp(),
+    }, { merge: true }));
+  });
+
+  test('타인 문서 read/write 거부', async () => {
+    const db = authedCtx(env, 'teacher2');
+    await assertFails(getDoc(doc(db, MY_DOC)));
+    await assertFails(setDoc(doc(db, MY_DOC), validReads()));
+  });
+
+  test('허용 목록 밖 필드 거부', async () => {
+    const db = authedCtx(env, 'teacher1');
+    await assertFails(setDoc(doc(db, MY_DOC), { ...validReads(), evil: true }));
+  });
+
+  test('reads가 맵이 아니면 거부', async () => {
+    const db = authedCtx(env, 'teacher1');
+    await assertFails(setDoc(doc(db, MY_DOC), { ...validReads(), reads: 'notamap' }));
+  });
+
+  test('비인증 read/write 거부', async () => {
+    const db = unauthedCtx(env);
+    await assertFails(getDoc(doc(db, MY_DOC)));
+    await assertFails(setDoc(doc(db, MY_DOC), validReads()));
+  });
 });
