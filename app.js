@@ -566,12 +566,12 @@ onAuthStateChanged(auth, async (user) => {
     if (user) {
         // dataApp(Firestore) auth 미러링 완료 보장 — 미완이면 첫 쿼리가 unauthenticated로 거부됨
         await dataAuthReady();
-        // 도메인 체크: impact7.kr 또는 gw.impact7.kr 인증된 계정만 허용
+        // 도메인 체크: impact7.kr 인증된 계정만 허용
         const email = user.email || '';
-        const allowedDomain = email.endsWith('@impact7.kr') || email.endsWith('@gw.impact7.kr');
+        const allowedDomain = email.endsWith('@impact7.kr');
         if (!user.emailVerified || !allowedDomain) {
             // 의도적 blocking alert — 직후 logout()으로 화면이 전환되므로 토스트는 못 본다
-            alert('❌ 허용되지 않은 계정입니다.\n학원 계정(@impact7.kr 또는 @gw.impact7.kr)으로 다시 로그인해주세요.');
+            alert('❌ 허용되지 않은 계정입니다.\n학원 계정(@impact7.kr)으로 다시 로그인해주세요.');
             await logout();
             return;
         }
