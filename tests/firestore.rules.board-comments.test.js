@@ -38,6 +38,11 @@ describe('board_cards/{cardId}/comments — 카드 댓글 서브컬렉션', () =
     await assertSucceeds(setDoc(doc(db, 'board_cards/card1/comments/c3'), validComment()));
   });
 
+  test('parent_id 포함 답글 create 허용', async () => {
+    const db = authedCtx(env, 'teacher1');
+    await assertSucceeds(setDoc(doc(db, 'board_cards/card1/comments/c3r'), { ...validComment(), parent_id: 'c3' }));
+  });
+
   test('허용 목록 밖 필드 포함 create 거부', async () => {
     const db = authedCtx(env, 'teacher1');
     await assertFails(setDoc(doc(db, 'board_cards/card1/comments/c4'), { ...validComment(), evil: true }));
