@@ -22,6 +22,11 @@ describe('buildParentNoticeVariables', () => {
       '#{학생명}': '김', '#{날짜}': '7/7(화)', '#{내용}': '수업 결과',
     });
   });
+  it('maps arrival_plan template vars', () => {
+    expect(buildParentNoticeVariables({ name: '김' }, 'arrival_plan', { 일시: '7/22 14시', 사유: '보충' })).toEqual({
+      '#{학생명}': '김', '#{일시}': '7/22 14시', '#{사유}': '보충',
+    });
+  });
   it('returns null for an unknown template', () => {
     expect(buildParentNoticeVariables({}, 'bogus', {})).toBeNull();
   });

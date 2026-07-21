@@ -73,6 +73,13 @@ export const PARENT_NOTICE_TEMPLATES = {
     vars: ['시각'],
     fallback: `${BRAND_PREFIX} 지각 안내\n#{학생명} 학생이 #{시각}에 지각 등원하였습니다.\n문의: 02-2649-0509`,
   },
+  // 등원 예정 안내 — 보충/클리닉/재시/대체수업/수능인덱스 등 정규 외 등원을 사전 고지. 메시지 탭 수동 발송.
+  arrival_plan: {
+    envKey: 'ARRIVAL_PLAN_TEMPLATE_CODE',
+    label: '등원 예정 안내',
+    vars: ['일시', '사유'],
+    fallback: `${BRAND_PREFIX} 등원 예정 안내\n#{학생명} 학생 등원 예정 — 일시: #{일시} / 사유: #{사유}\n시간에 늦지 않게 등원 부탁드립니다.\n문의: 02-2649-0509`,
+  },
   // 미등원(결석) 안내 — 등원예정 경과 + 미체크인 자동판정 스윕이 발송.
   absence: {
     envKey: 'ABSENCE_TEMPLATE_CODE',
