@@ -1,6 +1,6 @@
 import { test, before, after, beforeEach, describe } from 'node:test';
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { setDoc, doc, updateDoc } from 'firebase/firestore';
+import { setDoc, doc, updateDoc, deleteField } from 'firebase/firestore';
 import { createTestEnv, authedCtx } from './firestore-rules-helpers.js';
 
 // enrollmentStatusConsistent: 비재원 상태(퇴원/종강/상담)는 enrollments가 비어 있어야 한다.
@@ -61,6 +61,12 @@ describe('students enrollment↔status 정합성 규칙 (M-05)', () => {
       name: '최학생', enrollments: [], status: '상담', acquisition_source: '',
     });
     await assertSucceeds(updateDoc(doc(db, 'students/source-empty-legacy'), { acquisition_source: '블로그' }));
+    await seed('source-empty-edit', {
+      name: '정학생', enrollments: [], status: '상담', acquisition_source: '',
+    });
+    await assertSucceeds(updateDoc(doc(db, 'students/source-empty-edit'), {
+      acquisition_source: deleteField(), parent_phone_2: '010-2222-3333',
+    }));
   });
 
   test('기존 acquisition_source 변경은 거부', async () => {

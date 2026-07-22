@@ -34,6 +34,7 @@ import './theme.js';
 import { markFormClean, markFormDirty, confirmDiscardUnsaved } from './unsaved-guard.js';
 import { maybeSuggestUpgrade } from './student-number-reissue.js';
 import { waitForFinalizedStudent } from './leave-request-sync.js';
+import { requiresAcquisitionSource, setAcquisitionSourceRequired } from './student-form-policy.js';
 
 const _promoteEnrollPending = createPromoteEnrollPending(
     { db, writeBatch, doc, collection, serverTimestamp }
@@ -275,6 +276,7 @@ const _prefillNewStudentForm = (s) => {
         if (s.parent_phone_1) f.parent_phone_1.value = s.parent_phone_1;
         if (s.parent_phone_2) f.parent_phone_2.value = s.parent_phone_2;
         if (s.other_phone) f.other_phone.value = s.other_phone;
+        setAcquisitionSourceRequired(f, false);
         if (s.level && window.handleLevelChange) window.handleLevelChange(s.level);
     }, 50);
 };
@@ -2073,13 +2075,14 @@ _searchClearBtn?.addEventListener('click', () => {
         if (isEditMode) return;
         const name = _nameInput?.value.trim();
         const phone = _phoneInput?.value.trim();
-        if (!name || !phone) return;
-
-        const docId = makeDocId(name, phone);
+        const docId = name && phone ? makeDocId(name, phone) : null;
+        const pastStudent = docId ? allStudents.find(s => s.id === docId) : null;
+        setAcquisitionSourceRequired(_form, !pastStudent);
+        if (!pastStudent) {
+            _lastFilledDocId = null;
+            return;
+        }
         if (docId === _lastFilledDocId) return;
-
-        const pastStudent = allStudents.find(s => s.id === docId);
-        if (!pastStudent) return;
 
         _lastFilledDocId = docId;
         if (pastStudent.level) _form.level.value = pastStudent.level;
@@ -2104,12 +2107,9 @@ _searchClearBtn?.addEventListener('click', () => {
     _phoneInput?.addEventListener('blur', _tryPastStudentAutofill);
     _nameInput?.addEventListener('change', _tryPastStudentAutofill);
 
-    // 폼 초기화 시 상태 리셋
-    const origShowNewForm = window.showNewStudentForm;
-    window.showNewStudentForm = (...args) => {
+    _form?.addEventListener('reset', () => {
         _lastFilledDocId = null;
-        return origShowNewForm?.(...args);
-    };
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2275,7 +2275,9 @@ window.showNewStudentForm = () => {
     document.getElementById('detail-view').style.display = 'none';
     document.getElementById('history-view').style.display = 'none';
     document.getElementById('detail-form').style.display = 'block';
-    document.getElementById('new-student-form').reset();
+    const f = document.getElementById('new-student-form');
+    f.reset();
+    setAcquisitionSourceRequired(f, true);
     populateStatusOptions(null, true);  // 신규: 등원예정/재원만 (휴원 진입 차단)
     document.getElementById('form-memo-list').innerHTML =
         '<p style="color:var(--text-sec);font-size:0.85em;">저장 후 메모를 추가할 수 있습니다.</p>';
@@ -2308,7 +2310,6 @@ window.showNewStudentForm = () => {
     }
     // 학부 기본값에 맞춰 학기 드롭다운 채움 (학부 미선택 시 빈 옵션)
     if (window.handleLevelChange) {
-        const f = document.getElementById('new-student-form');
         window.handleLevelChange(f?.level?.value || '');
     }
 };
@@ -2370,6 +2371,7 @@ window.showEditForm = () => {
 
     const f = document.getElementById('new-student-form');
     f.reset();
+    setAcquisitionSourceRequired(f, false);
 
     // Pre-fill 기본 정보 + 연락처
     f.name.value = student.name || '';
@@ -2465,6 +2467,7 @@ window.submitNewStudent = async () => {
     const acquisitionSource = f.acquisition_source.value.trim();
     const selectedBranch = f.acquisition_branch.value;
     const oldStudent = isEditMode ? (allStudents.find(s => s.id === currentStudentId) || {}) : null;
+    const existingStudent = isEditMode ? null : allStudents.find(s => s.id === makeDocId(name, parentPhone1));
 
     const grade = f.grade.value.trim().replace(/[^0-9]/g, '');
     const level = f.level.value;
@@ -2491,7 +2494,7 @@ window.submitNewStudent = async () => {
     if (!school) { showToast('학교를 입력하세요.', 'warn'); f.school_current.focus(); return; }
     if (!grade) { showToast('학년을 입력하세요.', 'warn'); f.grade.focus(); return; }
     if (!level) { showToast('학부(초/중/고)를 선택하세요.', 'warn'); f.level.focus(); return; }
-    if (!acquisitionSource && !String(oldStudent?.acquisition_source || '').trim()) {
+    if (requiresAcquisitionSource(isEditMode, existingStudent) && !acquisitionSource) {
         showToast('유입 채널을 선택하세요.', 'warn');
         f.acquisition_source.focus();
         return;
@@ -2573,7 +2576,7 @@ window.submitNewStudent = async () => {
             special_end_date: deleteField(),
         };
         if (!String(oldStudent.acquisition_source || '').trim()) {
-            studentData.acquisition_source = acquisitionSource;
+            studentData.acquisition_source = acquisitionSource || deleteField();
         }
         if (!String(oldStudent.acquisition_branch || '').trim()) {
             studentData.acquisition_branch = selectedBranch;
@@ -2612,10 +2615,10 @@ window.submitNewStudent = async () => {
             parent_phone_1: parentPhone1,
             parent_phone_2: f.parent_phone_2.value.trim(),
             other_phone: f.other_phone.value.trim(),
-            acquisition_source: acquisitionSource,
             acquisition_branch: selectedBranch,
             branch: selectedBranch,
         };
+        if (acquisitionSource) studentData.acquisition_source = acquisitionSource;
     }
 
     // 신규 등록 폼의 수업 정보 수집: static 필드(첫 수업) + _pendingEnrollments(추가 수업)
@@ -2776,7 +2779,6 @@ window.submitNewStudent = async () => {
             const docId = makeDocId(name, parentPhone1);
             savedDocId = docId;
             const selectionBeforeCommit = currentStudentId;
-            const existingStudent = allStudents.find(s => s.id === docId);
 
             if (existingStudent) {
                 // 기존 학생 존재 (퇴원 등) — 기본 정보 merge.
@@ -2787,7 +2789,7 @@ window.submitNewStudent = async () => {
                 const mergeData = { ...studentData };
                 mergeData.acquisition_source = String(existingStudent.acquisition_source || '').trim()
                     ? existingStudent.acquisition_source
-                    : acquisitionSource;
+                    : acquisitionSource || deleteField();
                 mergeData.acquisition_branch = String(existingStudent.acquisition_branch || '').trim()
                     ? existingStudent.acquisition_branch
                     : selectedBranch;
