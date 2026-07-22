@@ -382,7 +382,8 @@ function msIcon(...args) { return window.msIcon(...args); }
     renderContent();
   }
 
-  function openModal() {
+  async function openModal() {
+    await window.loadIconRenderer();
     if (!overlayEl) {
       overlayEl = createModal();
 

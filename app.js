@@ -5,7 +5,9 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { installKeyboardActivation } from './a11y-dom.js';
 import { collection, getDocs, getDocsFromCache, getDoc, doc, setDoc, addDoc, deleteDoc, updateDoc, deleteField, serverTimestamp, Timestamp, query, where, orderBy, limit, writeBatch, onSnapshot } from 'firebase/firestore';
 import { auth, db, dataAuthReady } from './firebase-config.js';
-import { signInWithGoogle, logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
+import { logout, getGoogleAccessToken, ensureGoogleAccessToken } from './auth.js';
+import { loadGooglePickerApi } from './google-api-loader.js';
+import { runAuthenticatedStartup } from './startup.js';
 import { cleanSchoolName, collectKnownSchoolNames, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor, deriveTenure } from '@impact7/shared/history';
@@ -582,11 +584,23 @@ onAuthStateChanged(auth, async (user) => {
         storeUpdate({ currentUser: user });
         avatarBtn.textContent = user.email[0].toUpperCase();
         avatarBtn.title = `Logged in as ${displayImpact7Email(user.email)} (click to logout)`;
-        await loadUserRole(email);
-        await loadPopulationPerms(user.uid);
-        await loadSemesterSettings();
-        getCurrentSemester();
-        loadStudentList().then(() => generateDailyStatsIfNeeded());
+        await runAuthenticatedStartup({
+            loadUserRole: () => loadUserRole(email),
+            loadPopulationPerms: () => loadPopulationPerms(user.uid),
+            loadSemesterSettings,
+            getCurrentSemester,
+            loadStudentList,
+            generateDailyStatsIfNeeded,
+            onError: (error) => {
+                console.error('[BOOTSTRAP] 초기 설정 로드 실패:', error);
+                document.querySelector('.list-items').innerHTML = `
+                    <div style="padding:24px;color:var(--text-sec)">
+                        <p>초기 설정을 불러오지 못했습니다.</p>
+                        <button class="btn-save" type="button" onclick="window.location.reload()">다시 시도</button>
+                    </div>`;
+                showToast('초기 설정을 불러오지 못했습니다. 다시 시도해주세요.', 'error', { sticky: true });
+            },
+        });
     } else {
         currentUser = null;
         storeUpdate({ currentUser: null });
@@ -602,30 +616,6 @@ onAuthStateChanged(auth, async (user) => {
         updateCount(null);
     }
 });
-
-// ---------------------------------------------------------------------------
-// Login / Logout
-// ---------------------------------------------------------------------------
-window.handleLogin = async () => {
-    try {
-        if (currentUser) await logout();
-        else await signInWithGoogle();
-    } catch (error) {
-        const messages = {
-            'auth/api-key-not-valid': '❌ API 키 오류 — Firebase Console에서 API 키를 확인하세요',
-            'auth/unauthorized-domain': '❌ 인증되지 않은 도메인 — Firebase Auth > 승인된 도메인에 localhost를 추가하세요',
-            'auth/popup-blocked': '❌ 팝업이 차단됨 — 브라우저에서 팝업을 허용해주세요',
-            'auth/popup-closed-by-user': '팝업이 닫혔습니다. 다시 시도하세요.',
-            'auth/cancelled-popup-request': '이미 로그인 팝업이 열려 있습니다.',
-        };
-        const msg = messages[error.code] || `❌ 로그인 실패: ${error.code}`;
-        console.error('[AUTH ERROR]', error.code, error.message);
-        showToast(msg, 'error');
-    }
-};
-
-// 모듈(수 MB) 로드 완료 전 클릭은 무반응이므로 HTML에서 aria-disabled로 시작, 할당 직후 활성화
-document.getElementById('login-avatar-btn')?.removeAttribute('aria-disabled');
 
 // ---------------------------------------------------------------------------
 // Load all students from Firestore, sort by name (Korean-aware)
@@ -3892,41 +3882,35 @@ window.handleSheetTemplate = async () => {
     }
 };
 
-// Google Picker — 드라이브에서 구글시트 선택 → 바로 가져오기
-let _pickerApiLoaded = false;
-
-function loadPickerApi() {
-    return new Promise((resolve) => {
-        if (_pickerApiLoaded) { resolve(); return; }
-        gapi.load('picker', () => { _pickerApiLoaded = true; resolve(); });
-    });
-}
-
 window.handleSheetPicker = async () => {
-    const token = await ensureGoogleAccessToken();
-    if (!token) {
-        showToast('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.', 'warn');
-        return;
+    try {
+        const token = await ensureGoogleAccessToken();
+        if (!token) {
+            showToast('구글 드라이브 접근 권한이 필요합니다.\n로그아웃 후 다시 로그인해주세요.', 'warn');
+            return;
+        }
+
+        await loadGooglePickerApi();
+
+        const picker = new google.picker.PickerBuilder()
+            .setTitle('가져올 구글시트를 선택하세요')
+            .addView(
+                new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
+                    .setMode(google.picker.DocsViewMode.LIST)
+            )
+            .setOAuthToken(token)
+            .setCallback(async (data) => {
+                if (data.action !== google.picker.Action.PICKED) return;
+                const sheetId = data.docs[0].id;
+                const sheetName = data.docs[0].name;
+                await importFromSheetId(sheetId, sheetName);
+            })
+            .build();
+
+        picker.setVisible(true);
+    } catch (error) {
+        showToast(`구글 드라이브 선택기를 열지 못했습니다: ${error.message}`, 'error');
     }
-
-    await loadPickerApi();
-
-    const picker = new google.picker.PickerBuilder()
-        .setTitle('가져올 구글시트를 선택하세요')
-        .addView(
-            new google.picker.DocsView(google.picker.ViewId.SPREADSHEETS)
-                .setMode(google.picker.DocsViewMode.LIST)
-        )
-        .setOAuthToken(token)
-        .setCallback(async (data) => {
-            if (data.action !== google.picker.Action.PICKED) return;
-            const sheetId = data.docs[0].id;
-            const sheetName = data.docs[0].name;
-            await importFromSheetId(sheetId, sheetName);
-        })
-        .build();
-
-    picker.setVisible(true);
 };
 
 async function importFromSheetId(sheetId, sheetName) {

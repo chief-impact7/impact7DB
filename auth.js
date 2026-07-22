@@ -1,5 +1,6 @@
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth } from './firebase-config.js';
+import { loadGoogleIdentityServices } from './google-api-loader.js';
 
 const provider = new GoogleAuthProvider();
 // Drive 읽기 권한 — Google Picker에서 시트 선택용
@@ -74,9 +75,15 @@ function _initGisTokenClient() {
  * GIS silent refresh — prompt 없이 토큰 재발급.
  * 사용자가 이미 동의했고 Google 세션이 활성이면 팝업 없이 성공.
  */
-function _silentRefresh() {
+async function _silentRefresh() {
+    try {
+        await loadGoogleIdentityServices();
+    } catch (error) {
+        console.warn('[GIS] SDK 로드 실패:', error);
+        return null;
+    }
     const client = _initGisTokenClient();
-    if (!client) return Promise.resolve(null);
+    if (!client) return null;
     return new Promise(resolve => {
         client.callback = (resp) => {
             if (resp?.access_token) {
