@@ -1,0 +1,262 @@
+{
+  "generated_at": "2026-07-23T12:12:05.932Z",
+  "mode": "apply",
+  "summary": {
+    "students_scanned": 15737,
+    "students_targeted": 8,
+    "students_auto_backfillable": 4,
+    "students_applied": 4,
+    "class_settings_scanned": 64,
+    "class_settings_targeted": 7,
+    "class_settings_auto_backfillable": 0,
+    "class_settings_applied": 0,
+    "change_items": 7,
+    "fingerprint": "061d3f3b9403ed88166b9b9aaec7388991b54524b0755c8690ba6daaf5711f74"
+  },
+  "manual": {
+    "students_by_reason": {
+      "MULTIPLE_REGULAR_CLASS_CODES": {
+        "reason": "서로 다른 반코드의 정규 항목이 2개 이상",
+        "items": [
+          {
+            "id": "김범준3_1094061790",
+            "name": "김범준3",
+            "fingerprint": "[{\"start_date\":\"2026-07-17\",\"level_symbol\":\"A\",\"class_number\":\"104\",\"class_type\":\"정규\",\"day\":[\"목\"],\"semester\":\"2026-Spring\",\"account_id\":\"c5ddef77-5eaa-44eb-bb76-bef653327ea2\",\"account_type\":\"정규\",\"end_date\":\"2026-07-21\",\"end_reason\":\"반이동\"},{\"start_time\":\"16:50\",\"semester\":\"2026-Summer\",\"class_number\":\"102\",\"class_type\":\"정규\",\"day\":[\"화\"],\"start_date\":\"2026-07-22\",\"level_symbol\":\"A\",\"account_id\":\"c5ddef77-5eaa-44eb-bb76-bef653327ea2\",\"account_type\":\"정규\"}]"
+          },
+          {
+            "id": "박다민_1032944622",
+            "name": "박다민",
+            "fingerprint": "[{\"start_time\":\"19:30\",\"class_type\":\"정규\",\"level_symbol\":\"A\",\"semester\":\"2026-Spring\",\"day\":[\"월\"],\"naesin_schedule\":{\"일\":\"12:30\"},\"start_date\":\"2026-05-18\",\"class_number\":\"103\",\"account_id\":\"113ff8ab-ed19-46ed-b521-49c5453500ac\",\"account_type\":\"정규\"},{\"class_number\":\"101\",\"level_symbol\":\"A\",\"semester\":\"2026-Spring\",\"day\":[\"금\"],\"start_date\":\"2026-05-18\",\"start_time\":\"16:50\",\"class_type\":\"정규\",\"account_id\":\"113ff8ab-ed19-46ed-b521-49c5453500ac\",\"account_type\":\"정규\"}]"
+          },
+          {
+            "id": "이준영_1033887178",
+            "name": "이준영",
+            "fingerprint": "[{\"class_type\":\"정규\",\"start_time\":\"19:30\",\"day\":[\"금\"],\"level_symbol\":\"AX\",\"semester\":\"2026-Spring\",\"start_date\":\"2026-05-18\",\"class_number\":\"103\",\"account_id\":\"c2804418-f519-4f6e-9f82-a84f81fb486a\",\"account_type\":\"정규\"},{\"class_number\":\"101\",\"semester\":\"2026-Spring\",\"start_date\":\"2026-05-18\",\"day\":[\"월\"],\"level_symbol\":\"AX\",\"start_time\":\"16:50\",\"class_type\":\"정규\",\"account_id\":\"c2804418-f519-4f6e-9f82-a84f81fb486a\",\"account_type\":\"정규\"},{\"class_type\":\"특강\",\"level_symbol\":\"\",\"class_number\":\"수능인덱스 1차 수1\",\"day\":[\"수\"],\"start_date\":\"2026-07-21\",\"end_date\":\"2026-07-25\"}]"
+          },
+          {
+            "id": "최민준_1066428871",
+            "name": "최민준",
+            "fingerprint": "[{\"class_number\":\"101\",\"start_date\":\"2026-05-15\",\"level_symbol\":\"PA\",\"day\":[\"금\"],\"semester\":\"2026-Spring2\",\"class_type\":\"정규\",\"start_time\":\"15:00\",\"account_id\":\"fb261fc4-0a1d-4da0-8f64-458f2a998381\",\"account_type\":\"정규\"},{\"semester\":\"2026-Spring2\",\"class_type\":\"정규\",\"class_number\":\"102\",\"level_symbol\":\"PA\",\"start_date\":\"2026-05-19\",\"day\":[\"화\"],\"start_time\":\"15:00\",\"account_id\":\"fb261fc4-0a1d-4da0-8f64-458f2a998381\",\"account_type\":\"정규\"}]"
+          }
+        ]
+      },
+      "INNER_WITHOUT_REGULAR": {
+        "reason": "내신/자유학기 항목은 있으나 정규 항목 없음",
+        "items": []
+      },
+      "UNSUPPORTED_CLASS_TYPE": {
+        "reason": "허용된 5종 밖의 class_type",
+        "items": []
+      },
+      "CONFLICTING_REGULAR_ACCOUNT_IDS": {
+        "reason": "정규계열 항목에 서로 다른 기존 account_id 존재",
+        "items": []
+      },
+      "SHARED_ID_ACROSS_INDEPENDENT_ACCOUNTS": {
+        "reason": "독립 계정끼리 기존 account_id를 공유",
+        "items": []
+      },
+      "EXISTING_ACCOUNT_TYPE_CONFLICT": {
+        "reason": "기존 account_type이 class_type 기준 유형과 불일치",
+        "items": []
+      }
+    },
+    "class_settings_by_reason": {
+      "BRANCH_UNRESOLVED": {
+        "reason": "반코드에서 branch 파생 불가",
+        "items": [
+          {
+            "id": "수능인덱스 1차 수1"
+          },
+          {
+            "id": "수능인덱스 1차 수2"
+          },
+          {
+            "id": "수능인덱스 1차 토1"
+          },
+          {
+            "id": "수능인덱스 1차 토2"
+          },
+          {
+            "id": "중급문법A"
+          },
+          {
+            "id": "중급문법B"
+          },
+          {
+            "id": "초급문법B"
+          }
+        ]
+      }
+    }
+  },
+  "concurrent_changes": {
+    "students": [],
+    "class_settings": []
+  },
+  "class_settings_changes": [],
+  "samples": [
+    {
+      "id": "강은수_1088735898",
+      "name": "강은수",
+      "fingerprint": "[{\"semester\":\"2026-Spring\",\"day\":[\"금\",\"월\"],\"level_symbol\":\"AX\",\"start_date\":\"2026-05-22\",\"naesin_schedule\":{\"일\":\"18:00\"},\"start_time\":\"16:50\",\"class_type\":\"정규\",\"class_number\":\"101\"},{\"day\":[\"화\",\"목\"],\"level_symbol\":\"\",\"end_date\":\"2026-08-10\",\"start_date\":\"2026-07-20\",\"class_type\":\"특강\",\"class_number\":\"2단지 고등 구문 특강\"},{\"class_type\":\"특강\",\"level_symbol\":\"\",\"class_number\":\"수능인덱스 1차 수2\",\"day\":[\"수\"],\"start_date\":\"2026-07-21\",\"end_date\":\"2026-07-25\"}]",
+      "changes": [
+        {
+          "index": 0,
+          "fields": {
+            "account_id": {
+              "after": "acct_23e8db38e9af6eb0f1b1"
+            },
+            "account_type": {
+              "after": "정규"
+            }
+          }
+        },
+        {
+          "index": 1,
+          "fields": {
+            "account_id": {
+              "after": "acct_4aa575165740f2332102"
+            },
+            "account_type": {
+              "after": "특강"
+            }
+          }
+        },
+        {
+          "index": 2,
+          "fields": {
+            "account_id": {
+              "after": "acct_e42a784c148fa68c37bc"
+            },
+            "account_type": {
+              "after": "특강"
+            }
+          }
+        }
+      ],
+      "account_groups": [
+        {
+          "account_id": "acct_23e8db38e9af6eb0f1b1",
+          "account_type": "정규",
+          "class_codes": [
+            "AX101"
+          ]
+        },
+        {
+          "account_id": "acct_4aa575165740f2332102",
+          "account_type": "특강",
+          "class_codes": [
+            "2단지 고등 구문 특강"
+          ]
+        },
+        {
+          "account_id": "acct_e42a784c148fa68c37bc",
+          "account_type": "특강",
+          "class_codes": [
+            "수능인덱스 1차 수2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "문서윤_1084561454",
+      "name": "문서윤",
+      "fingerprint": "[{\"start_time\":\"19:30\",\"semester\":\"2026-Summer\",\"day\":[\"화\",\"목\"],\"class_number\":\"106\",\"start_date\":\"2026-07-21\",\"level_symbol\":\"A\",\"class_type\":\"정규\"}]",
+      "changes": [
+        {
+          "index": 0,
+          "fields": {
+            "account_id": {
+              "after": "acct_cea9221ead7bdd1b1eef"
+            },
+            "account_type": {
+              "after": "정규"
+            }
+          }
+        }
+      ],
+      "account_groups": [
+        {
+          "account_id": "acct_cea9221ead7bdd1b1eef",
+          "account_type": "정규",
+          "class_codes": [
+            "A106"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "이병규_1091537071",
+      "name": "이병규",
+      "fingerprint": "[{\"day\":[\"금\",\"월\"],\"start_date\":\"2026-05-29\",\"level_symbol\":\"HA\",\"class_number\":\"103\",\"class_type\":\"정규\",\"semester\":\"2026-Spring\"},{\"day\":[\"금\",\"월\"],\"start_date\":\"2026-07-20\",\"end_date\":\"2026-08-10\",\"level_symbol\":\"\",\"class_number\":\"2단지 고등 어법서술형 특강\",\"class_type\":\"특강\"}]",
+      "changes": [
+        {
+          "index": 0,
+          "fields": {
+            "account_id": {
+              "after": "acct_677933ad757fc2d372da"
+            },
+            "account_type": {
+              "after": "정규"
+            }
+          }
+        },
+        {
+          "index": 1,
+          "fields": {
+            "account_id": {
+              "after": "acct_08949b3497a3f35cc5dc"
+            },
+            "account_type": {
+              "after": "특강"
+            }
+          }
+        }
+      ],
+      "account_groups": [
+        {
+          "account_id": "acct_677933ad757fc2d372da",
+          "account_type": "정규",
+          "class_codes": [
+            "HA103"
+          ]
+        },
+        {
+          "account_id": "acct_08949b3497a3f35cc5dc",
+          "account_type": "특강",
+          "class_codes": [
+            "2단지 고등 어법서술형 특강"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "진원준_1083233997",
+      "name": "진원준",
+      "fingerprint": "[{\"class_number\":\"106\",\"start_date\":\"2026-07-21\",\"class_type\":\"정규\",\"level_symbol\":\"A\",\"semester\":\"2026-Summer\",\"day\":[\"화\",\"목\"]}]",
+      "changes": [
+        {
+          "index": 0,
+          "fields": {
+            "account_id": {
+              "after": "acct_1337419bc5f481caf006"
+            },
+            "account_type": {
+              "after": "정규"
+            }
+          }
+        }
+      ],
+      "account_groups": [
+        {
+          "account_id": "acct_1337419bc5f481caf006",
+          "account_type": "정규",
+          "class_codes": [
+            "A106"
+          ]
+        }
+      ]
+    }
+  ]
+}
