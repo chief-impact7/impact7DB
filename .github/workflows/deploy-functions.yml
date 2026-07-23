@@ -88,8 +88,9 @@ jobs:
       - name: Deploy Firestore indexes
         if: github.event_name == 'workflow_dispatch' || steps.f.outputs.indexes == 'true'
         run: |
+          node -e "const fs=require('node:fs'); const config=JSON.parse(fs.readFileSync('firebase.json')); delete config.firestore.rules; fs.writeFileSync('.firebase-indexes-only.json', JSON.stringify({ firestore: config.firestore }))"
           export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
-          firebase deploy --only firestore:indexes --project impact7db --non-interactive
+          firebase deploy --config .firebase-indexes-only.json --only firestore:indexes --project impact7db --non-interactive
 
       # lockfile 추적으로 npm ci 사용 — 같은 SHA는 동일 의존성 트리로 배포(M-07).
       - name: Deploy functions:shared
