@@ -3,6 +3,9 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { applyTemplate, BRAND_PREFIX } from './templates.js';
 import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
+import { getApprovedAlimtalkTemplate } from './alimtalkTemplateHandler.js';
+import { buildAlimtalkOrSplitSmsDocs } from './bulkMessageHandler.js';
+import { hashRequestFingerprint } from './requestFingerprint.js';
 
 // 개별 학부모 정보성 안내(알림톡) 발송 callable. 학생 상세 패널 '메시지' 탭에서 1건 발송.
 // 정보성이므로 동의·야간 제한 없음. 승인된 알림톡 템플릿 코드는 .env로 주입(검수 승인 후 확정).
@@ -154,48 +157,143 @@ export async function handleSendParentNotice(request, deps = {}) {
   if (!targets.length) throw new HttpsError('failed-precondition', '선택한 대상의 연락처가 없습니다.');
 
   const variables = buildParentNoticeVariables(student, templateKey, data.variables);
-
-  const queueIds = [];
-  let duplicates = 0;
-  for (const target of targets) {
-    const queueRef = data.requestId
-      ? db.collection('message_queue').doc(targets.length === 1 ? String(data.requestId) : `${String(data.requestId)}_${target.field}`)
-      : db.collection('message_queue').doc();
-    if (data.requestId) {
-      const existing = await queueRef.get();
-      if (existing.exists) {
-        duplicates += 1;
-        queueIds.push(queueRef.id);
-        continue;
-      }
+  let alimtalkTemplate = { templateId: templateCode, content: def.fallback };
+  if (!templateCode.endsWith('_PENDING')) {
+    try {
+      alimtalkTemplate = await (deps.getAlimtalkTemplate ?? getApprovedAlimtalkTemplate)(templateCode);
+    } catch (error) {
+      if (error?.code !== 'failed-precondition') throw error;
     }
-    await queueRef.set({
-      kind: 'parent_notice',
-      student_id: studentId,
-      template_key: templateKey,
-      ...(reportDate ? { report_date_kst: reportDate } : {}),
-      recipient_role: target.field,
-      recipient_phone: target.phone,
-      template_code: templateCode,
-      template_variables: variables,
-      fallback_text: applyTemplate(def.fallback, variables),
-      status: 'pending',
-      attempt_count: 0,
-      next_attempt_at: null,
-      source: 'manual',
-      created_by: request.auth?.uid ?? null,
-      created_at: FieldValue.serverTimestamp(),
-    });
-    queueIds.push(queueRef.id);
+  }
+  const fallbackText = applyTemplate(def.fallback, variables);
+  const deliveries = targets.map((target) => ({
+    target,
+    docs: buildAlimtalkOrSplitSmsDocs({
+      phone: target.phone,
+      template: alimtalkTemplate,
+      variables,
+      fallbackText,
+      splitLongMessage: data.splitLongMessage === true,
+      splitGroupId: data.requestId ? `parent:${data.requestId}:${studentId}:${target.field}` : null,
+      createdBy: request.auth?.uid ?? null,
+    }),
+  }));
+  const requestFingerprint = hashRequestFingerprint([
+    studentId,
+    templateKey,
+    variables,
+    targets.map((target) => target.field),
+    reportDate,
+    data.splitLongMessage === true,
+  ]);
+
+  const entries = deliveries.flatMap(({ target, docs }) => (
+    docs.map((delivery, index) => {
+      const isSplit = docs.length > 1;
+      const requestDocId = data.requestId
+        ? (isSplit
+          ? `parent_${String(data.requestId)}_${target.field}_${index + 1}`
+          : `parent_${String(data.requestId)}${targets.length === 1 ? '' : `_${target.field}`}`)
+        : null;
+      const queueRef = requestDocId
+        ? db.collection('message_queue').doc(requestDocId)
+        : db.collection('message_queue').doc();
+      const convertedToSms = delivery.fallback_from_alimtalk === true;
+      return {
+        ref: queueRef,
+        payload: {
+          ...delivery,
+          kind: convertedToSms ? 'direct' : 'parent_notice',
+          student_id: studentId,
+          template_key: templateKey,
+          ...(reportDate ? { report_date_kst: reportDate } : {}),
+          recipient_role: target.field,
+          recipient_phone: target.phone,
+          source: convertedToSms ? 'parent_notice_split_sms' : 'manual',
+          request_fingerprint: requestFingerprint,
+          created_by: request.auth?.uid ?? null,
+          created_at: FieldValue.serverTimestamp(),
+        },
+      };
+    })
+  ));
+  const sentinelRef = data.requestId
+    ? db.collection('message_request_batches').doc(`parent_${String(data.requestId)}`)
+    : null;
+  const existing = sentinelRef ? await sentinelRef.get() : null;
+  if (existing?.exists && existing.data()?.request_fingerprint !== requestFingerprint) {
+    throw new HttpsError('invalid-argument', '같은 요청 ID의 발송 내용 또는 수신 대상이 이전 요청과 다릅니다.');
+  }
+  const legacyRefs = !existing?.exists && data.requestId
+    ? targets.map((target) => db.collection('message_queue').doc(
+      targets.length === 1 ? String(data.requestId) : `${String(data.requestId)}_${target.field}`,
+    ))
+    : [];
+  const legacyStates = await Promise.all(legacyRefs.map(async (ref, index) => ({
+    ref,
+    field: targets[index].field,
+    exists: (await ref.get()).exists,
+  })));
+  const existingLegacy = legacyStates.filter((state) => state.exists);
+  if (legacyStates.length && existingLegacy.length === legacyStates.length) {
+    const legacyQueueIds = existingLegacy.map(({ ref }) => ref.id);
+    return {
+      queued: false,
+      duplicate: true,
+      queueId: legacyQueueIds[0] ?? null,
+      queueIds: legacyQueueIds,
+      queuedCount: 0,
+      duplicateCount: legacyQueueIds.length,
+      template: def.label,
+      channel: 'alimtalk',
+      splitParts: 1,
+    };
+  }
+  const existingLegacyFields = new Set(existingLegacy.map(({ field }) => field));
+  const entriesToCreate = existingLegacy.length
+    ? entries.filter(({ payload }) => !existingLegacyFields.has(payload.recipient_role))
+    : entries;
+
+  let duplicate = !!existing?.exists;
+  if (!duplicate) {
+    const batch = db.batch();
+    if (sentinelRef) {
+      batch.create(sentinelRef, {
+        request_fingerprint: requestFingerprint,
+        queue_count: existingLegacy.length + entriesToCreate.length,
+        created_at: FieldValue.serverTimestamp(),
+      });
+    }
+    for (const { ref, payload } of entriesToCreate) {
+      if (sentinelRef) batch.create(ref, payload);
+      else batch.set(ref, payload);
+    }
+    try {
+      await batch.commit();
+    } catch (e) {
+      if (!(sentinelRef && (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message))))) throw e;
+      const raced = await sentinelRef.get();
+      if (raced.data()?.request_fingerprint !== requestFingerprint) {
+        throw new HttpsError('invalid-argument', '같은 요청 ID의 발송 내용 또는 수신 대상이 이전 요청과 다릅니다.');
+      }
+      duplicate = true;
+    }
   }
 
+  const convertedToSms = deliveries.some((delivery) => delivery.docs[0]?.fallback_from_alimtalk);
+  const queueIds = [
+    ...existingLegacy.map(({ ref }) => ref.id),
+    ...entriesToCreate.map(({ ref }) => ref.id),
+  ];
   return {
-    queued: queueIds.length > duplicates,
-    duplicate: duplicates === targets.length,
+    queued: !duplicate,
+    duplicate,
     queueId: queueIds[0] ?? null,
     queueIds,
-    queuedCount: queueIds.length - duplicates,
-    duplicateCount: duplicates,
+    queuedCount: duplicate ? 0 : entriesToCreate.length,
+    duplicateCount: duplicate ? queueIds.length : existingLegacy.length,
     template: def.label,
+    channel: convertedToSms ? 'sms' : 'alimtalk',
+    splitParts: convertedToSms ? deliveries[0].docs.length : 1,
   };
 }

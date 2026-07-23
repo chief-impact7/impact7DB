@@ -197,6 +197,99 @@ describe('processQueueDoc', () => {
     expect(db._logs).toHaveLength(0);
   });
 
+  it('분할 문자는 첫 조각 접수 후 다음 조각을 순서대로 접수한다', async () => {
+    const split = {
+      kind: 'direct',
+      recipient_phone: '01012345678',
+      split_group_id: 'split-1',
+      split_part_total: 2,
+      attempt_count: 0,
+    };
+    const db = makeDb({
+      q1: { ...split, status: 'pending', content: '[1/2] 첫째', split_part_index: 1 },
+      q2: { ...split, status: 'split_waiting', content: '[2/2] 둘째', split_part_index: 2 },
+    });
+    const sender = vi.fn()
+      .mockResolvedValueOnce({ ok: true, channel: 'sms', messageId: 'm1', groupId: 'g1', statusCode: '2000' })
+      .mockResolvedValueOnce({ ok: true, channel: 'sms', messageId: 'm2', groupId: 'g2', statusCode: '2000' });
+
+    await processQueueDoc(eventFor(db, 'q2'), { db, sender });
+    expect(sender).not.toHaveBeenCalled();
+    await processQueueDoc(eventFor(db, 'q1'), { db, sender });
+
+    expect(sender.mock.calls.map(([payload]) => payload.text)).toEqual(['[1/2] 첫째', '[2/2] 둘째']);
+    expect(db._queue.get('q1').status).toBe('awaiting_delivery_result');
+    expect(db._queue.get('q2').status).toBe('awaiting_delivery_result');
+  });
+
+  it('sweeper가 선행 조각 처리 후 고착된 분할 대기를 복구한다', async () => {
+    const split = {
+      kind: 'direct',
+      recipient_phone: '01012345678',
+      split_group_id: 'direct:req-1:01012345678',
+      split_part_total: 2,
+      attempt_count: 0,
+    };
+    const db = makeDb({
+      q1: { ...split, status: 'awaiting_delivery_result', content: '[1/2] 첫째', split_part_index: 1 },
+      q2: {
+        ...split,
+        status: 'split_waiting',
+        content: '[2/2] 둘째',
+        split_part_index: 2,
+        split_ready_at: new Date('2026-06-12T09:59:00Z'),
+      },
+    });
+    const sender = vi.fn().mockResolvedValue({
+      ok: true, channel: 'sms', messageId: 'm2', groupId: 'g2', statusCode: '2000',
+    });
+
+    const result = await runRetrySweep({ db, sender });
+
+    expect(result.processed).toBe(1);
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ text: '[2/2] 둘째' }));
+    expect(db._queue.get('q2').status).toBe('awaiting_delivery_result');
+  });
+
+  it('sweeper는 200건이 넘는 미준비 문서를 건너뛰고 준비된 후속 조각을 처리한다', async () => {
+    const now = new Date('2026-06-12T10:00:00Z');
+    const initial = {};
+    for (let i = 0; i < 201; i++) {
+      initial[`blocked${i}`] = {
+        kind: 'direct',
+        status: 'split_waiting',
+        recipient_phone: '01012345678',
+        content: `[2/3] 대기 ${i}`,
+        split_group_id: `blocked-${i}`,
+        split_part_index: 2,
+        split_part_total: 3,
+        attempt_count: 0,
+      };
+    }
+    initial.ready = {
+      kind: 'direct',
+      status: 'split_waiting',
+      recipient_phone: '01012345678',
+      content: '[3/3] 준비',
+      split_group_id: 'ready-group',
+      split_part_index: 3,
+      split_part_total: 3,
+      split_ready_at: new Date('2026-06-12T09:59:00Z'),
+      attempt_count: 0,
+    };
+    const db = makeDb(initial);
+    const sender = vi.fn().mockResolvedValue({
+      ok: true, channel: 'sms', messageId: 'm3', groupId: 'g3', statusCode: '2000',
+    });
+
+    const result = await runRetrySweep({ db, sender, now });
+
+    expect(result.processed).toBe(1);
+    expect(sender).toHaveBeenCalledWith(expect.objectContaining({ text: '[3/3] 준비' }));
+    expect(db._queue.get('ready').status).toBe('awaiting_delivery_result');
+    expect(db._queue.get('blocked0').status).toBe('split_waiting');
+  });
+
   it('transient 실패(sender throw) → failed_retryable, attempt 1, next_attempt_at 설정, 로그 없음', async () => {
     const db = makeDb({ q1: baseQueueDoc() });
     const sender = vi.fn().mockRejectedValue(new Error('ETIMEDOUT'));

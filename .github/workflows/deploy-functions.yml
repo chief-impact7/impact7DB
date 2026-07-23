@@ -8,6 +8,7 @@ on:
     paths:
       - 'functions-shared/**'
       - 'functions/**'
+      - 'firestore.indexes.json'
   # PR에서는 validate만 실행(deploy는 push 전용) — branch protection 필수 체크로 사용(G09).
   # 경로 필터 없이 모든 master PR에서 돌려, 필수 체크가 항상 보고되게 한다.
   pull_request:
@@ -70,6 +71,7 @@ jobs:
           filters: |
             shared: 'functions-shared/**'
             leave: 'functions/**'
+            indexes: 'firestore.indexes.json'
 
       - uses: actions/setup-node@v6
         with:
@@ -82,6 +84,12 @@ jobs:
           cat > "$HOME/sa.json" <<'JSON'
           ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           JSON
+
+      - name: Deploy Firestore indexes
+        if: github.event_name == 'workflow_dispatch' || steps.f.outputs.indexes == 'true'
+        run: |
+          export GOOGLE_APPLICATION_CREDENTIALS="$HOME/sa.json"
+          firebase deploy --only firestore:indexes --project impact7db --non-interactive
 
       # lockfile 추적으로 npm ci 사용 — 같은 SHA는 동일 의존성 트리로 배포(M-07).
       - name: Deploy functions:shared

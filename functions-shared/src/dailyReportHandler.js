@@ -2,7 +2,8 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
 import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
-import { buildSmsQueueDoc } from './smsQueueDoc.js';
+import { buildSmsQueueDocs } from './smsQueueDoc.js';
+import { hashRequestFingerprint } from './requestFingerprint.js';
 
 // 일일 학습 리포트 발송. 학생별 수동 발송(직원 권한).
 // 자유 본문은 승인 템플릿이 아니므로 LMS/SMS(kind='direct')로 보낸다.
@@ -35,46 +36,122 @@ export async function handleSendDailyReport(request, deps = {}) {
   if (!targets.length) throw new HttpsError('failed-precondition', '수신 연락처가 없습니다.');
 
   const createdBy = request.auth?.token?.email ?? null;
-  const queueIds = [];
-  let duplicateCount = 0;
-
-  for (const target of targets) {
-    const payload = {
-      ...buildSmsQueueDoc({
-        phone: target.phone,
-        recipientRole: target.field,
-        studentId,
-        content,
-        createdBy,
-      }),
-      student_id: studentId,
-      source: 'parent_report',
-      ...(reportDate ? { report_date_kst: reportDate } : {}),
-      created_at: FieldValue.serverTimestamp(),
+  const deliveries = targets.map((target) => ({
+    target,
+    docs: buildSmsQueueDocs({
+      phone: target.phone,
+      recipientRole: target.field,
+      studentId,
+      content,
+      createdBy,
+    }, {
+      splitLongMessage: data.splitLongMessage === true,
+      splitGroupId: data.requestId ? `daily:${data.requestId}:${studentId}:${target.field}` : null,
+    }),
+  }));
+  const requestFingerprint = hashRequestFingerprint([
+    studentId,
+    content,
+    reportDate,
+    targets.map((target) => target.field),
+    data.splitLongMessage === true,
+  ]);
+  const entries = deliveries.flatMap(({ target, docs }) => (
+    docs.map((doc, index) => {
+      const requestDocId = data.requestId
+        ? (docs.length > 1
+          ? `daily_${String(data.requestId)}_${target.field}_${index + 1}`
+          : `daily_${String(data.requestId)}${targets.length === 1 ? '' : `_${target.field}`}`)
+        : null;
+      const ref = requestDocId
+        ? db.collection('message_queue').doc(requestDocId)
+        : db.collection('message_queue').doc();
+      return {
+        ref,
+        payload: {
+          ...doc,
+          source: 'parent_report',
+          request_fingerprint: requestFingerprint,
+          ...(reportDate ? { report_date_kst: reportDate } : {}),
+          created_at: FieldValue.serverTimestamp(),
+        },
+      };
+    })
+  ));
+  const sentinelRef = data.requestId
+    ? db.collection('message_request_batches').doc(`daily_${String(data.requestId)}`)
+    : null;
+  const existing = sentinelRef ? await sentinelRef.get() : null;
+  if (existing?.exists && existing.data()?.request_fingerprint !== requestFingerprint) {
+    throw new HttpsError('invalid-argument', '같은 요청 ID의 발송 내용 또는 수신 대상이 이전 요청과 다릅니다.');
+  }
+  const legacyRefs = !existing?.exists && data.requestId
+    ? targets.map((target) => db.collection('message_queue').doc(
+      targets.length === 1 ? String(data.requestId) : `${String(data.requestId)}_${target.field}`,
+    ))
+    : [];
+  const legacyStates = await Promise.all(legacyRefs.map(async (ref, index) => ({
+    ref,
+    field: targets[index].field,
+    exists: (await ref.get()).exists,
+  })));
+  const existingLegacy = legacyStates.filter((state) => state.exists);
+  if (legacyStates.length && existingLegacy.length === legacyStates.length) {
+    const legacyQueueIds = existingLegacy.map(({ ref }) => ref.id);
+    return {
+      queued: false,
+      duplicate: true,
+      queueIds: legacyQueueIds,
+      queuedCount: 0,
+      duplicateCount: legacyQueueIds.length,
+      channel: 'sms',
+      scheduledDate: null,
+      splitParts: 1,
     };
-    const ref = data.requestId
-      ? db.collection('message_queue').doc(targets.length === 1 ? String(data.requestId) : `${String(data.requestId)}_${target.field}`)
-      : db.collection('message_queue').doc();
-    try {
-      await ref.create(payload);
-    } catch (e) {
-      if (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message))) {
-        duplicateCount += 1;
-        queueIds.push(ref.id);
-        continue;
-      }
-      throw e;
+  }
+  const existingLegacyFields = new Set(existingLegacy.map(({ field }) => field));
+  const entriesToCreate = existingLegacy.length
+    ? entries.filter(({ payload }) => !existingLegacyFields.has(payload.recipient_role))
+    : entries;
+
+  let duplicate = !!existing?.exists;
+  if (!duplicate) {
+    const batch = db.batch();
+    if (sentinelRef) {
+      batch.create(sentinelRef, {
+        request_fingerprint: requestFingerprint,
+        queue_count: existingLegacy.length + entriesToCreate.length,
+        created_at: FieldValue.serverTimestamp(),
+      });
     }
-    queueIds.push(ref.id);
+    for (const { ref, payload } of entriesToCreate) {
+      if (sentinelRef) batch.create(ref, payload);
+      else batch.set(ref, payload);
+    }
+    try {
+      await batch.commit();
+    } catch (e) {
+      if (!(sentinelRef && (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message))))) throw e;
+      const raced = await sentinelRef.get();
+      if (raced.data()?.request_fingerprint !== requestFingerprint) {
+        throw new HttpsError('invalid-argument', '같은 요청 ID의 발송 내용 또는 수신 대상이 이전 요청과 다릅니다.');
+      }
+      duplicate = true;
+    }
   }
 
+  const queueIds = [
+    ...existingLegacy.map(({ ref }) => ref.id),
+    ...entriesToCreate.map(({ ref }) => ref.id),
+  ];
   return {
-    queued: duplicateCount < targets.length,
-    duplicate: duplicateCount === targets.length,
+    queued: !duplicate,
+    duplicate,
     queueIds,
-    queuedCount: targets.length - duplicateCount,
-    duplicateCount,
+    queuedCount: duplicate ? 0 : entriesToCreate.length,
+    duplicateCount: duplicate ? queueIds.length : existingLegacy.length,
     channel: 'sms',
     scheduledDate: null,
+    splitParts: deliveries[0]?.docs.length ?? 1,
   };
 }

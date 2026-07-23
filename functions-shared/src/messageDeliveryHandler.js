@@ -8,7 +8,7 @@ import { maskPhone } from './phoneMask.js';
 // 클라가 큐 doc을 직접 읽지 않고, 권한 확인을 거친 이 callable이 상태별 상세와
 // 마스킹된 실패 관리 목록을 구분해 내려준다.
 
-const QUEUE_STATUSES = ['pending', 'processing', 'awaiting_delivery_result', 'failed_retryable', 'failed_permanent', 'sent'];
+const QUEUE_STATUSES = ['pending', 'split_waiting', 'processing', 'awaiting_delivery_result', 'failed_retryable', 'failed_permanent', 'sent'];
 const FAILED_STATUSES = ['failed_retryable', 'failed_permanent'];
 // 접수 성공 후 결과 미수신으로 종결된 코드 — 실패 확정이 아니라서 통계에서 분리 집계한다.
 const UNCONFIRMED_CODE = 'delivery_result_timeout';

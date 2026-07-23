@@ -14,6 +14,7 @@ const DELIVERY_RECHECK_MS = 2 * 60_000; // 미확정 시 재조회 간격(2분)
 const DELIVERY_LEASE_MS = 3 * 60_000; // 폴링 클레임 리스(중복 조회 방지) — 스케줄 주기(1분)보다 크게
 const MAX_DELIVERY_CHECKS = 15; // 재조회 상한(약 30분)
 const DELIVERY_SWEEP_LIMIT = 200; // 폴링 1회 처리 상한(대량 발송 시 함수 타임아웃 방지)
+const SPLIT_WAITING_SWEEP_LIMIT = 200;
 
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000]; // 1m, 5m, 15m
@@ -168,6 +169,54 @@ async function claimForProcessing(db, ref, expectedStatus) {
   });
 }
 
+async function nextSplitPart(db, data) {
+  const nextIndex = Number(data.split_part_index) + 1;
+  if (!data.split_group_id || nextIndex > Number(data.split_part_total)) return null;
+  const snap = await db.collection('message_queue')
+    .where('split_group_id', '==', data.split_group_id)
+    .where('split_part_index', '==', nextIndex)
+    .limit(1)
+    .get();
+  return snap.docs[0] ?? null;
+}
+
+async function updateStatusAndReadyNext(db, ref, data, patch) {
+  const next = await nextSplitPart(db, data);
+  const batch = db.batch();
+  batch.update(ref, patch);
+  if (next) {
+    batch.update(next.ref, {
+      split_ready_at: FieldValue.serverTimestamp(),
+      updated_at: FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
+async function dispatchNextSplitPart(db, data, sender, notifyResultCallback, now) {
+  const next = await nextSplitPart(db, data);
+  if (!next) return;
+  const claimed = await claimForProcessing(db, next.ref, 'split_waiting');
+  if (claimed) await dispatch(db, next.ref, claimed, sender, notifyResultCallback, now);
+}
+
+async function recoverSplitWaitingParts(db, sender, notifyResultCallback, now) {
+  const waiting = await db.collection('message_queue')
+    .where('status', '==', 'split_waiting')
+    .where('split_ready_at', '<=', now)
+    .orderBy('split_ready_at')
+    .limit(SPLIT_WAITING_SWEEP_LIMIT)
+    .get();
+  let processed = 0;
+  for (const doc of waiting.docs) {
+    const claimed = await claimForProcessing(db, doc.ref, 'split_waiting');
+    if (!claimed) continue;
+    await dispatch(db, doc.ref, claimed, sender, notifyResultCallback, now);
+    processed += 1;
+  }
+  return processed;
+}
+
 async function writeMessageLog(db, data, queueId, fields) {
   await db.collection('message_logs').add({
     queue_id: queueId,
@@ -191,7 +240,7 @@ async function writeMessageLog(db, data, queueId, fields) {
 }
 
 async function markSent(db, ref, data, result) {
-  await ref.update({
+  await updateStatusAndReadyNext(db, ref, data, {
     status: 'sent',
     attempt_count: (data.attempt_count ?? 0) + 1,
     next_attempt_at: null,
@@ -227,7 +276,7 @@ async function markRetry(db, ref, nextAttempt, statusCode) {
 }
 
 async function markPermanent(db, ref, data, nextAttempt, fields) {
-  await ref.update({
+  await updateStatusAndReadyNext(db, ref, data, {
     status: 'failed_permanent',
     attempt_count: nextAttempt,
     next_attempt_at: null,
@@ -263,6 +312,7 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
       channel: null,
     });
     await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: null });
+    await dispatchNextSplitPart(db, data, sender, notifyResultCallback, now);
     return;
   }
 
@@ -274,6 +324,7 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
       channel: null,
     });
     await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel: null });
+    await dispatchNextSplitPart(db, data, sender, notifyResultCallback, now);
     return;
   }
 
@@ -317,10 +368,12 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
       const scheduledAt = scheduledAtFor(data);
       const resultCheckBase = scheduledAt && scheduledAt > now ? scheduledAt : now;
       await markAwaitingDeliveryResult(db, ref, data, result, new Date(resultCheckBase.getTime() + DELIVERY_FIRST_DELAY_MS));
+      await dispatchNextSplitPart(db, data, sender, notifyResultCallback, now);
       return;
     }
     await markSent(db, ref, data, result);
     await fireResultCallback(notifyResultCallback, ref, data, { status: 'sent', channel: result.channel });
+    await dispatchNextSplitPart(db, data, sender, notifyResultCallback, now);
     return;
   }
 
@@ -337,12 +390,13 @@ async function dispatch(db, ref, data, sender, notifyResultCallback, now = new D
   } else {
     await markPermanent(db, ref, data, nextAttempt, { statusCode, message, channel });
     await fireResultCallback(notifyResultCallback, ref, data, { status: 'failed', channel });
+    await dispatchNextSplitPart(db, data, sender, notifyResultCallback, now);
   }
 }
 
 // SMS/LMS 접수 성공 → 발송결과 대기.
 async function markAwaitingDeliveryResult(db, ref, data, result, checkAt) {
-  await ref.update({
+  await updateStatusAndReadyNext(db, ref, data, {
     status: 'awaiting_delivery_result',
     attempt_count: (data.attempt_count ?? 0) + 1,
     sent_attempt_at: FieldValue.delete(), // 접수 확인됨 — 크래시 마커 해제(이후는 폴링이 확정)
@@ -508,12 +562,14 @@ export async function runRetrySweep(deps = {}) {
         channel: null,
       });
       await fireResultCallback(notifyResultCallback, doc.ref, claimed, { status: 'failed', channel: null });
+      await dispatchNextSplitPart(db, claimed, sender, notifyResultCallback, now);
       processed += 1;
       continue;
     }
     await dispatch(db, doc.ref, claimed, sender, notifyResultCallback, now);
     processed += 1;
   }
+  processed += await recoverSplitWaitingParts(db, sender, notifyResultCallback, now);
   return { processed };
 }
 

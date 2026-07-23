@@ -1,9 +1,14 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff, assertManagerOrAbove } from './authGuards.js';
-import { buildSmsQueueDoc } from './smsQueueDoc.js';
+import { buildSmsQueueDocs } from './smsQueueDoc.js';
 import { resolveRecipientPhones, resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
-import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
+import {
+  REQUEST_FINGERPRINT_VERSION,
+  campaignFingerprintMatches,
+  claimCampaignResume,
+  recipientFingerprint,
+} from './campaignResume.js';
 import { parseKstToDate } from './promoSchedule.js';
 import { currentSchool } from '@impact7/shared/student-label';
 import { enrollmentCode } from '@impact7/shared/enrollment-derivation';
@@ -13,13 +18,22 @@ import { digitsOf, isValidPhoneKR } from '@impact7/shared/phone';
 import { todayKST } from '@impact7/shared/datetime';
 import { applyTemplate } from './templates.js';
 import { getApprovedAlimtalkTemplate } from './alimtalkTemplateHandler.js';
+import { alimtalkLengthDetails, assertAlimtalkPayloadFits } from './messageLength.js';
 
 const MAX_RECIPIENTS = 10000;
 const BATCH_LIMIT = 400;
+const SPLIT_UNLOCK_STATUSES = new Set(['awaiting_delivery_result', 'sent', 'failed_permanent']);
 
 const VAR_TOKENS = ['%이름', '%학교', '%학년', '%반'];
 const STAFF_STATUSES = new Set(['active', 'inactive', 'terminated']);
 const ALIMTALK_RECIPIENT_FIELDS = new Set(['student', 'parent_1', 'parent_2']);
+
+function appendQueueDocs(docs, queueDocs, maxQueueDocs = Infinity) {
+  if (docs.length + queueDocs.length > maxQueueDocs) {
+    throw new HttpsError('invalid-argument', `분할 발송을 포함해 한 번에 최대 ${maxQueueDocs}건까지 등록할 수 있습니다.`);
+  }
+  docs.push(...queueDocs);
+}
 
 // 본문에 변수 토큰이 포함되어 있는지 여부. 포함 시 dedup 비활성(학생마다 내용이 다름).
 export function hasVarTokens(content) {
@@ -50,7 +64,7 @@ export function buildBulkRecipients(entries, opts) {
     : null;
   const useVars = hasVarTokens(opts.content);
 
-  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, deduped: 0 };
+  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, deduped: 0, split_groups: 0 };
   const docs = [];
   const seenPhones = new Set();
 
@@ -74,7 +88,7 @@ export function buildBulkRecipients(entries, opts) {
         continue;
       }
       if (!useVars) seenPhones.add(target.phone);
-      docs.push(buildSmsQueueDoc({
+      const queueDocs = buildSmsQueueDocs({
         studentId: id,
         phone: target.phone,
         campaignId: opts.campaignId,
@@ -82,8 +96,13 @@ export function buildBulkRecipients(entries, opts) {
         recipientRole: target.field,
         scheduledDate: opts.scheduledDate,
         imageId: opts.imageId,
-      }));
-      stats.queued += 1;
+      }, {
+        splitLongMessage: opts.splitLongMessage,
+        splitGroupId: `bulk:${opts.campaignId}:${id}:${target.field}`,
+      });
+      appendQueueDocs(docs, queueDocs, opts.maxQueueDocs);
+      stats.queued += queueDocs.length;
+      if (queueDocs.length > 1) stats.split_groups += 1;
     }
   }
 
@@ -134,18 +153,42 @@ function alimtalkVariablesWithName(templateVariables, hasNameVariable, name) {
     : { ...templateVariables };
 }
 
-export function buildAlimtalkQueueDoc({ phone, templateId, variables, fallbackText, scheduledDate }) {
-  return {
-    kind: 'bulk_alimtalk',
-    status: 'pending',
-    recipient_phone: phone,
-    template_code: templateId,
-    template_variables: variables,
-    fallback_text: fallbackText,
-    scheduled_date: scheduledDate ?? null,
-    attempt_count: 0,
-    next_attempt_at: null,
-  };
+export function buildAlimtalkOrSplitSmsDocs({
+  phone,
+  template,
+  variables,
+  fallbackText,
+  scheduledDate,
+  splitLongMessage = false,
+  splitGroupId = null,
+  createdBy = null,
+}) {
+  const renderedText = applyTemplate(template.content, variables);
+  const details = alimtalkLengthDetails(renderedText, fallbackText);
+  if (!details.overLimit) {
+    return [{
+      kind: 'bulk_alimtalk',
+      status: 'pending',
+      recipient_phone: phone,
+      template_code: template.templateId,
+      template_variables: variables,
+      fallback_text: fallbackText,
+      scheduled_date: scheduledDate ?? null,
+      attempt_count: 0,
+      next_attempt_at: null,
+    }];
+  }
+  if (!splitLongMessage) assertAlimtalkPayloadFits(renderedText, fallbackText);
+  return buildSmsQueueDocs({
+    kind: 'direct',
+    phone,
+    content: fallbackText,
+    scheduledDate,
+    createdBy,
+  }, {
+    splitLongMessage: true,
+    splitGroupId,
+  }).map((doc) => ({ ...doc, fallback_from_alimtalk: true }));
 }
 
 export function buildBulkAlimtalkRecipients(entries, opts) {
@@ -153,7 +196,14 @@ export function buildBulkAlimtalkRecipients(entries, opts) {
     ? opts.recipientFields
     : null;
   const hasNameVariable = templateHasNameVariable(opts.template);
-  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, deduped: 0 };
+  const stats = {
+    total: entries.length,
+    queued: 0,
+    skipped_no_phone: 0,
+    deduped: 0,
+    split_groups: 0,
+    converted_to_sms: 0,
+  };
   const docs = [];
   const seenPhones = new Set();
 
@@ -175,19 +225,24 @@ export function buildBulkAlimtalkRecipients(entries, opts) {
         continue;
       }
       if (!hasNameVariable) seenPhones.add(target.phone);
-      docs.push({
-        ...buildAlimtalkQueueDoc({
-          phone: target.phone,
-          templateId: opts.template.templateId,
-          variables,
-          fallbackText,
-          scheduledDate: opts.scheduledDate,
-        }),
+      const queueDocs = buildAlimtalkOrSplitSmsDocs({
+        phone: target.phone,
+        template: opts.template,
+        variables,
+        fallbackText,
+        scheduledDate: opts.scheduledDate,
+        splitLongMessage: opts.splitLongMessage,
+        splitGroupId: `bulk:${opts.campaignId}:${id}:${target.field}`,
+      }).map((doc) => ({
+        ...doc,
         student_id: id,
         recipient_role: target.field,
         campaign_id: opts.campaignId,
-      });
-      stats.queued += 1;
+      }));
+      appendQueueDocs(docs, queueDocs, opts.maxQueueDocs);
+      stats.queued += queueDocs.length;
+      if (queueDocs.length > 1) stats.split_groups += 1;
+      if (queueDocs[0]?.fallback_from_alimtalk) stats.converted_to_sms += queueDocs.length;
     }
   }
   return { docs, stats };
@@ -219,49 +274,78 @@ function collectStaffTargets(entries, { dateKst, dedupeByPhone }, stats) {
 
 export function buildStaffAlimtalkRecipients(entries, opts) {
   const hasNameVariable = templateHasNameVariable(opts.template);
-  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_status: 0, deduped: 0 };
+  const stats = {
+    total: entries.length,
+    queued: 0,
+    skipped_no_phone: 0,
+    skipped_status: 0,
+    deduped: 0,
+    split_groups: 0,
+    converted_to_sms: 0,
+  };
   const targets = collectStaffTargets(entries, {
     dateKst: opts.dateKst ?? todayKST(),
     dedupeByPhone: !hasNameVariable,
   }, stats);
-  const docs = targets.map(({ id, staff, phone }) => {
+  const docs = [];
+  for (const { id, staff, phone } of targets) {
     const variables = alimtalkVariablesWithName(opts.templateVariables, hasNameVariable, staff.name);
-    return {
-      ...buildAlimtalkQueueDoc({
-        phone,
-        templateId: opts.template.templateId,
-        variables,
-        fallbackText: alimtalkFallbackText(opts.template, variables),
-        scheduledDate: opts.scheduledDate,
-      }),
+    const queueDocs = buildAlimtalkOrSplitSmsDocs({
+      phone,
+      template: opts.template,
+      variables,
+      fallbackText: alimtalkFallbackText(opts.template, variables),
+      scheduledDate: opts.scheduledDate,
+      splitLongMessage: opts.splitLongMessage,
+      splitGroupId: `bulk:${opts.campaignId}:${id}:staff`,
+    }).map((doc) => ({
+      ...doc,
       staff_id: id,
       recipient_type: 'staff',
       recipient_role: 'staff',
       campaign_id: opts.campaignId,
-    };
-  });
+    }));
+    if (queueDocs.length > 1) stats.split_groups += 1;
+    if (queueDocs[0]?.fallback_from_alimtalk) stats.converted_to_sms += queueDocs.length;
+    appendQueueDocs(docs, queueDocs, opts.maxQueueDocs);
+  }
   stats.queued = docs.length;
   return { docs, stats };
 }
 
 export function buildStaffRecipients(entries, opts) {
-  const stats = { total: entries.length, queued: 0, skipped_no_phone: 0, skipped_status: 0, deduped: 0 };
+  const stats = {
+    total: entries.length,
+    queued: 0,
+    skipped_no_phone: 0,
+    skipped_status: 0,
+    deduped: 0,
+    split_groups: 0,
+  };
   const targets = collectStaffTargets(entries, {
     dateKst: opts.dateKst ?? todayKST(),
     dedupeByPhone: !opts.content.includes('%이름'),
   }, stats);
-  const docs = targets.map(({ id, staff, phone }) => ({
-    ...buildSmsQueueDoc({
+  const docs = [];
+  for (const { id, staff, phone } of targets) {
+    const queueDocs = buildSmsQueueDocs({
       phone,
       campaignId: opts.campaignId,
       content: opts.content.replaceAll('%이름', staff.name ?? ''),
       recipientRole: 'staff',
       scheduledDate: opts.scheduledDate,
       imageId: opts.imageId,
-    }),
-    staff_id: id,
-    recipient_type: 'staff',
-  }));
+    }, {
+      splitLongMessage: opts.splitLongMessage,
+      splitGroupId: `bulk:${opts.campaignId}:${id}:staff`,
+    }).map((doc) => ({
+      ...doc,
+      staff_id: id,
+      recipient_type: 'staff',
+    }));
+    if (queueDocs.length > 1) stats.split_groups += 1;
+    appendQueueDocs(docs, queueDocs, opts.maxQueueDocs);
+  }
   stats.queued = docs.length;
   return { docs, stats };
 }
@@ -342,12 +426,54 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   const campaignRef = data.requestId
     ? db.collection('bulk_campaigns').doc(String(data.requestId))
     : db.collection('bulk_campaigns').doc();
+  const fingerprint = recipientFingerprint(targetIds, {
+    ...(data.splitLongMessage === true ? { splitLongMessage: true } : {}),
+    ...(audience === 'staff'
+      ? { audience: 'staff' }
+      : {
+        recipientField: channel === 'alimtalk' ? alimtalkRecipientFields[0] : (data.recipientField ?? null),
+        recipientFields: channel === 'alimtalk'
+          ? alimtalkRecipientFields
+          : (Array.isArray(data.recipientFields) ? data.recipientFields : null),
+      }),
+    ...(scheduledDate ? { scheduledDate } : {}),
+    ...(data.mmsImage ? { mmsImage: data.mmsImage } : {}),
+    ...(channel === 'alimtalk' ? {
+      channel,
+      templateId: alimtalkTemplate.templateId,
+      templateContent: alimtalkTemplate.content,
+      templateVariables: alimtalkVariables,
+      templateButtons: alimtalkTemplate.buttons ?? [],
+    } : {}),
+  });
+  const legacyFingerprint = recipientFingerprint(targetIds, {
+    ...(audience === 'staff'
+      ? { audience: 'staff' }
+      : {
+        recipientField: channel === 'alimtalk' ? alimtalkRecipientFields[0] : (data.recipientField ?? null),
+        recipientFields: channel === 'alimtalk'
+          ? alimtalkRecipientFields
+          : (Array.isArray(data.recipientFields) ? data.recipientFields : null),
+      }),
+    ...(channel === 'alimtalk' ? {
+      channel,
+      templateId: alimtalkTemplate.templateId,
+      templateVariables: alimtalkVariables,
+    } : {}),
+  });
   const campaignSnapshot = await campaignRef.get();
   if (campaignSnapshot.exists) {
     const existing = campaignSnapshot.data();
+    const acceptedLegacy = existing?.request_fingerprint_version === REQUEST_FINGERPRINT_VERSION
+      ? []
+      : [legacyFingerprint];
+    if (existing?.content !== content
+      || !campaignFingerprintMatches(existing?.request_fingerprint, fingerprint, acceptedLegacy)) {
+      throw new HttpsError('failed-precondition', '재개 요청의 본문/대상이 원 캠페인과 다릅니다. 새 requestId로 발송하세요.');
+    }
     if (existing?.status !== 'enqueuing') return { campaignId: campaignRef.id, duplicate: true, stats: existing?.stats ?? null, scheduledDate: existing?.scheduled_date ?? null };
   }
-  const imageId = channel === 'sms' ? await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage) : null;
+  let imageId = channel === 'sms' && data.mmsImage ? 'preflight' : null;
 
   const collectionName = audience === 'staff' ? 'staff' : 'students';
   const refs = targetIds.map((id) => db.collection(collectionName).doc(id));
@@ -369,10 +495,13 @@ export async function handleCreateBulkMessage(request, deps = {}) {
     dateKst: deps.todayKst ?? todayKST(),
     template: alimtalkTemplate,
     templateVariables: alimtalkVariables,
+    splitLongMessage: data.splitLongMessage === true,
+    maxQueueDocs: MAX_RECIPIENTS,
   });
   stats.skipped_missing = targetIds.length - entries.length;
-  if (docs.length > MAX_RECIPIENTS) {
-    throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}건까지 발송할 수 있습니다.`);
+  if (data.mmsImage) {
+    imageId = docs.length ? await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage) : null;
+    for (const doc of docs) doc.image_id = imageId;
   }
 
   // create로 원자적 선점 — 같은 requestId 동시 요청에서 정확히 하나만 큐에 등록.
@@ -380,21 +509,6 @@ export async function handleCreateBulkMessage(request, deps = {}) {
   // 미발송되므로, lease 만료 시에만 트랜잭션 CAS(claimCampaignResume)로 잔여 재개 —
   // promoCampaignHandler와 동일 패턴. 지문에 recipientFields 포함 — 대상/수신필드가 바뀌면
   // phone dedup 귀속이 바뀌어 공유번호 중복 발송이 가능하므로 재개 거부.
-  const fingerprint = recipientFingerprint(targetIds, {
-    ...(audience === 'staff'
-      ? { audience: 'staff' }
-      : {
-        recipientField: channel === 'alimtalk' ? alimtalkRecipientFields[0] : (data.recipientField ?? null),
-        recipientFields: channel === 'alimtalk'
-          ? alimtalkRecipientFields
-          : (Array.isArray(data.recipientFields) ? data.recipientFields : null),
-      }),
-    ...(channel === 'alimtalk' ? {
-      channel,
-      templateId: alimtalkTemplate.templateId,
-      templateVariables: alimtalkVariables,
-    } : {}),
-  });
   const now = deps.now ?? new Date();
   let resuming = false;
   try {
@@ -405,10 +519,17 @@ export async function handleCreateBulkMessage(request, deps = {}) {
       created_by: request.auth?.uid ?? null, created_at: FieldValue.serverTimestamp(),
       enqueue_started_at: now.getTime(),
       request_fingerprint: fingerprint,
+      request_fingerprint_version: REQUEST_FINGERPRINT_VERSION,
     });
   } catch (e) {
     if (!(e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message)))) throw e;
-    const claim = await claimCampaignResume(db, campaignRef, { now, content, fingerprint, stats });
+    const claim = await claimCampaignResume(db, campaignRef, {
+      now,
+      content,
+      fingerprint,
+      legacyFingerprints: [legacyFingerprint],
+      stats,
+    });
     if (!claim.resumed) {
       const ex = claim.existing;
       return { campaignId: campaignRef.id, duplicate: true, stats: ex.stats ?? null, scheduledDate: ex.scheduled_date ?? null };
@@ -416,36 +537,67 @@ export async function handleCreateBulkMessage(request, deps = {}) {
     resuming = true;
   }
 
-  // 재개 시 이미 enqueue된 수신 역할만 제외한다. 구버전 role 없는 큐는 학생 단위로 제외한다.
+  // 재개 시 이미 enqueue된 수신 역할+분할 조각만 제외한다. 구버전 role 없는 큐는 학생 단위로 제외한다.
   let pendingDocs = docs;
   if (resuming) {
     const queuedSnap = await db.collection('message_queue').where('campaign_id', '==', campaignRef.id).get();
     const alreadyStudents = new Set();
     const alreadyTargets = new Set();
     const alreadyStaff = new Set();
+    const alreadyUnsplitTargets = new Set();
+    const alreadyUnsplitStaff = new Set();
+    const splitStatuses = new Map();
     for (const doc of queuedSnap.docs) {
       const queued = doc.data();
-      if (queued.staff_id) alreadyStaff.add(queued.staff_id);
-      else if (queued.recipient_role) alreadyTargets.add(`${queued.student_id}:${queued.recipient_role}`);
+      const part = queued.split_part_index ?? 0;
+      if (queued.split_group_id && part) {
+        splitStatuses.set(`${queued.split_group_id}:${part}`, queued.status);
+      }
+      if (queued.staff_id) {
+        alreadyStaff.add(`${queued.staff_id}:${part}`);
+        if (!part) alreadyUnsplitStaff.add(queued.staff_id);
+      } else if (queued.recipient_role) {
+        alreadyTargets.add(`${queued.student_id}:${queued.recipient_role}:${part}`);
+        if (!part) alreadyUnsplitTargets.add(`${queued.student_id}:${queued.recipient_role}`);
+      }
       else alreadyStudents.add(queued.student_id);
     }
     pendingDocs = audience === 'staff'
-      ? docs.filter((d) => !alreadyStaff.has(d.staff_id))
+      ? docs.filter((d) => (
+        !alreadyUnsplitStaff.has(d.staff_id)
+        && !alreadyStaff.has(`${d.staff_id}:${d.split_part_index ?? 0}`)
+      ))
       : docs.filter((d) => (
         !alreadyStudents.has(d.student_id)
-        && !alreadyTargets.has(`${d.student_id}:${d.recipient_role}`)
+        && !alreadyUnsplitTargets.has(`${d.student_id}:${d.recipient_role}`)
+        && !alreadyTargets.has(`${d.student_id}:${d.recipient_role}:${d.split_part_index ?? 0}`)
       ));
+    pendingDocs = pendingDocs.map((doc) => (
+      doc.status === 'split_waiting'
+      && SPLIT_UNLOCK_STATUSES.has(splitStatuses.get(`${doc.split_group_id}:${doc.split_part_index - 1}`))
+        ? { ...doc, status: 'pending' }
+        : doc
+    ));
   }
 
   let batch = db.batch();
   let inBatch = 0;
+  const groups = [];
   for (const doc of pendingDocs) {
-    const qref = db.collection('message_queue').doc();
-    batch.set(qref, { ...doc, created_at: FieldValue.serverTimestamp() });
-    if ((inBatch += 1) >= BATCH_LIMIT) {
+    const previous = groups.at(-1);
+    if (doc.split_group_id && previous?.[0].split_group_id === doc.split_group_id) previous.push(doc);
+    else groups.push([doc]);
+  }
+  for (const group of groups) {
+    if (inBatch > 0 && inBatch + group.length > BATCH_LIMIT) {
       await batch.commit();
       batch = db.batch();
       inBatch = 0;
+    }
+    for (const doc of group) {
+      const qref = db.collection('message_queue').doc();
+      batch.set(qref, { ...doc, created_at: FieldValue.serverTimestamp() });
+      inBatch += 1;
     }
   }
   if (inBatch > 0) await batch.commit();
