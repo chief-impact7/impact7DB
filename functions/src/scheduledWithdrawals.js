@@ -4,6 +4,16 @@ import { isAccountRequestDue } from './accountFinalize.js';
 import { finalize } from './finalize.js';
 import { todayKST } from './kst.js';
 
+// 발효 대상 예약 필드(withdrawal_date/pause_start_date)보다 나중에 시작하는 enrollment가 있으면
+// 학생 폼으로 직접 재등원 처리된 흔적 — 잔존 예약 필드를 오인 발효하면 재퇴원시켜버린다(2026-07-23 실사고).
+function reenrollmentStartDate(student, reservedDate) {
+  if (!reservedDate) return null;
+  const dates = (student.enrollments || [])
+    .map(e => e.start_date)
+    .filter(d => d && d > reservedDate);
+  return dates.length ? dates.sort().at(-1) : null;
+}
+
 export async function runScheduledWithdrawals(db, today = todayKST(), {
   finalizeRequest = finalize,
 } = {}) {
@@ -18,6 +28,7 @@ export async function runScheduledWithdrawals(db, today = todayKST(), {
   let batch = db.batch();
   let opCount = 0;
   let processed = 0;
+  let staleCleaned = 0;
 
   async function commitIfNeeded(force = false) {
     if (opCount === 0 || (!force && opCount < 450)) return;
@@ -31,19 +42,35 @@ export async function runScheduledWithdrawals(db, today = todayKST(), {
     let update = null;
     let afterStatus = beforeStatus;
     let changeType = 'UPDATE';
+    let reason = null;
+    let historyBefore = null;
+    let historyAfter = null;
 
     if (
       student.withdrawal_date
       && student.withdrawal_date <= today
       && ENROLLABLE_STATUSES.has(student.status)
     ) {
-      afterStatus = '퇴원';
-      changeType = 'WITHDRAW';
-      update = {
-        status: afterStatus,
-        enrollments: [],
-        pre_withdrawal_status: FieldValue.delete(),
-      };
+      const reenrollDate = reenrollmentStartDate(student, student.withdrawal_date);
+      if (reenrollDate) {
+        reason = 'scheduled-withdrawal-stale-cleanup';
+        update = {
+          withdrawal_date: FieldValue.delete(),
+          pre_withdrawal_status: FieldValue.delete(),
+          scheduled_leave_status: FieldValue.delete(),
+        };
+        historyBefore = { status: beforeStatus, withdrawal_date: student.withdrawal_date, reenrollment_start_date: reenrollDate };
+        historyAfter = { status: beforeStatus, withdrawal_date: '', pre_withdrawal_status: '', scheduled_leave_status: '' };
+        staleCleaned++;
+      } else {
+        afterStatus = '퇴원';
+        changeType = 'WITHDRAW';
+        update = {
+          status: afterStatus,
+          enrollments: [],
+          pre_withdrawal_status: FieldValue.delete(),
+        };
+      }
     } else if (
       student.status === '퇴원'
       && student.pre_withdrawal_status
@@ -60,11 +87,23 @@ export async function runScheduledWithdrawals(db, today = todayKST(), {
       && student.pause_start_date <= today
       && ENROLLABLE_STATUSES.has(student.status)
     ) {
-      afterStatus = student.scheduled_leave_status;
-      update = {
-        status: afterStatus,
-        scheduled_leave_status: FieldValue.delete(),
-      };
+      const reenrollDate = reenrollmentStartDate(student, student.pause_start_date);
+      if (reenrollDate) {
+        reason = 'scheduled-leave-stale-cleanup';
+        update = {
+          pause_start_date: FieldValue.delete(),
+          scheduled_leave_status: FieldValue.delete(),
+        };
+        historyBefore = { status: beforeStatus, pause_start_date: student.pause_start_date, reenrollment_start_date: reenrollDate };
+        historyAfter = { status: beforeStatus, pause_start_date: '', scheduled_leave_status: '' };
+        staleCleaned++;
+      } else {
+        afterStatus = student.scheduled_leave_status;
+        update = {
+          status: afterStatus,
+          scheduled_leave_status: FieldValue.delete(),
+        };
+      }
     } else if (
       LEAVE_STATUSES.has(student.status)
       && student.pause_start_date > today
@@ -88,17 +127,18 @@ export async function runScheduledWithdrawals(db, today = todayKST(), {
     batch.set(historyRef, {
       doc_id: id,
       change_type: changeType,
-      before: JSON.stringify({
+      before: JSON.stringify(historyBefore || {
         status: beforeStatus,
         withdrawal_date: student.withdrawal_date || '',
         enrollments: student.enrollments || [],
       }),
-      after: JSON.stringify({
+      after: JSON.stringify(historyAfter || {
         status: afterStatus,
         withdrawal_date: student.withdrawal_date || '',
         enrollments: update.enrollments || student.enrollments || [],
       }),
       google_login_id: 'scheduled-withdrawal',
+      ...(reason ? { reason } : {}),
       timestamp: FieldValue.serverTimestamp(),
     });
     opCount++;
@@ -134,6 +174,7 @@ export async function runScheduledWithdrawals(db, today = todayKST(), {
   return {
     checked: students.size,
     processed,
+    staleCleaned,
     accountChecked: accountRequests.length,
     accountProcessed,
     accountFailures,
