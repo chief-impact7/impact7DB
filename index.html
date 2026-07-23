@@ -80,6 +80,7 @@
                     <ul class="nav-list">
                         <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="정규" role="button" tabindex="0">정규</li>
                         <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="특강" role="button" tabindex="0">특강</li>
+                        <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="기타" role="button" tabindex="0">기타</li>
                         <li class="menu-l3 nav-item" data-filter-type="class_type" data-filter-value="내신" role="button" tabindex="0">내신</li>
                     </ul>
                 </details>
@@ -831,6 +832,7 @@
                                                 onchange="window.handleFormClassTypeChange && window.handleFormClassTypeChange()">
                                                 <option value="정규">정규</option>
                                                 <option value="특강">특강</option>
+                                                <option value="기타">기타</option>
                                             </select>
                                         </div>
                                         <div class="form-field" id="start-date-container">
@@ -912,6 +914,7 @@
                             onchange="window.handleEnrollClassTypeChange && window.handleEnrollClassTypeChange()">
                             <option value="정규">정규</option>
                             <option value="특강">특강</option>
+                            <option value="기타">기타</option>
                         </select>
                     </div>
                     <div class="form-field">
@@ -991,18 +994,25 @@
         </div>
     </div>
 
-    <!-- 종강 확인 모달 -->
-    <div id="end-class-modal" class="modal-overlay" style="display:none" onclick="window.closeEndClassModal(event)" role="dialog" aria-modal="true" aria-label="종강 처리">
+    <!-- 수강계정 종료 확인 모달 -->
+    <div id="end-class-modal" class="modal-overlay" style="display:none" onclick="window.closeEndClassModal(event)" role="dialog" aria-modal="true" aria-label="수강계정 종료">
         <div class="modal-card">
             <h3 class="modal-title" id="end-class-title">
                 <svg class="i7-icon icon-danger"  width="1em" height="1em" aria-hidden="true" viewBox="0 0 256 256" fill="currentColor"><path d="M216,113.07v53.22a8,8,0,0,1-2,5.31c-11.3,12.59-38.9,36.4-86,36.4s-74.68-23.81-86-36.4a8,8,0,0,1-2-5.31V113.07L128,160Z" opacity="0.2"/><path d="M251.76,88.94l-120-64a8,8,0,0,0-7.52,0l-120,64a8,8,0,0,0,0,14.12L32,117.87v48.42a15.91,15.91,0,0,0,4.06,10.65C49.16,191.53,78.51,216,128,216a130,130,0,0,0,48-8.76V240a8,8,0,0,0,16,0V199.51a115.63,115.63,0,0,0,27.94-22.57A15.91,15.91,0,0,0,224,166.29V117.87l27.76-14.81a8,8,0,0,0,0-14.12ZM128,200c-43.27,0-68.72-21.14-80-33.71V126.4l76.24,40.66a8,8,0,0,0,7.52,0L176,143.47v46.34C163.4,195.69,147.52,200,128,200Zm80-33.75a97.83,97.83,0,0,1-16,14.25V134.93l16-8.53ZM188,118.94l-.22-.13-56-29.87a8,8,0,0,0-7.52,14.12L171,128l-43,22.93L25,96,128,41.07,231,96Z"/></svg>
-                종강 처리
+                수강계정 종료
             </h3>
             <div id="end-class-body" class="end-class-body"></div>
+            <div class="end-class-body" style="padding-top:0;">
+                <label class="field-label" for="end-class-reason">종료 사유</label>
+                <select id="end-class-reason" class="field-select">
+                    <option value="종강">종강</option>
+                    <option value="퇴원">퇴원</option>
+                </select>
+            </div>
             <div class="modal-actions end-class-actions">
                 <button class="btn-cancel" onclick="window.closeEndClassModal()" aria-label="닫기" title="닫기"><svg class="i7-icon"  width="1em" height="1em" aria-hidden="true" viewBox="0 0 256 256" fill="currentColor"><path d="M216,56V200a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V56A16,16,0,0,1,56,40H200A16,16,0,0,1,216,56Z" opacity="0.2"/><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></svg></button>
                 <button class="btn-end-class-confirm btn-end-single" id="end-class-single-btn" onclick="window.confirmEndClassSingle()">해당 학생만</button>
-                <button class="btn-end-class-confirm" id="end-class-confirm-btn" onclick="window.confirmEndClass()">전체 종강처리</button>
+                <button class="btn-end-class-confirm" id="end-class-confirm-btn" onclick="window.confirmEndClass()">전체 계정 종료</button>
             </div>
         </div>
     </div>
@@ -1103,6 +1113,10 @@
                 <div>
                     <label id="rfl-date-label" for="rfl-return-date" class="rfl-label">복귀일</label>
                     <input type="date" id="rfl-return-date" class="field-input field-full">
+                </div>
+                <div id="rfl-account-target-wrap" style="display:none;">
+                    <label for="rfl-account-target" class="rfl-label">복귀 대상</label>
+                    <select id="rfl-account-target" class="field-input field-full"></select>
                 </div>
                 <!-- 복귀할 정규반 -->
                 <div id="rfl-target-class-wrap">

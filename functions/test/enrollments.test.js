@@ -4,7 +4,7 @@ import { replaceRegularEnrollment } from '../src/enrollments.js';
 const today = '2026-04-21';
 
 describe('replaceRegularEnrollment', () => {
-  it('정규만 교체하고 내신/특강 보존', () => {
+  it('정규 계정(정규+내신)을 교체하고 특강 계정은 보존', () => {
     const stu = {
       enrollments: [
         { class_type: '정규', level_symbol: 'A', class_number: '101', day: ['월', '금'] },
@@ -14,16 +14,18 @@ describe('replaceRegularEnrollment', () => {
     };
     const cs = { A103: { default_days: ['월', '수'] } };
     const result = replaceRegularEnrollment(stu, 'A103', today, cs);
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(2);
     const reg = result.find(e => e.class_type === '정규');
-    expect(reg).toEqual({
+    expect(reg).toMatchObject({
+      account_type: '정규',
       class_type: '정규',
       level_symbol: 'A',
       class_number: '103',
       day: ['월', '수'],
       start_date: today,
     });
-    expect(result.find(e => e.class_type === '내신')).toBeDefined();
+    expect(reg.account_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(result.find(e => e.class_type === '내신')).toBeUndefined();
     expect(result.find(e => e.class_type === '특강')).toBeDefined();
   });
 

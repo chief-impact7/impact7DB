@@ -11,7 +11,7 @@ import { runAuthenticatedStartup } from './startup.js';
 import { cleanSchoolName, collectKnownSchoolNames, normalizeSchoolName, normalizeStudentSchools, schoolSearchTerms } from './school-normalizer.js';
 import { update as storeUpdate } from './store.js';
 import { classifyHistory, HISTORY_BADGE, shortAuthor, deriveTenure } from '@impact7/shared/history';
-import { reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ENROLLABLE_STATUSES, NON_ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
+import { accountTypeOf, groupEnrollmentAccounts, reconcileEnrollments, selectableStatuses, studentCategory, STATUS_TONE, ACCOUNT_TYPES, ENROLLABLE_STATUSES, NON_ENROLLABLE_STATUSES } from '@impact7/shared/enrollment-status';
 import { createPromoteEnrollPending } from '@impact7/shared/promote-enroll';
 import { deriveStudentNumber, studentNumberIdentityKey } from '@impact7/shared/student-number';
 import { applyNaesinFreeDerivation, deriveClassPeriodHistory, deriveLevelPeriod, enrollmentCode as _enrollmentCode } from '@impact7/shared/enrollment-derivation';
@@ -26,6 +26,19 @@ import {
     selectableClassCodes,
     validateExistingClass,
 } from './class-enrollment-policy.js';
+import {
+    accountTarget,
+    accountTargetExists,
+    activeStudentEnrollments,
+    assignEnrollmentAccounts,
+    closeExpiredSpecialAccounts,
+    closeStudentAccount,
+    closeStudentAccounts,
+    mergeImportedEnrollments,
+    preserveEnrollmentAccountFields,
+    sameAccountTarget,
+    studentAccounts,
+} from './enrollment-accounts.js';
 import './naesin-schedule.js';
 import { showToast } from './toast.js';
 import './modal-manager.js';
@@ -206,7 +219,7 @@ const STUDENT_SHEET_HEADERS = [
     'name', 'level', 'school', 'grade', 'student_phone',
     'parent_phone_1', 'parent_phone_2', 'guardian_name_1', 'guardian_name_2',
     'branch', 'level_symbol', 'class_number',
-    'class_type', 'start_date', 'end_date', 'day',
+    'class_type', 'start_date', 'end_date', 'day', 'account_id', 'account_type', 'end_reason',
     'status', 'pause_start_date', 'pause_end_date', 'semester', 'first_registered'
 ];
 
@@ -344,7 +357,7 @@ function blockOnEnrollmentConflicts(conflicts) {
     showToast(
         `⛔ 같은 시기에 동일한 반명이 ${conflicts.length}건 있습니다.\n\n` +
         `${lines.join('\n\n')}\n\n` +
-        `정규반과 특강반의 이름이 같으면 안 됩니다.\n저장할 수 없습니다.`,
+        `정규반·특강반·기타반의 이름이 같으면 안 됩니다.\n저장할 수 없습니다.`,
         'error', { sticky: true });
     return false;
 }
@@ -362,52 +375,8 @@ const branchFromClassNumber = _branchFromClassNumber;
 const branchFromStudent = _branchFromStudent;
 const branchesFromStudent = _branchesFromStudent;
 
-/**
- * 활성 enrollment만 반환.
- * 같은 class_type 내에서 start_date <= 오늘인 것 중 가장 최근 것만 활성.
- * start_date > 오늘이면 "예정" (비활성).
- * 같은 class_type의 새 enrollment이 없으면 이전 것이 계속 활성.
- * 내신이 활성 기간이면 정규를 숨김.
- */
 const getActiveEnrollments = (s, today = getTodayDateStr()) => {
-    const enrollments = s.enrollments || [];
-    if (enrollments.length === 0) return [];
-    const byType = {};
-
-    for (const e of enrollments) {
-        const key = (e.class_type || '정규') + ':' + (e.class_number || '');
-        if (!byType[key]) byType[key] = [];
-        byType[key].push(e);
-    }
-
-    const active = [];
-    const validDate = (d) => d && /^\d{4}-/.test(d);
-
-    for (const [ct, list] of Object.entries(byType)) {
-        // start_date <= 오늘인 것 중 가장 최근
-        const started = list
-            .filter(e => !validDate(e.start_date) || e.start_date <= today)
-            .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
-
-        if (started.length > 0) {
-            active.push(started[0]);
-        } else {
-            // 모두 미래이면 → 가장 이른 것 (예정)
-            const sorted = [...list].sort((a, b) => (a.start_date || '').localeCompare(b.start_date || ''));
-            active.push(sorted[0]);
-        }
-    }
-
-    // end_date가 지난 enrollment(내신/특강) 제외
-    const current = active.filter(e => {
-        if (!validDate(e.end_date)) return true;
-        return e.end_date >= today;
-    });
-
-    // 내신/자유학기 기간 파생 (@impact7/shared SSoT).
-    // 명시적 내신 또는 정규+override→class_settings 내신기간이면 정규를 숨기고 내신으로 치환.
-    // DB는 자동 유도 없음 — override 문자열만 사용(빈 문자열은 null).
-    return applyNaesinFreeDerivation(current, {
+    return applyNaesinFreeDerivation(activeStudentEnrollments(s, today), {
         classSettings: _classSettingsCache || {},
         dateStr: today,
         resolveNaesinCsKey: (re) =>
@@ -678,8 +647,6 @@ async function loadStudentList() {
         // (미로드 시 getActiveEnrollments가 파생 없이 정규로 표시되므로 순서 보장 필수)
         await loadClassSettings();
         await promoteEnrollPending();
-        await handleScheduledLeaves();
-        await handleScheduledWithdrawals();
         await handleScheduledSpecialClassEnds();
         await backfillStudentNumbers();
     }
@@ -743,24 +710,40 @@ async function promoteEnrollPending() {
     }
 }
 
-// 스케줄 전환/백필 공통 커밋: 200건 청킹 + 청크 커밋 성공분만 로컬 반영(M-04 패턴).
+// 스케줄 전환/백필 공통 커밋: 실제 write 수 기준 청킹 + 청크 커밋 성공분만 로컬 반영(M-04 패턴).
 // 매 페이지 로드마다 실행되는 경로라 단일 batch(500 op 한도)로는 대량 전환 시 전체 거부되고,
 // 커밋 전 로컬 mutate는 실패 시 UI만 전환된 것처럼 보이는 무음 불일치를 만든다.
 async function commitChunkedTransitions(tag, items) {
     if (items.length === 0) return 0;
-    const BATCH_SIZE = 200;
+    const MAX_BATCH_WRITES = 500;
     let committed = 0;
     try {
-        for (let i = 0; i < items.length; i += BATCH_SIZE) {
-            const chunk = items.slice(i, i + BATCH_SIZE);
+        const chunks = [];
+        let chunk = [];
+        let writeCount = 0;
+        for (const item of items) {
+            const itemWriteCount = 1 + (item.log ? 1 : 0) + (item.logs?.length || 0);
+            if (itemWriteCount > MAX_BATCH_WRITES) throw new Error(`단일 학생 write가 ${MAX_BATCH_WRITES}건을 초과했습니다.`);
+            if (chunk.length && writeCount + itemWriteCount > MAX_BATCH_WRITES) {
+                chunks.push(chunk);
+                chunk = [];
+                writeCount = 0;
+            }
+            chunk.push(item);
+            writeCount += itemWriteCount;
+        }
+        if (chunk.length) chunks.push(chunk);
+
+        for (const currentChunk of chunks) {
             const batch = writeBatch(db);
-            chunk.forEach(it => {
+            currentChunk.forEach(it => {
                 batch.update(doc(db, 'students', it.id), it.update);
                 if (it.log) batch.set(doc(collection(db, 'history_logs')), it.log);
+                (it.logs || []).forEach(log => batch.set(doc(collection(db, 'history_logs')), log));
             });
             await batch.commit();
-            chunk.forEach(it => it.applyLocal());
-            committed += chunk.length;
+            currentChunk.forEach(it => it.applyLocal());
+            committed += currentChunk.length;
         }
         console.log(`[${tag}] ${committed}건 처리 완료`);
     } catch (err) {
@@ -815,152 +798,37 @@ function alertStudentNumberDuplicate(name, studentNumber, duplicate) {
     showToast(`이름+학생번호가 이미 존재합니다.\n\n입력값: ${name} #${studentNumber}\n기존 학생: ${duplicate.name || duplicate.id} (${duplicate.status || '상태없음'})\n\n동명이인인 경우 이름 뒤에 숫자를 붙여 구분한 뒤 다시 저장하세요.`, 'warn', { sticky: true });
 }
 
-// 휴원 날짜 기반 자동 전환: 시작일 전이면 재원 유지, 시작일 도래 시 휴원 전환
-async function handleScheduledLeaves() {
-    const today = getTodayDateStr();
-    const items = [];
-
-    for (const s of allStudents) {
-        // 1) 휴원 상태인데 pause_start_date가 아직 안 됐으면 → 재원으로 복원
-        if ((s.status === '실휴원' || s.status === '가휴원') && s.pause_start_date && s.pause_start_date > today) {
-            const beforeStatus = s.status;
-            items.push({
-                id: s.id,
-                update: {
-                    status: '재원',
-                    scheduled_leave_status: beforeStatus,
-                    updated_at: serverTimestamp(),
-                },
-                log: {
-                    doc_id: s.id, change_type: 'UPDATE',
-                    before: beforeStatus, after: '재원',
-                    google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-                },
-                applyLocal: () => {
-                    s.scheduled_leave_status = beforeStatus;
-                    s.status = '재원';
-                },
-            });
-        }
-        // 2) 재원인데 예약된 휴원 시작일이 도래했으면 → 휴원으로 전환
-        else if (s.status === '재원' && s.scheduled_leave_status && s.pause_start_date && s.pause_start_date <= today) {
-            const leaveStatus = s.scheduled_leave_status;
-            items.push({
-                id: s.id,
-                update: {
-                    status: leaveStatus,
-                    scheduled_leave_status: deleteField(),
-                    updated_at: serverTimestamp(),
-                },
-                log: {
-                    doc_id: s.id, change_type: 'UPDATE',
-                    before: '재원', after: leaveStatus,
-                    google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-                },
-                applyLocal: () => {
-                    s.status = leaveStatus;
-                    delete s.scheduled_leave_status;
-                },
-            });
-        }
-    }
-
-    await commitChunkedTransitions('handleScheduledLeaves', items);
-}
-
-// 퇴원 날짜 기반 자동 전환: 퇴원일 전이면 기존 상태 유지, 퇴원일 도래 시 퇴원 전환
-async function handleScheduledWithdrawals() {
-    const today = getTodayDateStr();
-    const items = [];
-
-    for (const s of allStudents) {
-        // 1) 퇴원 상태인데 withdrawal_date가 아직 안 됐으면 → 이전 상태로 복원
-        if (s.status === '퇴원' && s.withdrawal_date && s.withdrawal_date > today) {
-            const prevStatus = s.pre_withdrawal_status || '재원';
-            items.push({
-                id: s.id,
-                update: {
-                    status: prevStatus,
-                    pre_withdrawal_status: prevStatus,
-                    updated_at: serverTimestamp(),
-                },
-                log: {
-                    doc_id: s.id, change_type: 'UPDATE',
-                    before: '퇴원', after: prevStatus,
-                    google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-                },
-                applyLocal: () => {
-                    s.pre_withdrawal_status = prevStatus;
-                    s.status = prevStatus;
-                },
-            });
-        }
-        // 2) 예약된 퇴원일이 도래했으면 → 퇴원으로 전환
-        else if (s.pre_withdrawal_status && s.withdrawal_date && s.withdrawal_date <= today) {
-            const beforeStatus = s.status;
-            items.push({
-                id: s.id,
-                update: {
-                    status: '퇴원',
-                    enrollments: [],
-                    pre_withdrawal_status: deleteField(),
-                    updated_at: serverTimestamp(),
-                },
-                log: {
-                    doc_id: s.id, change_type: 'UPDATE',
-                    before: beforeStatus, after: '퇴원',
-                    google_login_id: 'auto-transition', timestamp: serverTimestamp(),
-                },
-                applyLocal: () => {
-                    s.status = '퇴원';
-                    s.enrollments = [];
-                    delete s.pre_withdrawal_status;
-                },
-            });
-        }
-    }
-
-    await commitChunkedTransitions('handleScheduledWithdrawals', items);
-}
-
-// 특강 end_date 만료 자동 종강 전환: 만료된 특강 enrollment를 제거하고,
-// 수업이 없어지면 정규 이력 여부에 따라 '종강' 또는 '퇴원'으로 전환
+// 특강 end_date 만료 자동 종강 전환
 async function handleScheduledSpecialClassEnds() {
     const today = getTodayDateStr();
-    const isExpired = (e) => e.class_type === '특강' && e.end_date && /^\d{4}-/.test(e.end_date) && e.end_date < today;
     const items = [];
 
     for (const s of allStudents) {
         if (!ENROLLABLE_STATUSES.has(s.status)) continue;
-        const expired = (s.enrollments || []).filter(isExpired);
-        if (expired.length === 0) continue;
-
-        const remaining = (s.enrollments || []).filter(e => !isExpired(e));
-        const updateData = { enrollments: remaining, updated_at: serverTimestamp() };
-
-        if (remaining.length === 0) {
-            const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
-            updateData.status = hasRegular ? '퇴원' : '종강';
-        }
+        const result = closeExpiredSpecialAccounts(s, today);
+        if (!result.changed) continue;
+        const updateData = {
+            enrollments: result.enrollments,
+            status: result.status,
+            updated_at: serverTimestamp(),
+        };
+        result.cleanupFields.forEach(field => { updateData[field] = deleteField(); });
 
         items.push({
             id: s.id,
             update: updateData,
-            log: {
+            logs: result.histories.map(history => ({
                 doc_id: s.id,
-                change_type: remaining.length === 0 ? 'WITHDRAW' : 'UPDATE',
-                before: expired.map(e => `특강 ${enrollmentCode(e)}`).join(', '),
-                after: remaining.length === 0
-                    ? `특강 만료 → ${updateData.status}`
-                    : `특강 만료 (나머지 ${remaining.length}개 수업 유지)`,
+                change_type: 'ACCOUNT_END',
+                before: history.before,
+                after: history.after,
                 google_login_id: 'auto-transition',
                 timestamp: serverTimestamp(),
-            },
+            })),
             applyLocal: () => {
-                s.enrollments = remaining;
-                if (updateData.status) {
-                    s.status = updateData.status;
-                }
+                s.enrollments = result.enrollments;
+                s.status = result.status;
+                result.cleanupFields.forEach(field => { delete s[field]; });
             },
         });
     }
@@ -1393,7 +1261,11 @@ function applyFilterAndRender() {
         if (activeFilters.branch) filtered = filtered.filter(s => activeBranchesFromStudent(s).includes(activeFilters.branch));
         if (activeFilters.day) filtered = filtered.filter(s => activeDays(s).includes(activeFilters.day));
         if (activeFilters.status) filtered = filtered.filter(s => s.status === activeFilters.status);
-        if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e => e.class_type === activeFilters.class_type));
+        if (activeFilters.class_type) filtered = filtered.filter(s => relevantEnrollments(s).some(e =>
+            activeFilters.class_type === '내신'
+                ? e.class_type === '내신'
+                : accountTypeOf(e) === activeFilters.class_type
+        ));
         if (activeFilters.class_code) filtered = filtered.filter(s => activeClassCodes(s).includes(activeFilters.class_code));
         if (activeFilters.grade) filtered = filtered.filter(s => studentGradeKey(s) === activeFilters.grade);
         // 휴원 필터 활성 시에는 학기 필터를 건너뜀 (휴원생은 현재 학기 enrollment이 없을 수 있음)
@@ -1757,7 +1629,10 @@ function renderStudentItem(s, container) {
     const branch = activeBranchesFromStudent(s).join(', ') || branchFromStudent(s);
     const schoolShort = abbreviateSchool(s);
     const subLine = [branch, schoolShort !== '—' ? schoolShort : ''].filter(Boolean).join(' · ');
-    const tags = activeClassCodes(s).map(c => `<span class="item-tag">${esc(c)}</span>`).join('') || '<span class="item-tag">—</span>';
+    const tags = studentAccounts(s, getTodayDateStr())
+        .filter(account => account.state === '활성')
+        .map(account => `<span class="item-tag">${esc(account.label)}</span>`)
+        .join('') || '<span class="item-tag">—</span>';
 
     // 등원요일 표시
     const dayOrder = ['월','화','수','목','금','토','일'];
@@ -2637,6 +2512,9 @@ window.submitNewStudent = async () => {
             _newEnrollmentsForCreate.push(staticEnrollment);
         }
         _newEnrollmentsForCreate.push(..._pendingEnrollments);
+        const accounted = assignEnrollmentAccounts(_newEnrollmentsForCreate);
+        if (!accounted.valid) { showToast(accounted.reason, 'warn'); return; }
+        _newEnrollmentsForCreate = accounted.enrollments;
         // 수업이 하나라도 있으면 폼의 status(기본 '등원예정')을, 없으면 '상담'으로.
         _newStatusForCreate = _newEnrollmentsForCreate.length > 0
             ? (f.status?.value || '등원예정')
@@ -2647,7 +2525,9 @@ window.submitNewStudent = async () => {
     {
         const finalStatus = isEditMode ? studentData.status : _newStatusForCreate;
         const finalEnrolls = isEditMode ? (studentData.enrollments || []) : _newEnrollmentsForCreate;
-        const { enrollments: reconciled, valid, reason } = reconcileEnrollments(finalStatus, finalEnrolls);
+        const { enrollments: reconciled, valid, reason } = reconcileEnrollments(finalStatus, finalEnrolls, {
+            dateStr: getTodayDateStr(),
+        });
         if (!valid) { showToast(reason, 'warn'); return; }
         if (isEditMode) studentData.enrollments = reconciled;
         else _newEnrollmentsForCreate = reconciled;
@@ -3159,14 +3039,14 @@ function collectEditEnrollments() {
         const get = (field) => card.querySelector(`[data-field="${CSS.escape(field)}"]`)?.value?.trim() || '';
         const days = Array.from(card.querySelectorAll(`input[type="checkbox"][name="edit_day_${idx}"]:checked`)).map(cb => cb.value);
         const classType = get('class_type');
-        const enrollment = {
+        const enrollment = preserveEnrollmentAccountFields({
             class_type: classType,
             level_symbol: get('level_symbol'),
             class_number: get('class_number'),
             day: days,
             start_date: get('start_date'),
             semester: get('semester'),
-        };
+        }, _editEnrollments[idx]);
         if (classType !== '정규') {
             const endDate = get('end_date');
             if (endDate) enrollment.end_date = endDate;
@@ -3202,50 +3082,39 @@ function renderEnrollmentCards(studentData) {
         return;
     }
 
-    // 학기 필터 있으면 해당 학기만, 없으면 활성 enrollment만
-    // 등원예정 학생은 아직 시작 안 한 미래 enrollment도 표시 (만료만 제외) — "예정" 태그로 구분
-    const _validDate = (d) => d && /^\d{4}-/.test(d);
-    const _today = getTodayDateStr();
-    const visibleEnrollments = activeFilters.semester
-        ? enrollments.filter(e => e.semester === activeFilters.semester)
-        : studentData.status === '등원예정'
-            ? enrollments.filter(e => !(_validDate(e.end_date) && e.end_date < _today))
-            : getActiveEnrollments(studentData);
+    const accountSource = activeFilters.semester
+        ? { ...studentData, enrollments: enrollments.filter(e => e.semester === activeFilters.semester) }
+        : studentData;
+    const accounts = studentAccounts(accountSource, getTodayDateStr());
 
-    if (visibleEnrollments.length === 0) {
+    if (accounts.length === 0) {
         container.innerHTML = `<p style="color:var(--text-sec);font-size:0.85em;">해당 학기 수업 정보가 없습니다.</p>${startRegularBtn}`;
         return;
     }
 
-    visibleEnrollments.forEach((e) => {
-        const realIdx = enrollments.indexOf(e);
-        _renderEnrollmentCard(container, e, realIdx, false);
-    });
+    accounts.forEach(account => _renderEnrollmentAccountCard(container, account, enrollments));
 }
 
-function _renderEnrollmentCard(container, e, idx, isHistory) {
-    const code = enrollmentCode(e);
-    const days = displayDays(e.day);
-    const ct = e.class_type || '정규';
-    const isRegular = ct === '정규';
-    const semLabel = e.semester || '';
-    // 아직 시작 안 한(start_date 미래) enrollment는 "예정" 태그로 명시
-    const notStarted = e.start_date && /^\d{4}-/.test(e.start_date) && e.start_date > getTodayDateStr();
+function _renderEnrollmentAccountCard(container, account, enrollments) {
+    const accountItemIdx = enrollments.indexOf(account.items[0]);
+    const itemRows = account.items.map(e => {
+        const code = enrollmentCode(e);
+        const dates = [formatDate(e.start_date), e.end_date ? formatDate(e.end_date) : ''].filter(Boolean).join(' ~ ');
+        const semester = e.semester ? ` · ${e.semester}` : '';
+        return `<div class="enrollment-field">
+            <span class="field-label">${esc(e.class_type || account.accountType)}</span>
+            <span>${esc(`${code} · ${displayDays(e.day)} · ${dates}${semester}`)}</span>
+        </div>`;
+    }).join('');
     const card = document.createElement('div');
-    card.className = `enrollment-card${isHistory ? ' enrollment-history' : ''}`;
+    card.className = 'enrollment-card';
     card.innerHTML = `
         <div class="enrollment-card-header">
-            <span class="enrollment-tag">${esc(code)}</span>
-            <span class="enrollment-type">${esc(ct)}</span>
-            ${notStarted ? '<span class="enrollment-pending">예정</span>' : ''}
-            ${semLabel ? `<span class="enrollment-semester">${esc(semLabel)}</span>` : ''}
-            ${!isRegular && !isHistory && idx >= 0 ? `<button class="btn-end-class" onclick="window.endEnrollment(${idx})" title="종강처리" aria-label="종강처리">${msIcon('archive')}</button>` : ''}
+            <span class="enrollment-tag">${esc(account.label)}</span>
+            <span class="${account.state === '예정' ? 'enrollment-pending' : 'enrollment-type'}">${esc(account.state)}</span>
+            ${accountItemIdx >= 0 ? `<button class="btn-end-class" onclick="window.endEnrollment(${accountItemIdx})" title="계정 종료" aria-label="계정 종료">${msIcon('archive')}</button>` : ''}
         </div>
-        <div class="enrollment-card-body">
-            <div class="enrollment-field"><span class="field-label">요일</span><span>${esc(days)}</span></div>
-            <div class="enrollment-field"><span class="field-label">${isRegular ? '등원일' : '시작일'}</span><span>${esc(formatDate(e.start_date))}</span></div>
-            ${e.end_date ? `<div class="enrollment-field"><span class="field-label">종료일</span><span>${esc(formatDate(e.end_date))}</span></div>` : ''}
-        </div>
+        <div class="enrollment-card-body">${itemRows}</div>
     `;
     container.appendChild(card);
 }
@@ -3349,8 +3218,8 @@ function _validateEnrollmentFields(e) {
     if ((ct === '정규' || ct === '자유학기') && (!e.level_symbol || !e.class_number)) {
         return `${ct}는 레벨기호와 반넘버를 모두 입력해야 합니다. [${codeLabel}]`;
     }
-    if (ct === '특강' && !e.class_number) {
-        return `특강은 반넘버(반 이름)를 입력해야 합니다. [${codeLabel}]`;
+    if ((ct === '특강' || ct === '기타') && !e.class_number) {
+        return `${ct}는 반넘버(반 이름)를 입력해야 합니다. [${codeLabel}]`;
     }
     if (!(e.day && e.day.length > 0)) {
         return `수업 요일을 1개 이상 선택하세요. [${ct || '정규'} ${codeLabel}]`;
@@ -3395,10 +3264,13 @@ window.saveEnrollment = async () => {
             : (allStudents.find(s => s.id === currentStudentId)?.level || '');
         semester = currentSemesterByLevel[level] || '';
     }
-    const enrollment = { class_type: classType, level_symbol: levelSymbol, class_number: classNumber, day: days, start_date: startDate, semester };
+    let enrollment = { class_type: classType, level_symbol: levelSymbol, class_number: classNumber, day: days, start_date: startDate, semester };
     if (classType !== '정규' && endDate) enrollment.end_date = endDate;
+    const accounted = assignEnrollmentAccounts([enrollment]);
+    if (!accounted.valid) { showToast(accounted.reason, 'warn'); return; }
+    [enrollment] = accounted.enrollments;
 
-    // 동일 코드 + 시기 겹침 검사 (정규/특강 동일 반명 금지)
+    // 동일 코드 + 시기 겹침 검사 (계정 유형 간 동일 반명 금지)
     const existingForCheck =
         modal?.dataset.context === 'form' ? _pendingEnrollments :
         modal?.dataset.context === 'edit' ? _editEnrollments :
@@ -3432,7 +3304,7 @@ window.saveEnrollment = async () => {
 // ---------------------------------------------------------------------------
 // 종강 처리 — 동일 수업을 듣는 모든 학생 일괄 종강
 // ---------------------------------------------------------------------------
-let _endClassTarget = null; // { code, classType, affectedStudents[] }
+let _endClassTarget = null;
 
 window.endEnrollment = (idx) => {
     if (!currentStudentId) return;
@@ -3442,48 +3314,62 @@ window.endEnrollment = (idx) => {
     const e = student.enrollments[idx];
     const code = enrollmentCode(e);
     const classType = e.class_type;
+    const selectedAccount = groupEnrollmentAccounts(student.enrollments)
+        .find(account => account.items.includes(e));
+    if (!selectedAccount) return;
 
-    // 이 수업(code + classType)을 듣는 모든 학생 찾기
-    const affected = allStudents.filter(s =>
-        (s.enrollments || []).some(en => enrollmentCode(en) === code && en.class_type === classType)
-    );
+    const affected = allStudents
+        .map(s => ({
+            student: s,
+            accountKeys: groupEnrollmentAccounts(s.enrollments)
+                .filter(account => account.items.some(en =>
+                    enrollmentCode(en) === code && en.class_type === classType
+                ))
+                .map(account => account.key),
+        }))
+        .filter(({ accountKeys }) => accountKeys.length > 0);
 
-    // 종강 후 다른 수업이 남는 학생 / 퇴원될 학생 분류
-    const willKeep = [];
-    const willWithdraw = [];
-    affected.forEach(s => {
-        const remaining = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
-        if (remaining.length > 0) willKeep.push(s);
-        else willWithdraw.push(s);
-    });
-
-    _endClassTarget = { code, classType, affected, willKeep, willWithdraw, currentStudentId: currentStudentId, enrollIdx: idx };
+    _endClassTarget = {
+        code,
+        classType,
+        affected,
+        currentStudentId,
+        accountKey: selectedAccount.key,
+    };
 
     // 모달 내용 구성
     const modal = document.getElementById('end-class-modal');
     if (!modal) return;
 
-    document.getElementById('end-class-title').textContent = `${code} (${classType}) 종강처리`;
+    document.getElementById('end-class-title').textContent = `${code} (${classType}) 계정 종료`;
+    const reasonSelect = document.getElementById('end-class-reason');
+    if (reasonSelect) reasonSelect.value = '종강';
     const bodyEl = document.getElementById('end-class-body');
 
     // 현재 학생 정보
     const currentS = student;
-    const currentRemaining = (currentS.enrollments || []).filter((_, i) => i !== idx);
-    const currentWillWithdraw = currentRemaining.length === 0;
+    const currentPreview = closeStudentAccount(currentS, selectedAccount.key, {
+        dateStr: getTodayDateStr(),
+        endReason: '종강',
+    });
+    const currentWillWithdraw = currentPreview.updatedEnrollments?.length === 0;
 
     let html = `<p class="end-class-summary"><strong>${esc(currentS.name)}</strong>의 <strong>${esc(code)}</strong> (${esc(classType)}) 수업을 종강 처리합니다.</p>`;
 
     if (currentWillWithdraw) {
-        html += `<p class="end-class-warn">이 학생은 다른 수업이 없어 <strong>퇴원</strong> 처리됩니다.</p>`;
+        html += `<p class="end-class-warn">이 학생은 마지막 수강계정이 종료되어 선택한 사유에 따라 학생 상태도 전환됩니다.</p>`;
     }
 
     if (affected.length > 1) {
         html += `<div class="end-class-group" style="margin-top:12px;">
             <span class="end-class-group-label">전체 종강 시 영향받는 학생 (${affected.length}명)</span>
-            <ul class="end-class-list">${affected.map(s => {
-            const rem = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
-            const isW = rem.length === 0;
-            return `<li>${esc(s.name)}${isW ? '<span class="end-class-remaining" style="background:var(--danger-bg);color:var(--danger-strong);">퇴원</span>' : `<span class="end-class-remaining">${rem.map(e => enrollmentCode(e)).filter(Boolean).join(', ')}</span>`}</li>`;
+            <ul class="end-class-list">${affected.map(({ student: s, accountKeys }) => {
+            const preview = closeStudentAccounts(s, accountKeys, {
+                dateStr: getTodayDateStr(),
+                endReason: '종강',
+            });
+            const isW = preview.updatedEnrollments?.length === 0;
+            return `<li>${esc(s.name)}${isW ? '<span class="end-class-remaining" style="background:var(--danger-bg);color:var(--danger-strong);">마지막 계정</span>' : `<span class="end-class-remaining">${preview.updatedEnrollments.map(e => enrollmentCode(e)).filter(Boolean).join(', ')}</span>`}</li>`;
         }).join('')}</ul>
         </div>`;
     }
@@ -3501,7 +3387,7 @@ window.closeEndClassModal = (e) => {
 window.confirmEndClassSingle = async () => {
     if (pastSemesterBlocked()) return;
     if (!_endClassTarget) return;
-    const { code, classType, currentStudentId: studentId, enrollIdx } = _endClassTarget;
+    const { currentStudentId: studentId, accountKey } = _endClassTarget;
     const modal = document.getElementById('end-class-modal');
     const singleBtn = document.getElementById('end-class-single-btn');
 
@@ -3514,29 +3400,34 @@ window.confirmEndClassSingle = async () => {
     try {
         const student = allStudents.find(s => s.id === studentId);
         if (!student) return;
+        const endReason = document.getElementById('end-class-reason')?.value || '종강';
+        const result = closeStudentAccount(student, accountKey, {
+            dateStr: getTodayDateStr(),
+            endReason,
+        });
+        if (result.skipped) throw new Error('종료할 수강계정을 찾을 수 없습니다.');
+        const branch = result.updatedEnrollments.length
+            ? (branchFromClassNumber(result.updatedEnrollments[0].class_number) || student.branch || '')
+            : (student.branch || '');
+        const updateData = {
+            enrollments: result.updatedEnrollments,
+            branch,
+            status: result.status,
+            updated_at: serverTimestamp(),
+        };
+        result.cleanupFields.forEach(field => { updateData[field] = deleteField(); });
 
-        const remaining = (student.enrollments || []).filter((_, i) => i !== enrollIdx);
-        const isWithdraw = remaining.length === 0;
-        const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (student.branch || '');
-        const hasRegular = (student.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
-        const finalStatus = hasRegular ? '퇴원' : '종강';
-
-        const updateData = { enrollments: remaining, branch, updated_at: serverTimestamp() };
-        if (isWithdraw) {
-            updateData.status = finalStatus;
-        }
-
-        await setDoc(doc(db, 'students', studentId), updateData, { merge: true });
-        await addDoc(collection(db, 'history_logs'), {
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'students', studentId), updateData, { merge: true });
+        batch.set(doc(collection(db, 'history_logs')), {
             doc_id: studentId,
-            change_type: isWithdraw ? 'WITHDRAW' : 'UPDATE',
-            before: `수업: ${code} (${classType})`,
-            after: isWithdraw
-                ? `종강 처리: ${code} (${classType}) → ${finalStatus} (다른 수업 없음)`
-                : `종강 처리: ${code} (${classType})`,
+            change_type: 'ACCOUNT_END',
+            before: result.history.before,
+            after: result.history.after,
             google_login_id: currentUser?.email || 'system',
             timestamp: serverTimestamp(),
         });
+        await batch.commit();
 
         modal.style.display = 'none';
         _endClassTarget = null;
@@ -3564,7 +3455,7 @@ window.confirmEndClassSingle = async () => {
 window.confirmEndClass = async () => {
     if (pastSemesterBlocked()) return;
     if (!_endClassTarget) return;
-    const { code, classType, affected, willWithdraw } = _endClassTarget;
+    const { affected } = _endClassTarget;
     const modal = document.getElementById('end-class-modal');
     const confirmBtn = document.getElementById('end-class-confirm-btn');
 
@@ -3575,56 +3466,51 @@ window.confirmEndClass = async () => {
     modal.dataset.busy = '1';
 
     try {
-        const BATCH_SIZE = 200;
+        const BATCH_SIZE = 100;
+        const endReason = document.getElementById('end-class-reason')?.value || '종강';
         for (let i = 0; i < affected.length; i += BATCH_SIZE) {
             const chunk = affected.slice(i, i + BATCH_SIZE);
             const batch = writeBatch(db);
+            const localUpdates = [];
 
-            chunk.forEach(s => {
-                const remaining = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
-                const isWithdraw = remaining.length === 0;
-                const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (s.branch || '');
-                const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
-                const finalStatus = hasRegular ? '퇴원' : '종강';
-
-                const updateData = { enrollments: remaining, branch, updated_at: serverTimestamp() };
-                if (isWithdraw) {
-                    updateData.status = finalStatus;
-                }
+            chunk.forEach(({ student: s, accountKeys }) => {
+                const result = closeStudentAccounts(s, accountKeys, {
+                    dateStr: getTodayDateStr(),
+                    endReason,
+                });
+                if (result.skipped) return;
+                const branch = result.updatedEnrollments.length
+                    ? (branchFromClassNumber(result.updatedEnrollments[0].class_number) || s.branch || '')
+                    : (s.branch || '');
+                const updateData = {
+                    enrollments: result.updatedEnrollments,
+                    branch,
+                    status: result.status,
+                    updated_at: serverTimestamp(),
+                };
+                result.cleanupFields.forEach(field => { updateData[field] = deleteField(); });
 
                 batch.set(doc(db, 'students', s.id), updateData, { merge: true });
-
-                const historyRef = doc(collection(db, 'history_logs'));
-                batch.set(historyRef, {
-                    doc_id: s.id,
-                    change_type: isWithdraw ? 'WITHDRAW' : 'UPDATE',
-                    before: `수업: ${code} (${classType})`,
-                    after: isWithdraw
-                        ? `종강 처리: ${code} (${classType}) → ${finalStatus} (다른 수업 없음)`
-                        : `종강 처리: ${code} (${classType})`,
-                    google_login_id: currentUser?.email || 'system',
-                    timestamp: serverTimestamp(),
+                result.histories.forEach(history => {
+                    batch.set(doc(collection(db, 'history_logs')), {
+                        doc_id: s.id,
+                        change_type: 'ACCOUNT_END',
+                        before: history.before,
+                        after: history.after,
+                        google_login_id: currentUser?.email || 'system',
+                        timestamp: serverTimestamp(),
+                    });
                 });
+                localUpdates.push([s.id, updateData]);
             });
 
             await batch.commit();
+            localUpdates.forEach(([studentId, updateData]) => _upsertLocalStudent(studentId, updateData));
         }
 
         modal.style.display = 'none';
         _endClassTarget = null;
 
-        // 로컬 캐시 업데이트: affected 학생들 일괄 반영
-        affected.forEach(s => {
-            const remaining = (s.enrollments || []).filter(en => !(enrollmentCode(en) === code && en.class_type === classType));
-            const isWithdraw = remaining.length === 0;
-            const branch = remaining.length ? branchFromClassNumber(remaining[0].class_number) : (s.branch || '');
-            const hasRegular = (s.enrollments || []).some(e => (e.class_type || '정규') !== '특강');
-            const updateData = { enrollments: remaining, branch, updated_at: serverTimestamp() };
-            if (isWithdraw) {
-                updateData.status = hasRegular ? '퇴원' : '종강';
-            }
-            _upsertLocalStudent(s.id, updateData);
-        });
         _refreshUIAfterMutation();
         // 현재 선택된 학생 다시 표시
         if (currentStudentId) {
@@ -3638,7 +3524,7 @@ window.confirmEndClass = async () => {
         showToast('종강 처리 실패: ' + err.message, 'error');
     } finally {
         confirmBtn.disabled = false;
-        confirmBtn.textContent = '전체 종강처리';
+        confirmBtn.textContent = '전체 계정 종료';
         const sBtn = document.getElementById('end-class-single-btn');
         if (sBtn) { sBtn.disabled = false; sBtn.textContent = '해당 학생만'; }
         delete modal.dataset.busy;
@@ -3706,6 +3592,7 @@ window.handleSheetExport = async () => {
                 s.student_phone || '', s.parent_phone_1 || '', s.parent_phone_2 || '',
                 s.guardian_name_1 || '', s.guardian_name_2 || '',
                 branch, '', '', '정규', '', '', '',
+                '', '', '',
                 s.status || '재원', s.pause_start_date || '', s.pause_end_date || '', '', s.first_registered || ''
             ]);
         } else {
@@ -3718,6 +3605,7 @@ window.handleSheetExport = async () => {
                     branch,
                     e.level_symbol || '', e.class_number || '', e.class_type || '정규',
                     e.start_date || '', e.end_date || '', dayStr,
+                    e.account_id || '', e.account_type || '', e.end_reason || '',
                     s.status || '재원', s.pause_start_date || '', s.pause_end_date || '', e.semester || '', s.first_registered || ''
                 ]);
             });
@@ -3863,13 +3751,14 @@ window.handleSheetTemplate = async () => {
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ requests: [
                 mkList(1, 2, ['초등', '중등', '고등'], true),
-                mkList(10, 11, ['정규', '특강', '내신'], true),
-                mkList(14, 15, ['등원예정', '재원', '실휴원', '가휴원', '퇴원'], true),
-                mkList(17, 18, [
+                mkList(12, 13, ['정규', '특강', '기타', '내신'], true),
+                mkList(17, 18, ['정규', '특강', '기타'], true),
+                mkList(19, 20, ['등원예정', '재원', '실휴원', '가휴원', '퇴원', '종강'], true),
+                mkList(22, 23, [
                     '2026-Winter','2026-Spring','2026-Summer','2026-Autumn',
                     '2027-Winter','2027-Spring','2027-Summer','2027-Autumn'
                 ], false),
-                mkDate(11), mkDate(12), mkDate(15), mkDate(16),
+                mkDate(13), mkDate(14), mkDate(20), mkDate(21), mkDate(23),
                 { autoResizeDimensions: { dimensions: { sheetId: sid, dimension: 'COLUMNS', startIndex: 0, endIndex: TMPL_HEADERS.length } } }
             ]})
         });
@@ -3964,7 +3853,8 @@ async function importFromSheetId(sheetId, sheetName) {
             'guardian_name_1': 'guardian_name_1', 'guardian_name_2': 'guardian_name_2',
             'branch': 'branch', 'level_symbol': 'level_symbol', 'class_number': 'class_number',
             'class_type': 'class_type', 'start_date': 'start_date', 'end_date': 'end_date',
-            'day': 'day', 'status': 'status',
+            'day': 'day', 'account_id': 'account_id', 'account_type': 'account_type', 'end_reason': 'end_reason',
+            'status': 'status',
             'pause_start_date': 'pause_start_date', 'pause_end_date': 'pause_end_date', 'semester': 'semester',
             'first_registered': 'first_registered',
             // Korean (backward compat)
@@ -3973,7 +3863,8 @@ async function importFromSheetId(sheetId, sheetName) {
             '보호자명1': 'guardian_name_1', '보호자명2': 'guardian_name_2',
             '소속': 'branch', '레벨기호': 'level_symbol', '반넘버': 'class_number',
             '수업종류': 'class_type', '시작일': 'start_date', '종료일': 'end_date',
-            '요일': 'day', '상태': 'status',
+            '요일': 'day', '계정ID': 'account_id', '계정유형': 'account_type', '종료사유': 'end_reason',
+            '상태': 'status',
             '휴원시작일': 'pause_start_date', '휴원종료일': 'pause_end_date', '학기': 'semester',
             '첫등록일': 'first_registered',
         };
@@ -4047,6 +3938,9 @@ async function runCsvUpsert(csvText, fileName) {
         status: raw['status'] || raw['상태'] || '재원',
         semester: raw['semester'] || raw['학기'] || '',
         end_date: raw['end_date'] || raw['종료일'] || '',
+        account_id: raw['account_id'] || raw['계정ID'] || '',
+        account_type: raw['account_type'] || raw['계정유형'] || '',
+        end_reason: raw['end_reason'] || raw['종료사유'] || '',
         pause_start_date: raw['pause_start_date'] || raw['휴원시작일'] || '',
         pause_end_date: raw['pause_end_date'] || raw['휴원종료일'] || '',
         first_registered: raw['first_registered'] || raw['첫등록일'] || '',
@@ -4063,6 +3957,30 @@ async function runCsvUpsert(csvText, fileName) {
  */
 async function runUpsertFromRows(rows, sourceName) {
     if (!rows || rows.length === 0) { showToast('데이터가 없습니다.', 'warn'); return; }
+
+    const accountTypesById = new Map();
+    const accountErrors = [];
+    for (const raw of rows) {
+        const accountId = (raw['account_id'] || raw['계정ID'] || '').toString().trim();
+        const accountType = (raw['account_type'] || raw['계정유형'] || '').toString().trim();
+        if (accountType && !ACCOUNT_TYPES.includes(accountType)) {
+            accountErrors.push(`${raw['name'] || raw['이름'] || '이름 없음'}: 허용되지 않은 계정유형(${accountType})`);
+            continue;
+        }
+        if (!accountId || !accountType) continue;
+        const previousType = accountTypesById.get(accountId);
+        if (previousType && previousType !== accountType) {
+            accountErrors.push(`계정ID ${accountId}: ${previousType}/${accountType} 유형 충돌`);
+        } else {
+            accountTypesById.set(accountId, accountType);
+        }
+    }
+    if (accountErrors.length) {
+        showToast(
+            `업로드 파일의 수강계정 정보가 올바르지 않습니다.\n학생 데이터는 저장하지 않았습니다.\n\n${accountErrors.slice(0, 20).join('\n')}`,
+            'warn', { sticky: true });
+        return;
+    }
 
     // Group by docId
     const studentMap = {};
@@ -4089,6 +4007,12 @@ async function runUpsertFromRows(rows, sourceName) {
         };
         const endDate = raw['end_date'] || raw['종료일'] || '';
         if (endDate) enrollment.end_date = endDate;
+        const accountId = raw['account_id'] || raw['계정ID'] || '';
+        const accountType = raw['account_type'] || raw['계정유형'] || '';
+        const endReason = raw['end_reason'] || raw['종료사유'] || '';
+        if (accountId) enrollment.account_id = accountId;
+        if (accountType) enrollment.account_type = accountType;
+        if (endReason) enrollment.end_reason = endReason;
 
         if (!studentMap[docId]) {
             studentMap[docId] = {
@@ -4159,6 +4083,12 @@ async function runUpsertFromRows(rows, sourceName) {
 
         if (!ex) {
             // INSERT
+            const accounted = assignEnrollmentAccounts(incoming.enrollments);
+            if (!accounted.valid) {
+                showToast(`${incoming.name}: ${accounted.reason}`, 'warn');
+                return;
+            }
+            incoming.enrollments = accounted.enrollments;
             results.inserted.push({ docId, name: incoming.name, enrollments: incoming.enrollments });
             writes.push({ docId, data: { ...toPersistFields(incoming), updated_at: serverTimestamp() }, type: 'set' });
             logEntries.push({
@@ -4184,48 +4114,16 @@ async function runUpsertFromRows(rows, sourceName) {
             // 비활성(퇴원/상담/종강) 학생은 import로 정규반을 되살리지 않는다 (stale 재발 방지).
             // 파일이 재원/등원예정으로 재활성화하는 경우에만 enrollment 반영.
             const _resultStatus = infoDiff.status?.new || ex.status || '';
-            const incomingEnrollments = ['퇴원', '상담', '종강'].includes(_resultStatus) ? [] : incoming.enrollments;
-
-            // ACCUMULATE enrollments by semester
-            const incomingSemesters = new Set(incomingEnrollments.map(e => e.semester).filter(Boolean));
-            const hasSemesterData = incomingSemesters.size > 0;
-            const keptEnrolls = hasSemesterData
-                ? (ex.enrollments || []).filter(e => !incomingSemesters.has(e.semester))
-                : []; // 학기 정보 없으면 전체 교체 (중복 방지)
-            const sameExisting = hasSemesterData
-                ? (ex.enrollments || []).filter(e => incomingSemesters.has(e.semester))
-                : (ex.enrollments || []); // 학기 정보 없으면 전체를 비교 대상으로
-            const newBucket = [];
-            const enrollAdded = [], enrollChanged2 = [];
-            const matchedExisting = new Set();
-            for (const inc of incomingEnrollments) {
-                const key = enrollmentCode(inc);
-                const match = hasSemesterData
-                    ? sameExisting.find(e => enrollmentCode(e) === key && e.semester === inc.semester)
-                    : sameExisting.find((e, i) => enrollmentCode(e) === key && !matchedExisting.has(i));
-                if (!match) { newBucket.push({ ...inc }); enrollAdded.push(inc); }
-                else {
-                    if (!hasSemesterData) {
-                        const matchIdx = sameExisting.indexOf(match);
-                        matchedExisting.add(matchIdx);
-                    }
-                    // 기존 enrollment에 비어있지 않은 incoming 값만 덮어쓰기 (부분 업데이트 지원)
-                    const merged = { ...match };
-                    for (const [k, v] of Object.entries(inc)) {
-                        if (k === 'day' && Array.isArray(v) && v.length === 0) continue;
-                        if (v === '' || v === undefined || v === null) continue;
-                        merged[k] = v;
-                    }
-                    if (JSON.stringify(match) !== JSON.stringify(merged)) { enrollChanged2.push(merged); newBucket.push(merged); }
-                    else { newBucket.push({ ...match }); }
-                }
+            const merged = mergeImportedEnrollments(ex.enrollments, incoming.enrollments, {
+                status: _resultStatus,
+            });
+            if (!merged.valid) {
+                showToast(`${incoming.name}: ${merged.reason}`, 'warn');
+                return;
             }
-            // 학기 정보 없을 때: 매칭되지 않은 기존 enrollment도 유지
-            if (!hasSemesterData) {
-                sameExisting.forEach((e, i) => { if (!matchedExisting.has(i)) keptEnrolls.push(e); });
-            }
-            const mergedEnrollments = [...keptEnrolls, ...newBucket];
-            const enrollChanged = enrollAdded.length > 0 || enrollChanged2.length > 0;
+            const mergedEnrollments = merged.enrollments;
+            const enrollAdded = merged.added;
+            const enrollChanged = merged.cleared || enrollAdded.length > 0 || merged.changed.length > 0;
 
             const hasInfoChange = Object.keys(infoDiff).length > 0;
 
@@ -4900,7 +4798,10 @@ window.applyBulkStatus = async () => {
     if (!newStatus) { showToast('변경할 상태를 선택해주세요.', 'warn'); return; }
     if (selectedStudentIds.size === 0) { showToast('학생을 선택해주세요.', 'warn'); return; }
 
-    if (!(await confirmModal({ title: '일괄 상태 변경', message: `선택한 ${selectedStudentIds.size}명의 상태를 '${newStatus}'(으)로 변경합니다.`, confirmText: '변경' }))) return;
+    const accountEndNotice = NON_ENROLLABLE_STATUSES.has(newStatus)
+        ? '\n모든 수강계정이 종료됩니다.'
+        : '';
+    if (!(await confirmModal({ title: '일괄 상태 변경', message: `선택한 ${selectedStudentIds.size}명의 상태를 '${newStatus}'(으)로 변경합니다.${accountEndNotice}`, confirmText: '변경' }))) return;
 
     const ids = [...selectedStudentIds];
     let committed = 0, total = 0;
@@ -5589,6 +5490,10 @@ const LEAVE_STATUSES = ['가휴원', '실휴원'];
 const _isWithdrawalType = (t) => t === '퇴원요청' || t === '휴원→퇴원';
 const _isReturnType = (t) => t === '복귀요청' || t === '재등원요청';
 const _isReEnrollType = (t) => t === '재등원요청';
+const _futureEffectiveDate = (r) => {
+    const date = r?.withdrawal_date || r?.leave_start_date || '';
+    return date > getTodayDateStr() ? date : '';
+};
 
 async function _refreshStudentAfterFinalApproval(requestId, studentId) {
     try {
@@ -5624,6 +5529,13 @@ async function _refreshStudentAfterFinalApproval(requestId, studentId) {
 
 async function _showStudentAfterApproval(isFinal, requestId, studentId) {
     if (isFinal) {
+        const scheduledDate = _futureEffectiveDate(leaveRequests.find(request => request.docId === requestId));
+        if (scheduledDate) {
+            showToast(`승인되었습니다. ${scheduledDate} 발효 예정입니다.`, 'success');
+            const student = allStudents.find(s => s.id === studentId);
+            if (student) window.selectStudent(studentId, student);
+            return;
+        }
         await _refreshStudentAfterFinalApproval(requestId, studentId);
         return;
     }
@@ -5654,6 +5566,7 @@ function _leaveRequestTypeBadge(r, studentStatus = '') {
 }
 
 function _leaveRequestStatusBadge(r) {
+    if (r.status === 'approved' && _futureEffectiveDate(r)) return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:var(--success);background:var(--success-bg);">승인완료·발효예정</span>`;
     if (r.status === 'approved') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:var(--success);background:var(--success-bg);">승인완료</span>`;
     if (r.status === 'cancelled') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:#6b7280;background:#f3f4f6;">취소</span>`;
     if (r.status === 'rejected') return `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;color:var(--danger-strong);background:var(--danger-bg);">반려</span>`;
@@ -5681,6 +5594,9 @@ function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
     const reqBy = staffLabel(r.requested_by);
     const tAppBy = staffLabel(r.teacher_approved_by);
     const appBy = staffLabel(r.approved_by);
+    const targetHtml = r.account_target?.account_id
+        ? `<span style="font-size:11px;color:var(--text-sec);">${esc(r.account_target.label || r.account_target.account_type || r.account_target.account_id)}</span>`
+        : '<span style="font-size:11px;color:var(--text-sec);">학생 전체</span>';
     let metaHtml = `<div style="font-size:10px;color:var(--text-sec);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;">
         ${reqBy ? `<span>요청: ${esc(reqBy)} ${_fmtTs(r.requested_at)}</span>` : ''}
         ${tAppBy ? `<span>교수부: ${esc(tAppBy)} ${_fmtTs(r.teacher_approved_at)}</span>` : ''}
@@ -5726,6 +5642,7 @@ function _renderLeaveRequestRow(r, studentId, studentStatus = '') {
         <div style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer;" role="button" tabindex="0" onclick="this.querySelector('.lr-expand').style.display = this.querySelector('.lr-expand').style.display === 'none' ? 'block' : 'none'">
             <div style="display:flex;align-items:center;gap:6px;">
                 ${_leaveRequestTypeBadge(r, studentStatus)} ${_leaveRequestStatusBadge(r)}
+                ${targetHtml}
                 <span style="font-size:12px;color:var(--text-sec);margin-left:4px;">${esc(dateStr)}</span>
             </div>
             <div class="lr-expand" style="display:none;margin-top:6px;">
@@ -5909,6 +5826,21 @@ function _openReturnModal(studentId, type) {
     const today = getTodayDateStr();
     document.getElementById('rfl-return-date').value = today;
     document.getElementById('rfl-consultation-note').value = '';
+    const openAccounts = studentAccounts(student, today);
+    const accountWrap = document.getElementById('rfl-account-target-wrap');
+    const accountSelect = document.getElementById('rfl-account-target');
+    if (openAccounts.length >= 2) {
+        accountSelect.innerHTML = [
+            '<option value="">학생 전체</option>',
+            ...openAccounts.map(account =>
+                `<option value="${escAttr(account.key)}">${esc(account.label)}</option>`
+            ),
+        ].join('');
+        accountWrap.style.display = 'block';
+    } else {
+        accountSelect.innerHTML = '';
+        accountWrap.style.display = 'none';
+    }
 
     // 정규반 드롭다운 비동기 채우기
     _populateTargetClassDropdown(student);
@@ -5944,6 +5876,17 @@ window.submitReturnFromLeave = async () => {
         // 재등원·복귀 시 finalize가 만들 정규 enrollment의 semester를
         // 학생 학부의 현재 학기로 자동 결정 (사용자가 모달에서 학기를 입력하지 않음).
         const targetSemester = currentSemesterByLevel[student.level] || '';
+        const selectedAccountKey = document.getElementById('rfl-account-target')?.value || '';
+        const accounts = studentAccounts(student, getTodayDateStr());
+        let selectedAccount = accounts.length === 1 ? accounts[0] : null;
+        if (selectedAccountKey) {
+            selectedAccount = accounts.find(account => account.key === selectedAccountKey);
+        }
+        if (selectedAccountKey && !selectedAccount) {
+            showToast('선택한 수강계정을 찾을 수 없습니다.', 'warn');
+            return;
+        }
+        const selectedAccountTarget = accountTarget(selectedAccount, branchFromStudent(student));
 
         const data = {
             student_id: _returnModalStudentId,
@@ -5964,6 +5907,7 @@ window.submitReturnFromLeave = async () => {
             created_at: serverTimestamp(),
             updated_at: serverTimestamp()
         };
+        if (selectedAccountTarget) data.account_target = selectedAccountTarget;
 
         const docRef = await addDoc(collection(db, 'leave_requests'), data);
         leaveRequests.push({ docId: docRef.id, ...data, requested_at: new Date(), created_at: new Date() });
@@ -6013,8 +5957,25 @@ window.toggleCancelLeaveRequest = async (docId, studentId) => {
 
 // 방어 가드: 최종 승인 시 RETURN 유형(복귀/재등원)은 반드시 target_class_code 필요
 // 정상 UI 경로에서는 세팅되지만, 데이터 마이그레이션/수동 생성 등 비정상 경로 방어용.
-function _checkLegacyReturnTarget(r, willFinalize) {
+async function _checkLegacyReturnTarget(docId, r, studentId, willFinalize) {
     if (!willFinalize) return true;
+    if (r.account_target?.account_id) {
+        const [requestSnapshot, studentSnapshot] = await Promise.all([
+            getDoc(doc(db, 'leave_requests', docId)),
+            getDoc(doc(db, 'students', studentId)),
+        ]);
+        const storedTarget = requestSnapshot.data()?.account_target;
+        const student = studentSnapshot.data();
+        if (!sameAccountTarget(r.account_target, storedTarget)) {
+            showToast('수강계정 대상 정보가 요청 생성 후 변경되었습니다.\n새로고침 후 다시 확인해주세요.', 'warn');
+            return false;
+        }
+        if (!student || !accountTargetExists(student, storedTarget)) {
+            showToast('대상 수강계정이 학생에게 존재하지 않습니다.\n요청을 취소하고 새로 작성해주세요.', 'warn');
+            return false;
+        }
+        return true;
+    }
     const isReturn = _isReturnType(r.request_type);
     if (isReturn && !r.target_class_code) {
         showToast('이 요청에 "복귀할 반" 정보가 없습니다.\n요청을 취소하고 새로 작성해주세요.', 'warn');
@@ -6044,7 +6005,7 @@ window.teacherApproveLeaveRequest = async (docId, studentId) => {
         }
         const isFinal = !!r.approved_by;
         // 레거시 가드 (최종 승인 시점에만 체크)
-        if (!_checkLegacyReturnTarget(r, isFinal)) return;
+        if (!(await _checkLegacyReturnTarget(docId, r, studentId, isFinal))) return;
         const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
         if (!confirm(`${r.student_name} — ${typeLabel}\n교수부 승인하시겠습니까?`)) return;
 
@@ -6098,7 +6059,7 @@ window.approveLeaveRequest = async (docId, studentId) => {
 
         const isFinal = !!r.teacher_approved_by;
         // 레거시 가드
-        if (!_checkLegacyReturnTarget(r, isFinal)) return;
+        if (!(await _checkLegacyReturnTarget(docId, r, studentId, isFinal))) return;
         const typeLabel = `${r.request_type}${r.leave_sub_type ? ' (' + r.leave_sub_type + ')' : ''}`;
         if (!confirm(`${r.student_name} — ${typeLabel}\n행정부 승인하시겠습니까?`)) return;
 
@@ -6486,7 +6447,7 @@ window.saveGrammarSpecial = async () => {
                 }
                 const studentLevel = existingS?.level || entry.level || '';
                 const semester = filterSemester || currentSemesterByLevel[studentLevel] || '';
-                const newEnrollment = {
+                let newEnrollment = {
                     class_type: '특강',
                     level_symbol: 'GR',
                     class_number: '901',
@@ -6496,6 +6457,7 @@ window.saveGrammarSpecial = async () => {
                     semester,
                     weekly_schedule: entry.weeklySchedule,
                 };
+                [newEnrollment] = assignEnrollmentAccounts([newEnrollment]).enrollments;
 
                 if (existingS) {
                     // Existing student — append/replace enrollment
@@ -6505,7 +6467,7 @@ window.saveGrammarSpecial = async () => {
                         e.start_date === startDate && e.end_date === endDate
                     );
                     if (existIdx >= 0) {
-                        enrollments[existIdx] = newEnrollment;
+                        enrollments[existIdx] = preserveEnrollmentAccountFields(newEnrollment, enrollments[existIdx]);
                     } else {
                         enrollments.push(newEnrollment);
                     }

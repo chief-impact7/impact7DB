@@ -83,7 +83,7 @@ export const onScheduleDailyStats = onSchedule(
   }
 );
 
-// 퇴원 불변식: status가 '퇴원'인데 정규반(enrollments)이 남아 있으면 자동으로 비운다.
+// 비재원 불변식: status가 '퇴원'/'종강'인데 enrollments가 남아 있으면 자동으로 비운다.
 // import 재유입·편집 누락 등 어떤 경로로 stale 정규반이 생겨도 잡는 마지막 안전망 (재발 방지).
 // 상담은 제외(실제 재원일 수 있어 자동삭제 위험) — 상담은 import/편집 폼(A/B)에서 처리.
 export const onStudentWithdrawnClearEnrollments = onDocumentWritten(
@@ -91,7 +91,7 @@ export const onStudentWithdrawnClearEnrollments = onDocumentWritten(
   async (event) => {
     const after = event.data?.after?.data();
     if (!after) return null;                            // 삭제됨
-    if (after.status !== '퇴원') return null;            // 퇴원만
+    if (!['퇴원', '종강'].includes(after.status)) return null;
     const enr = after.enrollments;
     if (!Array.isArray(enr) || enr.length === 0) return null;  // 이미 0 → 무한루프 방지
 
@@ -104,13 +104,13 @@ export const onStudentWithdrawnClearEnrollments = onDocumentWritten(
     await db.collection('history_logs').add({
       doc_id: event.params.studentId,
       change_type: 'UPDATE',
-      before: JSON.stringify({ status: '퇴원', enrollments: enr }),
-      after: '정규반 자동정리 (퇴원 불변식: 퇴원생 정규반 0)',
+      before: JSON.stringify({ status: after.status, enrollments: enr }),
+      after: `수강계정 자동정리 (${after.status} 불변식: enrollments 0)`,
       reason: 'fn-withdrawn-invariant',
       google_login_id: 'fn-withdrawn-invariant',
       timestamp: FieldValue.serverTimestamp(),
     });
-    console.log(`[withdrawn-invariant] ${event.params.studentId} 정규반 ${enr.length}건 자동정리`);
+    console.log(`[withdrawn-invariant] ${event.params.studentId} 수강 ${enr.length}건 자동정리`);
     return null;
   }
 );
@@ -132,15 +132,6 @@ export const onLeaveRequestApproved = onDocumentUpdated(
       await finalize(event.data.after.ref, after);
     } catch (err) {
       console.error('[onLeaveRequestApproved] finalize failed:', err);
-      // 에러를 leave_request에 기록 (재시도용 상태)
-      try {
-        await event.data.after.ref.update({
-          finalize_error: String(err?.message || err),
-          finalize_attempts: FieldValue.increment(1),
-        });
-      } catch (writeErr) {
-        console.error('[onLeaveRequestApproved] failed to write finalize_error:', writeErr);
-      }
       throw err; // Functions 런타임이 자동 재시도 (retry: true 설정 시)
     }
   }

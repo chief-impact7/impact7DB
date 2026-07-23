@@ -4,3 +4,9 @@ export function todayKST() {
   // en-CA locale은 ISO 8601 형식(YYYY-MM-DD)을 안정적으로 반환.
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
 }
+
+export function previousDateKST(dateStr) {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
