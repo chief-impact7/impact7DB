@@ -91,11 +91,13 @@ describe('buildUpdate — 재등원/복귀요청', () => {
     const { studentUpdate, changeType, enrollments } = buildUpdate(r, stu, cs, []);
     expect(changeType).toBe('RETURN');
     expect(studentUpdate.status).toBe('등원예정');
-    expect(enrollments).toHaveLength(2);
+    expect(enrollments).toHaveLength(1);
     const reg = enrollments.find(e => e.class_type === '정규');
     expect(reg.class_number).toBe('103');
     expect(reg.start_date).toBe('2026-04-21'); // 복귀일이 promote 기준
-    expect(enrollments.find(e => e.class_type === '내신')).toBeDefined();
+    expect(reg.account_type).toBe('정규');
+    expect(reg.account_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(enrollments.find(e => e.class_type === '내신')).toBeUndefined();
   });
 
   it('복귀: status=등원예정, target 없으면 기존 enrollment 유지', () => {

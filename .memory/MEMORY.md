@@ -1,5 +1,7 @@
 # Memory Index
 
+- [수강계정 개편 (진행 중)](project_sugang_account_overhaul.md) — account_id/account_type 2축, 계정 종료=제거+ACCOUNT_END, currentStatus 보존, 릴리스 8단계 대기 (2026-07-23)
+
 - **학년 승격 일괄 변경** 추가 — 매뉴얼 반영 필요
 - 자동 +1 승격, 초6→중1/중3→고1 학부 자동 전환, 학교 입력(선택)
 - 전환 시 학교 비우면 빈칸 초기화
