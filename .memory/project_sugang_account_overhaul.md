@@ -1,4 +1,10 @@
-# 수강계정 개편 (2026-07-23, 진행 중 — 코드·리뷰 완료·릴리스 대기)
+# 수강계정 개편 (2026-07-23 릴리스 완료 — 스케줄러 실발효 확인만 잔여)
+
+## 릴리스 실행 결과 (2026-07-23 저녁)
+- 1~7단계 완료: shared v1.48.0 태그(c6ee5f5) → pin 3곳(root·functions·functions-shared, DSC는 update-shared 자동화가 선반영) → rules 배포+4-repo 동기화(HR b0d43b4·exam ff3b0a4·DSC 7d9dae6) → functions:leave-request 배포 → 백필 → DB PR#12 머지 배포 → DSC 9f1b361 push 배포.
+- 백필: 1차 자동 학생 337+class_settings 57, 2차 4명. 수동 처리(전부 history_logs 'account-backfill-manual'): 분반 3명(박다민·이준영·최민준 — 정규 2반 한 계정, 사용자 확인), 김범준3 반이동(104 종료 7/21), 빈 placeholder 행 4건+진원준 중복 행 삭제, 김태경2 등원예정, 박해인 1205 퇴원, 박해인 1056708097 유령 복원(AX104+휴원 7/2~8/3 — 7/3 퇴원 불변식이 비운 수강을 7/10 실휴원 정정 때 미복원이 원인).
+- 최종 verify 잔여 2건은 의도됨: [테스트] 카톡확인(유지 지시), 김태경2(반 배정 시 해소). class_settings 7건(수능인덱스 1차 4·중급문법A/B·초급문법B)은 **공통 특강 — branch 빈 값이 정답**, 백필 리포트 BRANCH_UNRESOLVED로 계속 떠도 재질문 금지.
+- 잔여: 03:10 onScheduleWithdrawals 실발효 확인(2026-07-24 아침).
 
 ## 2026-07-23 마무리 세션 (Claude 오케스트레이션 + Codex 실행)
 - 중단 시점 테스트 실패 4건 해결: 복귀 status 재파생(currentStatus는 부분 종료 전용 — 복귀에 넘기면 pause 필드 없는 가휴원 고착), 미래 종료 no-op 정합, scheduledWithdrawals shape, 통합테스트 project ID 불일치(demo-impact7)로 인한 hook timeout.
