@@ -3112,7 +3112,7 @@ function _renderEnrollmentAccountCard(container, account, enrollments) {
         <div class="enrollment-card-header">
             <span class="enrollment-tag">${esc(account.label)}</span>
             <span class="${account.state === '예정' ? 'enrollment-pending' : 'enrollment-type'}">${esc(account.state)}</span>
-            ${accountItemIdx >= 0 ? `<button class="btn-end-class" onclick="window.endEnrollment(${accountItemIdx})" title="계정 종료" aria-label="계정 종료">${msIcon('archive')}</button>` : ''}
+            ${accountItemIdx >= 0 ? `<button class="btn-end-class" onclick="window.endEnrollment(${accountItemIdx})" title="계정 종료" aria-label="계정 종료">${msIcon('trash')}</button>` : ''}
         </div>
         <div class="enrollment-card-body">${itemRows}</div>
     `;
