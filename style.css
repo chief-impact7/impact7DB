@@ -1700,7 +1700,7 @@ summary.menu-l2 .i7-icon {
 .btn-end-class {
     margin-left: auto;
     background: transparent;
-    border: 1px solid var(--danger);
+    border: none;
     border-radius: 16px;
     padding: 3px 12px;
     font-size: 12px;
