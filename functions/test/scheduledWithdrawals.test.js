@@ -93,6 +93,7 @@ describe('runScheduledWithdrawals', () => {
     expect(result).toEqual({
       checked: 2,
       processed: 1,
+      staleCleaned: 0,
       accountChecked: 0,
       accountProcessed: 0,
       accountFailures: [],
@@ -214,5 +215,72 @@ describe('runScheduledWithdrawals', () => {
     expect(finalizeRequest).toHaveBeenCalledTimes(2);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  it('재등원 흔적(enrollment start_date가 withdrawal_date 이후)이 있으면 퇴원 발효 대신 잔존 예약 필드를 청소한다', async () => {
+    const db = makeDb([
+      ['re-enrolled', {
+        name: '재등원학생',
+        status: '재원',
+        withdrawal_date: '2026-05-11',
+        pre_withdrawal_status: '재원',
+        scheduled_leave_status: '가휴원',
+        enrollments: [{ class_number: '101', start_date: '2026-07-23' }],
+      }],
+    ]);
+
+    const result = await runScheduledWithdrawals(db, '2026-07-23');
+
+    expect(result.processed).toBe(1);
+    expect(result.staleCleaned).toBe(1);
+    expect(db.updates).toHaveLength(1);
+    expect(db.updates[0].data.status).toBeUndefined();
+    expect(db.updates[0].data.enrollments).toBeUndefined();
+    expect(db.updates[0].data.withdrawal_date).toBeDefined();
+    expect(db.updates[0].data.pre_withdrawal_status).toBeDefined();
+    expect(db.updates[0].data.scheduled_leave_status).toBeDefined();
+    expect(db.sets).toHaveLength(1);
+    expect(db.sets[0].data.change_type).toBe('UPDATE');
+    expect(db.sets[0].data.reason).toBe('scheduled-withdrawal-stale-cleanup');
+    const before = JSON.parse(db.sets[0].data.before);
+    expect(before.withdrawal_date).toBe('2026-05-11');
+    expect(before.reenrollment_start_date).toBe('2026-07-23');
+  });
+
+  it('enrollment에 start_date가 없으면 재등원 흔적으로 보지 않고 기존대로 퇴원을 발효한다', async () => {
+    const db = makeDb([
+      ['no-start-date', {
+        status: '재원',
+        withdrawal_date: '2026-05-11',
+        enrollments: [{ class_number: '101' }],
+      }],
+    ]);
+
+    const result = await runScheduledWithdrawals(db, '2026-07-23');
+
+    expect(result.processed).toBe(1);
+    expect(result.staleCleaned).toBe(0);
+    expect(db.updates[0].data.status).toBe('퇴원');
+    expect(db.updates[0].data.enrollments).toEqual([]);
+    expect(db.sets[0].data.change_type).toBe('WITHDRAW');
+  });
+
+  it('예약 휴원 경로도 같은 재등원 함정 구조 — 발효 대신 pause_start_date/scheduled_leave_status를 청소한다', async () => {
+    const db = makeDb([
+      ['re-enrolled-leave', {
+        status: '재원',
+        scheduled_leave_status: '가휴원',
+        pause_start_date: '2026-05-11',
+        enrollments: [{ class_number: '101', start_date: '2026-07-23' }],
+      }],
+    ]);
+
+    const result = await runScheduledWithdrawals(db, '2026-07-23');
+
+    expect(result.staleCleaned).toBe(1);
+    expect(db.updates[0].data.status).toBeUndefined();
+    expect(db.updates[0].data.pause_start_date).toBeDefined();
+    expect(db.updates[0].data.scheduled_leave_status).toBeDefined();
+    expect(db.sets[0].data.reason).toBe('scheduled-leave-stale-cleanup');
   });
 });
