@@ -1,14 +1,21 @@
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { assertAuthorizedStaff } from './authGuards.js';
-import { buildSmsQueueDoc } from './smsQueueDoc.js';
+import { buildSmsQueueDocs } from './smsQueueDoc.js';
 import { assertAdContentCompliant, resolvePromoScheduledDate } from './promoCampaignHandler.js';
 import { resolveMmsImageId } from './mmsImage.js';
-import { alimtalkFallbackText, buildAlimtalkQueueDoc, validateAlimtalkVariables } from './bulkMessageHandler.js';
+import {
+  alimtalkFallbackText,
+  buildAlimtalkOrSplitSmsDocs,
+  validateAlimtalkVariables,
+} from './bulkMessageHandler.js';
 import { getApprovedAlimtalkTemplate } from './alimtalkTemplateHandler.js';
 import { parseKstToDate } from './promoSchedule.js';
+import { recipientFingerprint } from './campaignResume.js';
+import { hashRequestFingerprint } from './requestFingerprint.js';
 
 const MAX_RECIPIENTS = 100;
+const MAX_QUEUE_DOCS = 400;
 export { parseMmsImage } from './mmsImage.js';
 
 // 줄바꿈/쉼표로 분리 → 숫자만 → 9~11자리 유효 → 중복 제거.
@@ -75,34 +82,46 @@ export async function handleSendDirectMessage(request, deps = {}) {
   }
   const createdBy = request.auth?.token?.email ?? null;
   const sentinelRef = data.requestId ? db.collection('direct_batches').doc(data.requestId) : null;
-  if (sentinelRef && (await sentinelRef.get()).exists) return { queued: 0, invalid, duplicate: true };
-
-  const imageId = isAlimtalk ? null : await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage);
-
-  // sentinel과 큐 enqueue를 한 batch에 묶어 원자적으로 commit.
-  // sentinel(batch.create)이 ALREADY_EXISTS를 던지면 중복 요청으로 처리.
-  const batch = db.batch();
-  if (sentinelRef) {
-    batch.create(sentinelRef, {
-      count: valid.length,
-      created_by: createdBy,
-      created_at: FieldValue.serverTimestamp(),
-    });
+  const requestFingerprint = hashRequestFingerprint(recipientFingerprint(valid, {
+    channel,
+    messageKind,
+    body,
+    ...(data.scheduledAt ? { scheduledAt: String(data.scheduledAt) } : {}),
+    ...(data.splitLongMessage === true ? { splitLongMessage: true } : {}),
+    ...(data.mmsImage ? { mmsImage: data.mmsImage } : {}),
+    ...(isAlimtalk ? {
+      templateId: alimtalkTemplate.templateId,
+      templateContent: alimtalkTemplate.content,
+      templateVariables: alimtalkVariables,
+    } : {}),
+  }));
+  const existingSentinel = sentinelRef ? await sentinelRef.get() : null;
+  if (existingSentinel?.exists) {
+    const existingFingerprint = existingSentinel.data()?.request_fingerprint;
+    if (existingFingerprint && existingFingerprint !== requestFingerprint) {
+      throw new HttpsError('invalid-argument', '같은 요청 ID의 발송 내용 또는 수신 대상이 이전 요청과 다릅니다.');
+    }
+    return { queued: 0, invalid, duplicate: true };
   }
+
+  let imageId = !isAlimtalk && data.mmsImage ? 'preflight' : null;
   const alimtalkFallback = isAlimtalk ? alimtalkFallbackText(alimtalkTemplate, alimtalkVariables) : null;
-  for (const phone of valid) {
-    batch.set(db.collection('message_queue').doc(), isAlimtalk ? {
-      ...buildAlimtalkQueueDoc({
+  const queueDocs = valid.flatMap((phone) => {
+    const splitGroupId = data.requestId
+      ? `direct:${data.requestId}:${hashRequestFingerprint(phone).slice(0, 16)}`
+      : null;
+    return isAlimtalk
+      ? buildAlimtalkOrSplitSmsDocs({
         phone,
-        templateId: alimtalkTemplate.templateId,
+        template: alimtalkTemplate,
         variables: alimtalkVariables,
         fallbackText: alimtalkFallback,
         scheduledDate,
-      }),
-      created_by: createdBy,
-      created_at: FieldValue.serverTimestamp(),
-    } : {
-      ...buildSmsQueueDoc({
+        splitLongMessage: data.splitLongMessage === true,
+        splitGroupId,
+        createdBy,
+      })
+      : buildSmsQueueDocs({
         kind: isPromo ? 'promo_sms' : 'direct',
         phone,
         content: body,
@@ -111,17 +130,56 @@ export async function handleSendDirectMessage(request, deps = {}) {
         adFlag: isPromo,
         consent: isPromo ? { source: 'manual_confirmation', at: now.toISOString() } : null,
         imageId,
-      }),
+      }, {
+        splitLongMessage: data.splitLongMessage === true,
+        splitGroupId,
+      });
+  });
+  if (queueDocs.length > MAX_QUEUE_DOCS) {
+    throw new HttpsError('invalid-argument', `분할 발송을 포함해 한 번에 최대 ${MAX_QUEUE_DOCS}건까지 등록할 수 있습니다.`);
+  }
+  if (data.mmsImage) {
+    imageId = await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage);
+    for (const doc of queueDocs) doc.image_id = imageId;
+  }
+
+  // sentinel과 큐 enqueue를 한 batch에 묶어 원자적으로 commit.
+  // sentinel(batch.create)이 ALREADY_EXISTS를 던지면 중복 요청으로 처리.
+  const batch = db.batch();
+  if (sentinelRef) {
+    batch.create(sentinelRef, {
+      count: queueDocs.length,
+      recipient_count: valid.length,
+      request_fingerprint: requestFingerprint,
+      created_by: createdBy,
+      created_at: FieldValue.serverTimestamp(),
+    });
+  }
+  for (const doc of queueDocs) {
+    batch.set(db.collection('message_queue').doc(), {
+      ...doc,
+      created_by: createdBy,
       created_at: FieldValue.serverTimestamp(),
     });
   }
   try {
     await batch.commit();
   } catch (e) {
-    if (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message))) {
+    if (sentinelRef && (e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message)))) {
+      const raced = await sentinelRef.get();
+      const existingFingerprint = raced.data()?.request_fingerprint;
+      if (existingFingerprint && existingFingerprint !== requestFingerprint) {
+        throw new HttpsError('invalid-argument', '같은 요청 ID의 발송 내용 또는 수신 대상이 이전 요청과 다릅니다.');
+      }
       return { queued: 0, invalid, duplicate: true };
     }
     throw e;
   }
-  return { queued: valid.length, invalid };
+  return {
+    queued: queueDocs.length,
+    recipients: valid.length,
+    invalid,
+    splitGroups: queueDocs.filter((doc) => doc.split_part_index === 1).length,
+    convertedToSms: queueDocs.filter((doc) => doc.fallback_from_alimtalk).length,
+  };
 }

@@ -93,6 +93,19 @@ describe('handleSendDirectMessage', () => {
     expect(directDocs.every((d) => d.image_id === 'MMS_FILE_1')).toBe(true);
   });
 
+  it('MMS 본문이 Solapi 제한을 넘으면 이미지를 업로드하지 않는다', async () => {
+    const uploadMmsImage = vi.fn();
+    await expect(handleSendDirectMessage({
+      auth,
+      data: {
+        recipients: '01011112222',
+        text: '가'.repeat(1001),
+        mmsImage: { name: '안내.jpg', dataBase64: JPEG_BASE64 },
+      },
+    }, { db, uploadMmsImage })).rejects.toThrow('Solapi 발송 제한');
+    expect(uploadMmsImage).not.toHaveBeenCalled();
+  });
+
   it('does not upload the image again for a duplicate requestId', async () => {
     const uploadMmsImage = vi.fn().mockResolvedValue('MMS_FILE_1');
     const data = {
@@ -112,6 +125,38 @@ describe('handleSendDirectMessage', () => {
     await expect(handleSendDirectMessage({ auth, data: { recipients: '01011112222', text: '  ' } }, { db })).rejects.toThrow();
   });
 
+  it('길이 초과 정보문자는 거부하고 명시적 선택 시 번호를 붙여 나눈다', async () => {
+    const text = '가'.repeat(1001);
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { recipients: '01011112222', text },
+    }, { db })).rejects.toMatchObject({
+      code: 'invalid-argument',
+      details: expect.objectContaining({ canSplit: true, splitParts: 2 }),
+    });
+    expect(Object.values(db._docs).filter((doc) => doc.kind === 'direct')).toHaveLength(0);
+
+    const result = await handleSendDirectMessage({
+      auth,
+      data: { recipients: '01011112222', text, requestId: 'same-id', splitLongMessage: true },
+    }, { db });
+    expect(result).toMatchObject({ queued: 2, recipients: 1, splitGroups: 1 });
+    const docs = Object.values(db._docs).filter((doc) => doc.kind === 'direct');
+    expect(docs.map((doc) => doc.content.slice(0, 5))).toEqual(['[1/2]', '[2/2]']);
+    expect(docs.every((doc) => /^direct:same-id:[a-f0-9]{16}$/.test(doc.split_group_id))).toBe(true);
+    expect(docs.every((doc) => !doc.split_group_id.includes('01011112222'))).toBe(true);
+  });
+
+  it('requestId 없는 분할 발송은 호출마다 다른 그룹을 사용한다', async () => {
+    const data = { recipients: '01011112222', text: '가'.repeat(1001), splitLongMessage: true };
+    await handleSendDirectMessage({ auth, data }, { db });
+    await handleSendDirectMessage({ auth, data }, { db });
+    const groups = new Set(Object.values(db._docs)
+      .filter((doc) => doc.kind === 'direct')
+      .map((doc) => doc.split_group_id));
+    expect(groups.size).toBe(2);
+  });
+
   it('rejects when no valid recipients', async () => {
     await expect(handleSendDirectMessage({ auth, data: { recipients: 'abc', text: 'x' } }, { db })).rejects.toThrow();
   });
@@ -121,6 +166,36 @@ describe('handleSendDirectMessage', () => {
     await handleSendDirectMessage({ auth, data }, { db });
     const second = await handleSendDirectMessage({ auth, data }, { db });
     expect(second.duplicate).toBe(true);
+    expect(Object.values(db._docs).filter((d) => d.kind === 'direct')).toHaveLength(1);
+    const fingerprint = db._docs['direct_batches/req-1'].request_fingerprint;
+    expect(fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(fingerprint).not.toContain('01011112222');
+  });
+
+  it('fingerprint 없는 구버전 requestId 센티널도 중복으로 처리한다', async () => {
+    db._docs['direct_batches/legacy-direct'] = { count: 1 };
+
+    const result = await handleSendDirectMessage({
+      auth,
+      data: { recipients: '01011112222', text: '안내', requestId: 'legacy-direct' },
+    }, { db });
+
+    expect(result).toMatchObject({ queued: 0, duplicate: true });
+    expect(Object.values(db._docs).filter((doc) => doc.kind === 'direct')).toHaveLength(0);
+  });
+
+  it('같은 requestId로 내용이나 대상이 바뀐 재시도는 거부한다', async () => {
+    const data = { recipients: '01011112222', text: '안내', requestId: 'req-changed' };
+    await handleSendDirectMessage({ auth, data }, { db });
+
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { ...data, text: '수정 안내' },
+    }, { db })).rejects.toThrow('이전 요청과 다릅니다');
+    await expect(handleSendDirectMessage({
+      auth,
+      data: { ...data, recipients: '01033334444' },
+    }, { db })).rejects.toThrow('이전 요청과 다릅니다');
     expect(Object.values(db._docs).filter((d) => d.kind === 'direct')).toHaveLength(1);
   });
 
@@ -229,6 +304,32 @@ describe('handleSendDirectMessage', () => {
       auth,
       data: { channel: 'alimtalk', templateId: 'TPL_NOTICE', recipients: '01011112222', mmsImage: { name: 'a.jpg', dataBase64: JPEG_BASE64 } },
     }, { db })).rejects.toThrow('MMS 이미지를 첨부할 수 없습니다');
+  });
+
+  it('치환 후 초과 알림톡은 선택 시 분할 문자로 전환한다', async () => {
+    const template = {
+      templateId: 'TPL_LONG',
+      name: '긴 안내',
+      content: `${'가'.repeat(30)}#{학생명}`,
+      variables: [{ name: '#{학생명}' }],
+      buttons: [],
+    };
+    const getAlimtalkTemplate = vi.fn().mockResolvedValue(template);
+    const data = {
+      channel: 'alimtalk',
+      templateId: 'TPL_LONG',
+      recipients: '01011112222',
+      templateVariables: { '#{학생명}': '나'.repeat(980) },
+    };
+    await expect(handleSendDirectMessage({ auth, data }, { db, getAlimtalkTemplate }))
+      .rejects.toMatchObject({ details: expect.objectContaining({ actualChars: 1010, splitParts: 2 }) });
+
+    const result = await handleSendDirectMessage(
+      { auth, data: { ...data, splitLongMessage: true } },
+      { db, getAlimtalkTemplate },
+    );
+    expect(result).toMatchObject({ queued: 2, convertedToSms: 2 });
+    expect(Object.values(db._docs).filter((doc) => doc.fallback_from_alimtalk)).toHaveLength(2);
   });
 });
 

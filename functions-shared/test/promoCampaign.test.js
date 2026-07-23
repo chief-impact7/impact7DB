@@ -245,6 +245,26 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
   const CONSENTED = { parent_phone_1: '01011112222', message_consent: { promo: { optedIn: true } } };
   const CONSENTED_2 = { parent_phone_1: '01033334444', message_consent: { promo: { optedIn: true } } };
 
+  it('MMS 본문이 Solapi 제한을 넘으면 이미지를 업로드하지 않는다', async () => {
+    const db = makeDb({ 'students/s1': CONSENTED });
+    const uploadMmsImage = vi.fn();
+    await expect(handleCreatePromoCampaign({
+      auth,
+      data: {
+        title: '홍보',
+        content: `(광고)${'가'.repeat(1001)}\n무료거부 080-000-0000`,
+        studentIds: ['s1'],
+        mmsImage: { name: '홍보.jpg', dataBase64: 'x' },
+      },
+    }, {
+      db,
+      now: kst(2026, 6, 17, 14, 0),
+      loadFriendPhones: async () => new Set(),
+      uploadMmsImage,
+    })).rejects.toThrow('Solapi 발송 제한');
+    expect(uploadMmsImage).not.toHaveBeenCalled();
+  });
+
   it('10,000명까지 허용하고 초과하면 거부', async () => {
     const db = makeDb();
     const studentIds = Array.from({ length: 10000 }, (_, i) => `promo-${i}`);
@@ -293,7 +313,13 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
   it('requestId 재호출: queued 완료 캠페인 → duplicate 반환(재발송 없음)', async () => {
     const db = makeDb({
       'students/s1': CONSENTED,
-      'promo_campaigns/req1': { status: 'queued', stats: { queued: 1 }, scheduled_date: null },
+      'promo_campaigns/req1': {
+        status: 'queued',
+        stats: { queued: 1 },
+        content: AD_CONTENT,
+        request_fingerprint: promoFp(['s1']),
+        scheduled_date: null,
+      },
     });
     const res = await handleCreatePromoCampaign(
       { auth, data: { title: '홍보', content: AD_CONTENT, studentIds: ['s1'], requestId: 'req1' } },
@@ -301,6 +327,58 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
     );
     expect(res.duplicate).toBe(true);
     expect(Object.keys(db._docs).some((k) => k.startsWith('message_queue/'))).toBe(false);
+  });
+
+  it('완료된 캠페인도 같은 requestId의 예약·버튼 변경을 거부한다', async () => {
+    const db = makeDb({ 'students/s1': CONSENTED });
+    const data = {
+      title: '홍보',
+      content: AD_CONTENT,
+      studentIds: ['s1'],
+      requestId: 'req-complete-changed',
+    };
+    await handleCreatePromoCampaign(
+      { auth, data },
+      { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
+    );
+
+    await expect(handleCreatePromoCampaign(
+      { auth, data: { ...data, scheduledAt: '2026-06-18 10:00:00' } },
+      { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
+    )).rejects.toThrow('원 캠페인과 다릅니다');
+    await expect(handleCreatePromoCampaign(
+      { auth, data: { ...data, buttons: [{ buttonType: 'WL', buttonName: '보기' }] } },
+      { db, now: kst(2026, 6, 17, 14, 0), loadFriendPhones: async () => new Set() },
+    )).rejects.toThrow('원 캠페인과 다릅니다');
+  });
+
+  it('배포 전 지문으로 저장된 예약 캠페인의 동일 재시도를 허용한다', async () => {
+    const db = makeDb({
+      'students/s1': CONSENTED,
+      'promo_campaigns/legacy-scheduled': {
+        status: 'scheduled',
+        stats: { queued: 1 },
+        content: AD_CONTENT,
+        scheduled_date: '2026-06-18 10:00:00',
+        request_fingerprint: promoFp(['s1']),
+      },
+    });
+    const result = await handleCreatePromoCampaign({
+      auth,
+      data: {
+        title: '홍보',
+        content: AD_CONTENT,
+        studentIds: ['s1'],
+        requestId: 'legacy-scheduled',
+        scheduledAt: '2026-06-18 10:00:00',
+      },
+    }, {
+      db,
+      now: kst(2026, 6, 17, 14, 0),
+      loadFriendPhones: async () => new Set(),
+    });
+
+    expect(result).toMatchObject({ duplicate: true, scheduledDate: '2026-06-18 10:00:00' });
   });
 
   it('requestId 재호출: enqueuing 고착(lease 만료) 캠페인 → 이미 enqueue된 학생 제외하고 잔여만 재개', async () => {
@@ -363,7 +441,13 @@ describe('handleCreatePromoCampaign — promo 광고 표기 상시 강제(target
       'students/s1': CONSENTED,
       'students/s2': CONSENTED_2,
       // 5초 전 시작된 enqueuing — 다른 호출이 배치 커밋 중일 수 있으므로 손대면 안 됨
-      'promo_campaigns/req1': { status: 'enqueuing', stats: { queued: 2 }, content: AD_CONTENT, enqueue_started_at: now.getTime() - 5000 },
+      'promo_campaigns/req1': {
+        status: 'enqueuing',
+        stats: { queued: 2 },
+        content: AD_CONTENT,
+        enqueue_started_at: now.getTime() - 5000,
+        request_fingerprint: promoFp(['s1', 's2']),
+      },
     });
     const res = await handleCreatePromoCampaign(
       { auth, data: { title: '홍보', content: AD_CONTENT, studentIds: ['s1', 's2'], requestId: 'req1' } },

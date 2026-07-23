@@ -4,7 +4,12 @@ import { assertAuthorizedStaff } from './authGuards.js';
 import { promoEligibility, getPromoConsent, consentTargetOf } from './promoConsent.js';
 import { resolveAdScheduledAt, isAdNightKST, parseKstToDate } from './promoSchedule.js';
 import { resolveRecipientTarget, resolveRecipientTargets } from './recipientPhone.js';
-import { claimCampaignResume, recipientFingerprint } from './campaignResume.js';
+import {
+  REQUEST_FINGERPRINT_VERSION,
+  campaignFingerprintMatches,
+  claimCampaignResume,
+  recipientFingerprint,
+} from './campaignResume.js';
 import { buildSmsQueueDoc } from './smsQueueDoc.js';
 import { resolveMmsImageId } from './mmsImage.js';
 
@@ -135,14 +140,32 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   const campaignRef = data.requestId
     ? db.collection('promo_campaigns').doc(String(data.requestId))
     : db.collection('promo_campaigns').doc();
+  const fingerprint = recipientFingerprint(studentIds, {
+    recipientField: data.recipientField ?? null,
+    recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : null,
+    ...(targeting !== 'M' ? { targeting } : {}),
+    ...(data.scheduledAt ? { scheduledAt: String(data.scheduledAt) } : {}),
+    ...(buttons ? { buttons } : {}),
+    ...(data.mmsImage ? { mmsImage: data.mmsImage } : {}),
+    ...(!data.mmsImage && data.imageId ? { imageId: data.imageId } : {}),
+  });
+  const legacyFingerprint = recipientFingerprint(studentIds, {
+    recipientField: data.recipientField ?? null,
+    recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : null,
+  });
   const campaignSnapshot = await campaignRef.get();
   if (campaignSnapshot.exists) {
     const existing = campaignSnapshot.data();
+    const acceptedLegacy = existing?.request_fingerprint_version === REQUEST_FINGERPRINT_VERSION
+      ? []
+      : [legacyFingerprint];
+    if (existing?.content !== content
+      || !campaignFingerprintMatches(existing?.request_fingerprint, fingerprint, acceptedLegacy)) {
+      throw new HttpsError('failed-precondition', '재개 요청의 본문/대상이 원 캠페인과 다릅니다. 새 requestId로 발송하세요.');
+    }
     if (existing?.status !== 'enqueuing') return { campaignId: campaignRef.id, duplicate: true, stats: existing?.stats ?? null, scheduledDate: existing?.scheduled_date ?? null };
   }
-  const imageId = data.mmsImage
-    ? await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage)
-    : data.imageId ?? null;
+  let imageId = data.mmsImage ? 'preflight' : data.imageId ?? null;
 
   const refs = studentIds.map((id) => db.collection('students').doc(id));
   const snaps = await db.getAll(...refs);
@@ -157,11 +180,14 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
     scheduledDate,
     recipientField: data.recipientField,
     recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : undefined,
-    imageId,
   });
   stats.skipped_missing = studentIds.length - entries.length; // 존재하지 않는 학생 id
   if (docs.length > MAX_RECIPIENTS) {
     throw new HttpsError('invalid-argument', `한 번에 최대 ${MAX_RECIPIENTS}건까지 발송할 수 있습니다.`);
+  }
+  if (data.mmsImage) {
+    imageId = docs.length ? await resolveMmsImageId(data.mmsImage, deps.uploadMmsImage) : null;
+    for (const doc of docs) doc.image_id = imageId;
   }
 
   // 멱등: create()로 원자 선점(bulkMessageHandler와 동일 관용구) — 같은 requestId 동시
@@ -171,10 +197,6 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
   // 호출이 배치 도중 죽었을 수 있으나 아직 진행 중일 수도 있으므로, lease 만료 시에만
   // 트랜잭션 CAS(claimCampaignResume)로 잔여 재개 — duplicate 단락으로 잔여 대상이 영영
   // 미발송되는 것과, 진행 중/동시 재개 호출과의 경쟁으로 중복 발송되는 것을 동시에 차단한다.
-  const fingerprint = recipientFingerprint(studentIds, {
-    recipientField: data.recipientField ?? null,
-    recipientFields: Array.isArray(data.recipientFields) ? data.recipientFields : null,
-  });
   let resuming = false;
   try {
     await campaignRef.create({
@@ -191,10 +213,17 @@ export async function handleCreatePromoCampaign(request, deps = {}) {
       created_at: FieldValue.serverTimestamp(),
       enqueue_started_at: now.getTime(),
       request_fingerprint: fingerprint,
+      request_fingerprint_version: REQUEST_FINGERPRINT_VERSION,
     });
   } catch (e) {
     if (!(e?.code === 6 || e?.code === 'already-exists' || /already.?exists/i.test(String(e?.message)))) throw e;
-    const claim = await claimCampaignResume(db, campaignRef, { now, content, fingerprint, stats });
+    const claim = await claimCampaignResume(db, campaignRef, {
+      now,
+      content,
+      fingerprint,
+      legacyFingerprints: [legacyFingerprint],
+      stats,
+    });
     if (!claim.resumed) {
       const ex = claim.existing;
       return { campaignId: campaignRef.id, duplicate: true, stats: ex.stats ?? null, scheduledDate: ex.scheduled_date ?? null };

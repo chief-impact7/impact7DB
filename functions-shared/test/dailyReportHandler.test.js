@@ -28,7 +28,27 @@ function makeDb(seed = {}) {
       },
     };
   };
-  return { _store: store, collection: col };
+  return {
+    _store: store,
+    collection: col,
+    batch() {
+      const ops = [];
+      return {
+        create(ref, value) { ops.push(() => ref.create(value)); },
+        set(ref, value) { ops.push(() => ref.set(value)); },
+        async commit() {
+          const snapshot = structuredClone(store);
+          try {
+            for (const op of ops) await op();
+          } catch (error) {
+            for (const key of Object.keys(store)) delete store[key];
+            Object.assign(store, snapshot);
+            throw error;
+          }
+        },
+      };
+    },
+  };
 }
 
 const auth = { token: { email: 'staff@impact7.kr' } };
@@ -61,13 +81,112 @@ describe('handleSendDailyReport', () => {
     ]);
   });
 
+  it('길이 초과 리포트는 거부하고 명시적 선택 시 분할한다', async () => {
+    const content = '가'.repeat(1001);
+    const rejectedDb = makeDb({ students: { s1: STUDENT } });
+    await expect(handleSendDailyReport(
+      { auth, data: { studentId: 's1', content } },
+      { db: rejectedDb },
+    )).rejects.toMatchObject({ details: expect.objectContaining({ splitParts: 2 }) });
+    expect(Object.values(rejectedDb._store.message_queue || {})).toHaveLength(0);
+
+    const splitDb = makeDb({ students: { s1: STUDENT } });
+    const result = await handleSendDailyReport(
+      { auth, data: { studentId: 's1', content, requestId: 'same-id', splitLongMessage: true } },
+      { db: splitDb },
+    );
+    expect(result).toMatchObject({ queuedCount: 2, splitParts: 2 });
+    const docs = Object.values(splitDb._store.message_queue);
+    expect(docs.every((doc) => doc.split_group_id === 'daily:same-id:s1:parent_1')).toBe(true);
+    expect(Object.keys(splitDb._store.message_queue).every((id) => id.startsWith('daily_same-id_'))).toBe(true);
+    expect(docs
+      .sort((a, b) => a.split_part_index - b.split_part_index)
+      .map((doc) => doc.content.slice(0, 5)))
+      .toEqual(['[1/2]', '[2/2]']);
+  });
+
   it('requestId 중복은 멱등 처리', async () => {
+    const db = makeDb({ students: { s1: STUDENT } });
+    const data = { studentId: 's1', content: 'x', requestId: 'req-1' };
+    await handleSendDailyReport({ auth, data }, { db });
+    const res = await handleSendDailyReport({ auth, data }, { db });
+    expect(res).toMatchObject({ duplicate: true });
+    expect(db._store.message_request_batches['daily_req-1'].request_fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(db._store.message_queue['daily_req-1'].request_fingerprint).not.toContain('x');
+  });
+
+  it('구버전 requestId 큐가 있으면 배포 후 재시도도 중복으로 처리한다', async () => {
     const db = makeDb({
       students: { s1: STUDENT },
-      message_queue: { 'req-1': { kind: 'direct' } },
+      message_queue: { 'legacy-report': { kind: 'direct', source: 'parent_report' } },
     });
-    const res = await handleSendDailyReport({ auth, data: { studentId: 's1', content: 'x', requestId: 'req-1' } }, { db });
-    expect(res).toMatchObject({ duplicate: true });
+    const res = await handleSendDailyReport({
+      auth,
+      data: { studentId: 's1', content: '안내', requestId: 'legacy-report' },
+    }, { db });
+
+    expect(res).toMatchObject({ duplicate: true, queuedCount: 0 });
+    expect(Object.keys(db._store.message_queue)).toEqual(['legacy-report']);
+  });
+
+  it('구버전 다중 수신 큐가 일부만 있으면 누락 수신자만 생성한다', async () => {
+    const db = makeDb({
+      students: {
+        s1: { ...STUDENT, parent_phone_2: '010-3333-4444' },
+      },
+      message_queue: {
+        'legacy-partial_parent_1': { kind: 'direct', recipient_role: 'parent_1' },
+      },
+    });
+    const res = await handleSendDailyReport({
+      auth,
+      data: {
+        studentId: 's1',
+        content: '안내',
+        recipientFields: ['parent_1', 'parent_2'],
+        requestId: 'legacy-partial',
+      },
+    }, { db });
+
+    expect(res).toMatchObject({ queued: true, queuedCount: 1, duplicateCount: 1 });
+    expect(Object.values(db._store.message_queue).map((doc) => doc.recipient_role).sort())
+      .toEqual(['parent_1', 'parent_2']);
+    expect(db._store.message_request_batches['daily_legacy-partial']).toBeDefined();
+  });
+
+  it('같은 requestId로 내용이 바뀐 재시도는 거부한다', async () => {
+    const db = makeDb({ students: { s1: STUDENT } });
+    await handleSendDailyReport(
+      { auth, data: { studentId: 's1', content: '원문', requestId: 'req-1' } },
+      { db },
+    );
+    await expect(handleSendDailyReport(
+      { auth, data: { studentId: 's1', content: '수정문', requestId: 'req-1' } },
+      { db },
+    )).rejects.toThrow('이전 요청과 다릅니다');
+  });
+
+  it('같은 requestId로 분할 선택이나 수신 대상이 바뀐 재시도는 거부한다', async () => {
+    const db = makeDb({
+      students: {
+        s1: {
+          ...STUDENT,
+          parent_phone_2: '010-3333-4444',
+        },
+      },
+    });
+    const data = { studentId: 's1', content: '안내', requestId: 'req-shape' };
+    await handleSendDailyReport({ auth, data }, { db });
+
+    await expect(handleSendDailyReport(
+      { auth, data: { ...data, splitLongMessage: true } },
+      { db },
+    )).rejects.toThrow('이전 요청과 다릅니다');
+    await expect(handleSendDailyReport(
+      { auth, data: { ...data, recipientFields: ['parent_1', 'parent_2'] } },
+      { db },
+    )).rejects.toThrow('이전 요청과 다릅니다');
+    expect(Object.keys(db._store.message_queue)).toHaveLength(1);
   });
 
   it('학생 없음/본문 없음 거부', async () => {

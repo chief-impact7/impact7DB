@@ -37,6 +37,40 @@ describe('buildBulkRecipients (정보성: 전원, 동의 무관)', () => {
     expect(docs.every((d) => d.disable_sms == null && d.targeting == null && d.ad_flag == null)).toBe(true);
     expect(docs.map((d) => d.recipient_phone)).toEqual(['01011112222', '01033334444', '01055556666']);
   });
+
+  it('길이 초과 문자는 기본 거부하고, 명시적 선택 시 수신자별 번호를 붙여 나눈다', () => {
+    const entries = [{ id: 's1', student: { parent_phone_1: '01011112222' } }];
+    const options = {
+      campaignId: 'c1',
+      content: '가'.repeat(1001),
+      recipientField: 'parent_1',
+      scheduledDate: null,
+    };
+    expect(() => buildBulkRecipients(entries, options)).toThrow('현재 2002byte');
+
+    const { docs, stats } = buildBulkRecipients(entries, {
+      ...options,
+      splitLongMessage: true,
+    });
+    expect(docs).toHaveLength(2);
+    expect(docs.map((doc) => doc.content.slice(0, 5))).toEqual(['[1/2]', '[2/2]']);
+    expect(docs.every((doc) => doc.split_group_id === 'bulk:c1:s1:parent_1')).toBe(true);
+    expect(stats).toMatchObject({ queued: 2, split_groups: 1 });
+  });
+
+  it('분할 큐 상한을 넘으면 전체 문서를 만들기 전에 거부한다', () => {
+    const entries = [
+      { id: 's1', student: { parent_phone_1: '01011112222' } },
+      { id: 's2', student: { parent_phone_1: '01033334444' } },
+    ];
+    expect(() => buildBulkRecipients(entries, {
+      campaignId: 'c1',
+      content: '가'.repeat(1001),
+      recipientField: 'parent_1',
+      splitLongMessage: true,
+      maxQueueDocs: 3,
+    })).toThrow('최대 3건');
+  });
 });
 
 function makeDb() {
@@ -433,6 +467,20 @@ describe('handleCreateBulkMessage', () => {
     expect(queue.every((d) => d.kind === 'direct' && d.content === '여름학기 개강 안내')).toBe(true);
   });
 
+  it('MMS 본문이 Solapi 제한을 넘으면 이미지를 업로드하지 않는다', async () => {
+    const uploadMmsImage = vi.fn();
+    await expect(handleCreateBulkMessage({
+      auth,
+      data: {
+        title: '사진 안내',
+        content: '가'.repeat(1001),
+        studentIds: ['s1'],
+        mmsImage: { name: '안내.jpg', dataBase64: 'x' },
+      },
+    }, { db, uploadMmsImage })).rejects.toThrow('Solapi 발송 제한');
+    expect(uploadMmsImage).not.toHaveBeenCalled();
+  });
+
   it('승인 템플릿을 재검증해 학생별 알림톡 큐를 등록한다', async () => {
     db._docs['students/s1'].name = '김학생';
     const template = {
@@ -599,6 +647,44 @@ describe('handleCreateBulkMessage', () => {
     expect(queue).toHaveLength(1);
   });
 
+  it('완료된 캠페인도 같은 requestId의 내용·예약 변경을 거부한다', async () => {
+    const requestId = 'b-complete-changed';
+    const data = { title: 't', content: 'x', studentIds: ['s1'], requestId };
+    await handleCreateBulkMessage({ auth, data }, { db });
+
+    await expect(handleCreateBulkMessage({
+      auth,
+      data: { ...data, content: '수정' },
+    }, { db })).rejects.toThrow('원 캠페인과 다릅니다');
+    await expect(handleCreateBulkMessage({
+      auth,
+      data: { ...data, scheduledAt: '2026-07-24 10:00:00' },
+    }, { db })).rejects.toThrow('원 캠페인과 다릅니다');
+    expect(Object.keys(db._docs).filter((k) => k.startsWith('message_queue/'))).toHaveLength(1);
+  });
+
+  it('배포 전 지문으로 저장된 예약 캠페인의 동일 재시도를 허용한다', async () => {
+    db._docs['bulk_campaigns/b-legacy-scheduled'] = {
+      status: 'scheduled',
+      stats: { queued: 1 },
+      content: 'x',
+      scheduled_date: '2026-07-24 10:00:00',
+      request_fingerprint: bulkFp(['s1']),
+    };
+    const result = await handleCreateBulkMessage({
+      auth,
+      data: {
+        title: 't',
+        content: 'x',
+        studentIds: ['s1'],
+        requestId: 'b-legacy-scheduled',
+        scheduledAt: '2026-07-24 10:00:00',
+      },
+    }, { db });
+
+    expect(result).toMatchObject({ duplicate: true, scheduledDate: '2026-07-24 10:00:00' });
+  });
+
   it('is idempotent on concurrent requestId (no double enqueue)', async () => {
     const data = { title: 't', content: 'x', studentIds: ['s1'], requestId: 'b-concurrent' };
     const [r1, r2] = await Promise.all([
@@ -627,6 +713,119 @@ describe('handleCreateBulkMessage', () => {
     expect(queue.filter((q) => q.student_id === 's1')).toHaveLength(1);
     expect(queue.filter((q) => q.student_id === 's2')).toHaveLength(1);
     expect(db._docs['bulk_campaigns/b-stuck'].status).toBe('queued');
+  });
+
+  it('분할 캠페인 재개 시 저장된 조각만 제외하고 누락 조각을 채운다', async () => {
+    const now = new Date('2026-07-04T05:00:00Z');
+    const content = '가'.repeat(1001);
+    db._docs['bulk_campaigns/b-split-stuck'] = {
+      status: 'enqueuing',
+      stats: {},
+      content,
+      enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+      request_fingerprint: recipientFingerprint(['s1'], {
+        splitLongMessage: true,
+        recipientField: null,
+        recipientFields: null,
+      }),
+    };
+    db._docs['message_queue/q1'] = {
+      kind: 'direct',
+      campaign_id: 'b-split-stuck',
+      student_id: 's1',
+      recipient_role: 'parent_1',
+      split_group_id: 'bulk:b-split-stuck:s1:parent_1',
+      split_part_index: 1,
+      split_part_total: 2,
+      status: 'sent',
+    };
+
+    await handleCreateBulkMessage({
+      auth,
+      data: {
+        title: 't',
+        content,
+        studentIds: ['s1'],
+        requestId: 'b-split-stuck',
+        splitLongMessage: true,
+      },
+    }, { db, now });
+
+    const parts = Object.values(db._docs)
+      .filter((value) => value.campaign_id === 'b-split-stuck')
+      .sort((a, b) => a.split_part_index - b.split_part_index);
+    expect(parts.map((value) => value.split_part_index)).toEqual([1, 2]);
+    expect(parts[1].status).toBe('pending');
+  });
+
+  it('구버전 비분할 수신자는 분할 재개에서 다시 큐잉하지 않는다', async () => {
+    const now = new Date('2026-07-04T05:00:00Z');
+    const content = '가'.repeat(1001);
+    db._docs['bulk_campaigns/b-legacy-unsplit'] = {
+      status: 'enqueuing',
+      stats: {},
+      content,
+      enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+      request_fingerprint: bulkFp(['s1', 's2']),
+    };
+    db._docs['message_queue/q1'] = {
+      kind: 'direct',
+      campaign_id: 'b-legacy-unsplit',
+      student_id: 's1',
+      recipient_role: 'parent_1',
+      status: 'pending',
+    };
+
+    await handleCreateBulkMessage({
+      auth,
+      data: {
+        title: 't',
+        content,
+        studentIds: ['s1', 's2'],
+        requestId: 'b-legacy-unsplit',
+        splitLongMessage: true,
+      },
+    }, { db, now });
+
+    const queue = Object.values(db._docs).filter((value) => value.campaign_id === 'b-legacy-unsplit');
+    expect(queue.filter((value) => value.student_id === 's1')).toHaveLength(1);
+    expect(queue.filter((value) => value.student_id === 's2')).toHaveLength(2);
+  });
+
+  it('구버전 비분할 교직원은 분할 재개에서 다시 큐잉하지 않는다', async () => {
+    const now = new Date('2026-07-04T05:00:00Z');
+    const content = '가'.repeat(1001);
+    db._docs['staff/st1'] = { name: '김재직', phone: '01011112222', status: 'active' };
+    db._docs['staff/st2'] = { name: '이재직', phone: '01033334444', status: 'active' };
+    db._docs['bulk_campaigns/b-legacy-staff'] = {
+      status: 'enqueuing',
+      stats: {},
+      content,
+      enqueue_started_at: now.getTime() - 20 * 60 * 1000,
+      request_fingerprint: recipientFingerprint(['st1', 'st2'], { audience: 'staff' }),
+    };
+    db._docs['message_queue/q1'] = {
+      kind: 'direct',
+      campaign_id: 'b-legacy-staff',
+      staff_id: 'st1',
+      recipient_role: 'staff',
+      status: 'pending',
+    };
+
+    await handleCreateBulkMessage({
+      auth,
+      data: {
+        title: 't',
+        content,
+        staffIds: ['st1', 'st2'],
+        requestId: 'b-legacy-staff',
+        splitLongMessage: true,
+      },
+    }, { db, now });
+
+    const queue = Object.values(db._docs).filter((value) => value.campaign_id === 'b-legacy-staff');
+    expect(queue.filter((value) => value.staff_id === 'st1')).toHaveLength(1);
+    expect(queue.filter((value) => value.staff_id === 'st2')).toHaveLength(2);
   });
 
   it('다중 수신 캠페인 재개 시 이미 저장된 역할만 제외하고 남은 역할을 큐잉', async () => {
@@ -660,6 +859,7 @@ describe('handleCreateBulkMessage', () => {
     db._docs['bulk_campaigns/b-live'] = {
       status: 'enqueuing', stats: {}, content: 'x',
       enqueue_started_at: now.getTime() - 5000,
+      request_fingerprint: bulkFp(['s1']),
     };
     const res = await handleCreateBulkMessage(
       { auth, data: { title: 't', content: 'x', studentIds: ['s1'], requestId: 'b-live' } },

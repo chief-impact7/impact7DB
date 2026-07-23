@@ -182,7 +182,10 @@ export const createPromoCampaign = onCall(
 export const setPromoConsent = onCall({ enforceAppCheck: false }, handleSetPromoConsent);
 
 // 개별 학부모 정보성 안내(알림톡) 발송 — 학생 상세 '메시지' 탭. 직원 권한. 동의·야간 제한 없음.
-export const sendParentNotice = onCall({ enforceAppCheck: false }, handleSendParentNotice);
+export const sendParentNotice = onCall(
+  { enforceAppCheck: false, secrets: [SOLAPI_API_KEY, SOLAPI_API_SECRET] },
+  handleSendParentNotice,
+);
 
 // 수동 미등원 안내 발송 — 로그북 '미도착(연락)'에서 직원이 확인 후 클릭. 자동 스윕과 멱등 컬렉션 공유.
 export const sendAbsenceNotice = onCall({ enforceAppCheck: false }, handleSendAbsenceNotice);
