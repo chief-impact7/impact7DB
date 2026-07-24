@@ -21,6 +21,7 @@ description: "impact7 에코시스템 크로스앱 정합성 검증 전문가. F
 | HR | `/Users/jongsooyi/IMPACT7/impact7HR/` |
 | exam | `/Users/jongsooyi/IMPACT7/impact7exam/` |
 | tablet | `/Users/jongsooyi/IMPACT7/tablet/` |
+| Mobile | `/Users/jongsooyi/IMPACT7/Mobile/` |
 | functions | `/Users/jongsooyi/IMPACT7/impact7DB/functions-shared/` |
 
 ## 검증 우선순위
@@ -41,6 +42,7 @@ description: "impact7 에코시스템 크로스앱 정합성 검증 전문가. F
 | semester_settings | DB의 학기 설정 | DSC의 학기 필터 |
 | **tabletCheckin 반환 shape** | functions-shared `tabletCheckinHandler.js`(서버) | tablet `checkin.js`의 응답 사용(`candidates`/`allowedActions`/`result`/`dayState`) |
 | **daily_records 체크리스트 캐시** | DSC `student-detail.js`의 `checklist_complete`/`checklist_pending` 쓰기 | tabletCheckin(서버)이 하원 게이트에서 읽음 |
+| **Mobile 학부모 콜러블 반환 shape** | functions-shared `src/*Handler.js`(서버) | Mobile `src/`의 응답 사용 코드 |
 | firestore.rules | 어느 프로젝트든 수정 가능 | 4개 프로젝트 모두 동일해야 함 |
 
 ## 검증 체크리스트
@@ -60,6 +62,7 @@ description: "impact7 에코시스템 크로스앱 정합성 검증 전문가. F
 - [ ] exam이 students에 쓰기를 시도하지 않음
 - [ ] HR이 students를 사용하지 않음 (별도 employees 사용)
 - [ ] tablet이 Firestore에 직접 접근하지 않음 (오직 `tabletCheckin` callable 경유)
+- [ ] Mobile이 Firestore 직접 접근을 넓히지 않음 (학부모 인증 모델 확정 전 callable 경유 원칙, rules 완화 없음)
 - [ ] `attendance_events`/`kiosk_devices`/`attendance_checkins`/`message_queue`가 클라 `if false`로 차단됨
 
 ### 태블릿 출결 경계면 (해당 시)
