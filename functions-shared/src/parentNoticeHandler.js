@@ -90,13 +90,6 @@ export const PARENT_NOTICE_TEMPLATES = {
     vars: ['일시'],
     fallback: `${BRAND_PREFIX} 미등원 안내\n#{학생명} 학생이 #{일시} 수업에 등원하지 않았습니다. 등원 예정이 아니라면 확인 부탁드립니다.\n문의: 02-2649-0509`,
   },
-  // 과제·준비물·공지 범용 — 메시지 탭 수동 발송.
-  study: {
-    envKey: 'STUDY_TEMPLATE_CODE',
-    label: '학습 안내',
-    vars: ['안내내용'],
-    fallback: `${BRAND_PREFIX} 학습 안내\n#{학생명} 학생 학부모님: #{안내내용}\n문의: 02-2649-0509`,
-  },
   report: {
     envKey: 'REPORT_TEMPLATE_CODE',
     label: '수업 리포트',
